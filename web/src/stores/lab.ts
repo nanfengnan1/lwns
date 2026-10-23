@@ -7,6 +7,7 @@ import {
   connection,
   nodeMinHeight,
   parseTopology,
+  projectName,
   uniqueId,
 } from "../domain/topology";
 import type { NodeBounds } from "../domain/topology";
@@ -53,6 +54,12 @@ export const useLabStore = defineStore("lab", () => {
     () => busy.value || !!runtime.value?.deployment || !!operation.value,
   );
   const phase = computed(() => runtime.value?.phase || "idle");
+  const canRename = computed(
+    () =>
+      !busy.value &&
+      !operation.value &&
+      !["deploying", "destroying"].includes(phase.value),
+  );
   const images = computed(() => [
     ...new Set([
       ...environment.value.images,
@@ -197,12 +204,12 @@ export const useLabStore = defineStore("lab", () => {
       operation.value = "";
     }
   }
-  function newLab() {
+  function newLab(name = "未命名实验") {
     if (operation.value) return;
     adopt({
       version: 1,
       id: uniqueId("lab-"),
-      name: "未命名实验",
+      name: projectName(name),
       nodes: [],
       links: [],
     });
@@ -211,10 +218,32 @@ export const useLabStore = defineStore("lab", () => {
     if (operation.value || !example.value) return;
     adopt({ ...clone(example.value), id: uniqueId("lab-") });
   }
-  function rename(name: string) {
-    assertEditable();
-    topology.value.name = name || "未命名实验";
-    dirty.value = true;
+  async function rename(value: string) {
+    if (!canRename.value) throw Error("请等待当前操作完成后再重命名项目");
+    const name = projectName(value);
+    if (name === topology.value.name) return;
+    if (!saved.value) {
+      topology.value.name = name;
+      dirty.value = true;
+      return;
+    }
+    const id = topology.value.id,
+      version = documentVersion.value;
+    operation.value = "rename";
+    runtimeRevision++;
+    try {
+      const result = await api<{ id: string; name: string }>(
+        `/api/labs/${id}/rename`,
+        "POST",
+        { name },
+      );
+      const item = labs.value.find((entry) => entry.id === id);
+      if (item) item.name = result.name;
+      if (version === documentVersion.value) topology.value.name = result.name;
+      // Other unsaved topology edits and inspector drafts remain unsaved.
+    } finally {
+      operation.value = "";
+    }
   }
   function addNode(templateId: string, point: Point) {
     assertEditable();
@@ -411,6 +440,7 @@ export const useLabStore = defineStore("lab", () => {
     phase,
     images,
     canDeploy,
+    canRename,
     canDestroy,
     assertEditable,
     getNode,

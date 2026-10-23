@@ -211,6 +211,10 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
                     return respond(200, {"ok": True})
             if len(segments) == 4 and method == "POST":
                 action = segments[3]
+                if action == "rename":
+                    if set(payload) != {"name"}:
+                        raise LabError("重命名只接受项目名称 name")
+                    return respond(200, manager.rename(lab_id, payload["name"]))
                 if action == "configs":
                     return respond(200, manager.save_configs(lab_id, payload.get("node")))
                 if action in ("deploy", "destroy"):

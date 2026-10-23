@@ -33,18 +33,16 @@ async function destroy() {
   <div class="lab-toolbar">
     <div class="lab-title">
       <span class="document-icon">▤</span>
-      <input
+      <button
         id="lab-name"
-        :value="lab.topology.name"
-        aria-label="实验名称"
-        maxlength="80"
-        :disabled="lab.locked"
-        @change="
-          ui.run(() =>
-            lab.rename(($event.target as HTMLInputElement).value.trim()),
-          )
-        "
-      />
+        class="lab-name-button"
+        :title="`重命名项目：${lab.topology.name}`"
+        aria-label="重命名项目"
+        :disabled="!lab.canRename"
+        @click="ui.labDialogMode = 'rename'"
+      >
+        {{ lab.topology.name }}<small>✎</small>
+      </button>
       <span id="save-state">{{
         lab.operation === "save"
           ? "保存中…"

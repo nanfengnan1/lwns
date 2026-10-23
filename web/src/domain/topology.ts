@@ -54,6 +54,10 @@ function identifier(value: unknown): string {
   return value;
 }
 
+export function projectName(value: unknown): string {
+  return string(value, "项目名称（1–80 个字符）", 80);
+}
+
 // Imported JSON is untrusted at runtime, even in a TypeScript application.
 // IP/subnet semantics remain authoritative on the Python backend.
 export function parseTopology(value: unknown): Topology {

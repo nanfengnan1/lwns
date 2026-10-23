@@ -78,6 +78,7 @@ Node.js 20.20.2 满足当前 Vite 的运行要求，因此缺少 Linux 原生包
    │   ├── stores/lab.ts         拓扑配置、部署状态和 API 操作
    │   ├── stores/editor.ts      选择、连线、视口及属性草稿
    │   ├── stores/ui.ts          消息、对话框和底部面板
+   │   ├── stores/layout.ts      左右侧边栏宽度、收起及浏览器持久化
    │   ├── stores/terminals.ts   标签、会话状态和实验切换清理
    │   ├── api/client.ts         认证、JSON 请求和错误处理
    │   ├── domain/topology.ts    导入校验、连线约束及 SVG 几何
@@ -104,6 +105,29 @@ Node.js 20.20.2 满足当前 Vite 的运行要求，因此缺少 Linux 原生包
 设备由 ``lab_devices.py`` 的模板目录和适配器注册表描述；兼容现有模板的新镜像可直接在
 Web 镜像管理中绑定，新增设备行为才需要注册模板及适配器。
 前端校验用于及时反馈，Python 后端仍是 IP、网关和部署约束的最终校验方。
+
+侧边栏与项目命名
+----------------------------------------
+
+``SidebarPanel.vue`` 包装左右侧边栏，使用 Pointer Events、捕获及键盘处理调整宽度。
+``stores/layout.ts`` 保存首选宽度和收起状态，通过工作区 ResizeObserver 限制实际宽度，
+为中间区域保留 460px；窗口变宽后恢复首选值。收起时保留 36px 操作栏，
+内容使用 v-show 保留，避免丢失属性草稿和设备库筛选。
+拖动结束、失焦或卸载时释放捕获及光标。布局状态不参与拓扑脏标记及部署编辑锁。
+``route-ovs-sidebars`` 本地存储读取时校验类型和范围；存储失效不影响当前会话操作。
+
+``ProjectNameDialog.vue`` 共用新建和重命名表单；新建先校验名称，再确认是否放弃原草稿。
+名称支持中文、首尾去空白、非空及最多 80 字符，项目身份仍由 ID 决定。
+未保存项目只修改本地草稿；已保存项目通过以下接口立即保存名称::
+
+  POST /api/labs/{id}/rename
+  {"name": "OSPF 双网段实验"}
+
+响应为 ``{"id":"...","name":"..."}``，接口只接受 name 字段，沿用 Bearer 和 Origin 校验。
+``LabManager.rename`` 持锁读取并原子写回当前记录，仅更新名称及更新时间；
+允许已有部署，拒绝正在部署/清理的项目，不放宽普通 PUT 拓扑的编辑锁。
+前端更新名称和列表，不调用 adopt、不更新 documentVersion，不覆盖运行状态、属性草稿或终端标签。
+其他未保存的拓扑改动保持未保存，接口失败保留原名称。
 
 设备模板与配置适配器
 ----------------------------------------
@@ -270,7 +294,21 @@ Linux、Docker 和 root 权限要求保持不变，使用方法见 :doc:`../user
 
 ``tests/check_workbench.cjs`` 在真实 Chromium 中验证拖动、编辑、连线、保存、
 导入导出和重新加载，既可检查 Python 提供的构建页面，也可检查 Vite 开发页面。
-运行方式与隔离数据目录要求见 :doc:`../user/workbench` 的验证范围。
+``tests/check_sidebar_projects.cjs`` 验证实际侧边栏拖动、收起、键盘调宽、刷新恢复、窄窗口布局，
+以及中文命名、取消、空白校验、保存与改名时保留未保存属性。
+两个浏览器脚本都应连接独立的设计模式后端，不使用日常实验数据。例如先构建前端，然后运行::
+
+  ROUTE_OVS_TOKEN=layout-browser-check .venv/bin/python script/python/lab_server.py \
+    --preview --port 8097 --data-dir /tmp/route-ovs-layout-check
+
+本例数据目录必须是全新空目录。在已开启远程调试端口的专用 Chromium 测试实例上运行::
+
+  node tests/check_sidebar_projects.cjs http://127.0.0.1:9348 \
+    'http://127.0.0.1:8097/#token=layout-browser-check' /tmp/route-ovs-layout-results
+
+脚本使用 Node.js 22+，创建并删除自己的测试项目，输出断言结果和截图。
+``web/tests/layout.test.ts`` / ``web/tests/project-name.test.ts`` 覆盖布局存储和命名状态；
+``tests/test_lab.py`` 覆盖改名 API 的认证、参数、持久化及部署保护。
 Docker/netns 行为测试使用模拟执行器，真实容器连通性仍须在 Linux 主机验收。
 
 ``tests/test_terminal.py`` 包含凭证、Origin 和归属检查，并提供显式启用的真实

@@ -7,6 +7,7 @@ export const useUiStore = defineStore("ui", () => {
   const accessOpen = ref(false),
     infoOpen = ref(false);
   const imagesOpen = ref(false);
+  const labDialogMode = ref<"new" | "rename" | null>(null);
   const captureOpen = ref(false),
     captureLink = ref("");
   const panel = ref<"logs" | "console">("logs"),
@@ -43,6 +44,7 @@ export const useUiStore = defineStore("ui", () => {
     accessOpen,
     infoOpen,
     imagesOpen,
+    labDialogMode,
     captureOpen,
     captureLink,
     panel,

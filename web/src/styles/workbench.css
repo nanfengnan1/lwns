@@ -169,6 +169,74 @@ button.quiet {
   height: calc(100vh - 62px);
   min-height: 650px;
 }
+.sidebar-panel {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: #fff;
+}
+.sidebar-content,
+.sidebar-content > aside {
+  height: 100%;
+}
+.sidebar-toggle {
+  position: absolute;
+  top: 14px;
+  right: 9px;
+  z-index: 2;
+  padding: 2px 7px;
+  font-size: 20px;
+  line-height: 24px;
+}
+.sidebar-panel.is-collapsed {
+  border-inline: 1px solid var(--border);
+}
+.is-collapsed .sidebar-toggle {
+  right: 3px;
+  left: 3px;
+  padding: 2px;
+}
+.sidebar-rail-label {
+  display: block;
+  writing-mode: vertical-rl;
+  margin: 10px auto;
+  font-size: 11px;
+  letter-spacing: 3px;
+}
+.sidebar-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  right: -3px;
+  z-index: 3;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.sidebar-panel.right .sidebar-resize {
+  left: -3px;
+  right: auto;
+}
+.sidebar-resize span {
+  position: absolute;
+  height: 36px;
+  width: 3px;
+  top: 45%;
+  left: 2px;
+  border-radius: 3px;
+  background: #c4cfdf;
+}
+.sidebar-resize:hover,
+.sidebar-resize:focus-visible,
+.resizing .sidebar-resize {
+  background: #dce7ff;
+}
+.resizing-sidebar,
+.resizing-sidebar * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
 .library {
   background: #fff;
   border-right: 1px solid var(--border);
@@ -190,6 +258,7 @@ button.quiet {
 .section-caption span {
   letter-spacing: 0;
   color: #b1bbcb;
+  margin-right: 32px;
 }
 .small-label {
   font-size: 11px;
@@ -453,21 +522,23 @@ button.quiet {
   overflow: hidden;
 }
 .lab-toolbar {
-  height: 59px;
+  flex: 0 0 auto;
   min-height: 59px;
   background: #fff;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px;
+  padding: 10px 14px;
   gap: 10px;
+  flex-wrap: wrap;
 }
 .lab-title {
   display: flex;
   align-items: center;
   min-width: 0;
   gap: 8px;
+  flex: 1;
 }
 .document-icon {
   color: #8da0bd;
@@ -490,6 +561,22 @@ button.quiet {
   display: flex;
   gap: 7px;
   flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.lab-name-button {
+  max-width: 240px;
+  min-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  border-color: transparent;
+  text-align: left;
+}
+.lab-name-button small {
+  margin-left: 8px;
+  color: #8394ae;
+  font-weight: 400;
 }
 .toolbar-actions button {
   font-size: 11px;
@@ -978,7 +1065,7 @@ button.quiet {
 .inspector-heading {
   height: 59px;
   min-height: 59px;
-  padding: 0 19px;
+  padding: 0 48px 0 19px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1315,9 +1402,6 @@ dialog .primary {
   display: none !important;
 }
 @media (min-width: 1600px) {
-  .workspace {
-    grid-template-columns: 240px minmax(460px, 1fr) 310px;
-  }
   .library {
     padding-left: 20px;
     padding-right: 20px;
@@ -1327,9 +1411,6 @@ dialog .primary {
   }
 }
 @media (max-width: 1200px) {
-  .workspace {
-    grid-template-columns: 185px minmax(430px, 1fr) 255px;
-  }
   .library {
     padding-left: 11px;
     padding-right: 11px;

@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import { useLayoutStore } from "./stores/layout";
+import SidebarPanel from "./components/SidebarPanel.vue";
+import ProjectNameDialog from "./components/ProjectNameDialog.vue";
 import { getToken, setToken } from "./api/client";
 import { useLabStore } from "./stores/lab";
 import { useEditorStore } from "./stores/editor";
@@ -18,6 +21,9 @@ const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore();
 let poll: ReturnType<typeof setInterval> | undefined;
+const layout = useLayoutStore();
+const workspace = ref<HTMLElement>();
+let layoutObserver: ResizeObserver | undefined;
 function keydown(event: KeyboardEvent) {
   if (
     (event.target as Element).closest(
@@ -26,7 +32,8 @@ function keydown(event: KeyboardEvent) {
     ui.accessOpen ||
     ui.infoOpen ||
     ui.imagesOpen ||
-    ui.captureOpen
+    ui.captureOpen ||
+    ui.labDialogMode
   )
     return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -45,6 +52,14 @@ function beforeUnload(event: BeforeUnloadEvent) {
   }
 }
 onMounted(async () => {
+  layout.restore();
+  layoutObserver = new ResizeObserver(() => {
+    if (workspace.value) layout.workspaceWidth = workspace.value.clientWidth;
+  });
+  if (workspace.value) {
+    layout.workspaceWidth = workspace.value.clientWidth;
+    layoutObserver.observe(workspace.value);
+  }
   const url = new URL(location.href),
     fromURL = new URLSearchParams(url.hash.slice(1)).get("token");
   setToken(fromURL || sessionStorage.getItem("route-ovs-token") || "");
@@ -69,6 +84,7 @@ onMounted(async () => {
   } else ui.accessOpen = true;
 });
 onBeforeUnmount(() => {
+  layoutObserver?.disconnect();
   clearInterval(poll);
   document.removeEventListener("keydown", keydown);
   window.removeEventListener("beforeunload", beforeUnload);
@@ -109,14 +125,21 @@ onBeforeUnmount(() => {
       </button>
     </div>
   </header>
-  <main class="workspace">
-    <DeviceLibrary />
+  <main
+    ref="workspace"
+    class="workspace"
+    :style="{
+      gridTemplateColumns: `${layout.widths.left}px minmax(460px, 1fr) ${layout.widths.right}px`,
+    }"
+  >
+    <SidebarPanel side="left" title="设备库"><DeviceLibrary /></SidebarPanel>
     <section class="stage">
       <LabToolbar /><TopologyCanvas /><WorkbenchPanels />
     </section>
-    <DeviceInspector />
+    <SidebarPanel side="right" title="属性栏"><DeviceInspector /></SidebarPanel>
   </main>
   <WorkbenchDialogs />
+  <ProjectNameDialog />
   <ImageManager />
   <CaptureManager />
 </template>

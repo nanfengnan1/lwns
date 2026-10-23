@@ -87,7 +87,7 @@ async function importTopology(event: Event) {
         @change="ui.run(() => selectLab($event))"
       >
         <option v-if="!lab.saved" value="">
-          {{ editor.unsaved ? "未保存的实验" : "空白画布" }}
+          {{ editor.unsaved ? `${lab.topology.name}（未保存）` : "空白画布" }}
         </option>
         <option v-for="item in lab.labs" :key="item.id" :value="item.id">
           {{ item.name }}
@@ -99,7 +99,7 @@ async function importTopology(event: Event) {
         title="新建实验"
         aria-label="新建实验"
         :disabled="!!lab.operation"
-        @click="editor.discardOK() && lab.newLab()"
+        @click="ui.labDialogMode = 'new'"
       >
         ＋
       </button>

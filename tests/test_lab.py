@@ -246,6 +246,43 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(self.manager.read("first-lab")["runtime"]["phase"], "idle")
         self.assertEqual(len(self.manager.read("first-lab")["topology"]["nodes"]), 5)
 
+    def test_rename_running_lab_preserves_runtime_configs_and_containers(self):
+        self.manager.deploy(self.record)
+        before = self.manager.read("first-lab")
+        calls = len(self.host.calls)
+        config = Path(self.temp.name) / "devices" / "first-lab" / "r1" / "saved.txt"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text("keep device configuration", encoding="utf-8")
+        self.assertEqual(self.manager.rename("first-lab", "  OSPF 中文项目  "),
+                         {"id": "first-lab", "name": "OSPF 中文项目"})
+        after = self.manager.read("first-lab")
+        self.assertEqual(after["runtime"], before["runtime"])
+        self.assertEqual(after["topology"], dict(before["topology"], name="OSPF 中文项目"))
+        self.assertEqual(len(self.host.calls), calls)
+        self.assertEqual(config.read_text(encoding="utf-8"), "keep device configuration")
+        self.assertEqual(LabManager(self.temp.name, runner=self.host).list_labs()[0]["name"], "OSPF 中文项目")
+
+    def test_rename_rejects_busy_and_invalid_names_without_writing(self):
+        before = self.manager.path("first-lab").read_bytes()
+        for name in ("", "  ", "x" * 81, "a\x00b", None, 42):
+            with self.subTest(name=name), self.assertRaises(LabError):
+                self.manager.rename("first-lab", name)
+        self.manager.busy = "first-lab"
+        with self.assertRaisesRegex(LabError, "等待"):
+            self.manager.rename("first-lab", "新名称")
+        self.assertEqual(self.manager.path("first-lab").read_bytes(), before)
+        self.manager.busy = None
+        with self.assertRaisesRegex(LabError, "不存在"):
+            self.manager.rename("missing-lab", "新名称")
+
+    def test_rename_does_not_relax_deployed_topology_lock(self):
+        self.manager.deploy(self.record)
+        self.manager.rename("first-lab", "运行中")
+        changed = self.manager.read("first-lab")["topology"]
+        changed["nodes"][0]["x"] = 999
+        with self.assertRaisesRegex(LabError, "已经部署"):
+            self.manager.save(changed)
+
     def test_missing_image_or_unconnected_address_has_no_side_effects(self):
         self.host.missing_image = True
         with self.assertRaisesRegex(LabError, "镜像"): self.manager.deploy(self.record)
@@ -414,6 +451,24 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(response.headers["content-type"].split(";")[0], "text/javascript")
         for path in ("/src/main.ts", "/package.json", "/assets/missing.js", "/assets/%2e%2e/%2e%2e/private.js", "/assets/%2e%2e%5c%2e%2e%5cprivate.js"):
             self.assertEqual(self.request(path)[0], 404, path)
+
+    def test_rename_api_persists_only_name_and_requires_authentication(self):
+        lab = example()
+        self.manager.save(lab)
+        path = "/api/labs/first-lab/rename"
+        self.assertEqual(self.request(path, "POST", {"name": "新项目"}, auth=False)[0], 401)
+        self.assertEqual(self.request(path, "POST", {"name": "新项目"}, origin="http://untrusted.invalid")[0], 403)
+        self.assertEqual(self.request(path, "POST", {"name": "新项目", "nodes": []})[0], 400)
+        self.assertEqual(self.request(path, "POST", {})[0], 400)
+        for name in (" ", "a" * 81, None):
+            self.assertEqual(self.request(path, "POST", {"name": name})[0], 400)
+        code, body = self.request(path, "POST", {"name": "  中文项目 / OSPF  "})
+        self.assertEqual(code, 200)
+        self.assertEqual(json.loads(body), {"id": "first-lab", "name": "中文项目 / OSPF"})
+        record = self.manager.read("first-lab")
+        self.assertEqual(record["topology"]["name"], "中文项目 / OSPF")
+        self.assertEqual(record["topology"]["nodes"], validate_topology(lab)["nodes"])
+        self.assertEqual(json.loads(self.request("/api/labs")[1])[0]["name"], "中文项目 / OSPF")
 
     def test_missing_build_explains_build_step_and_keeps_api_available(self):
         (self.web / "index.html").unlink()

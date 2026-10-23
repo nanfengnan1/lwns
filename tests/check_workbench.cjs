@@ -78,6 +78,10 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   assert.equal(await evaluate('document.querySelector("#delete-current-lab").disabled'),true,'empty canvas is not a deletable draft');
   assert.equal(await evaluate('document.querySelector("#delete-lab").disabled'),true,'inspector deletion also reflects empty state');
   await click('#new-lab');
+  await waitFor('document.querySelector("#project-name-dialog").open');
+  await evaluate('document.querySelector("#project-name-input").value="待删除的新项目";document.querySelector("#project-name-input").dispatchEvent(new Event("input",{bubbles:true}))');
+  await click('#confirm-project-name');
+  await waitFor('!document.querySelector("#project-name-dialog").open');
   await click('#delete-lab');
   await waitFor('document.querySelector("#delete-lab").disabled');
   assert.equal(deleteRequests,0,'inspector can discard a new unsaved experiment locally');

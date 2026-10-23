@@ -229,6 +229,17 @@ class LabManager:
             self.write(record)
             return record
 
+    def rename(self, lab_id, name):
+        name = string(name, "项目名称", 80)
+        with self.lock:
+            record = self.read(lab_id)
+            if self.busy == lab_id or record["runtime"].get("phase") in ("deploying", "destroying"):
+                raise LabError("请等待部署或清理完成后再重命名项目")
+            # Display metadata only: preserve container ownership, config paths and runtime.
+            record["topology"]["name"] = name
+            self.write(record)
+            return {"id": lab_id, "name": name}
+
     def list_labs(self):
         result = []
         with self.lock:
