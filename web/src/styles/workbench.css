@@ -165,16 +165,18 @@ button.quiet {
 .workspace {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
-  grid-template-columns: 220px minmax(460px, 1fr) 280px;
+  grid-template-columns: 240px minmax(460px, 1fr) 280px;
   height: calc(100vh - 62px);
   min-height: 650px;
 }
 .library {
   background: #fff;
   border-right: 1px solid var(--border);
-  padding: 24px 16px 14px;
+  padding: 20px 14px 12px;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 .section-caption {
   font-size: 10px;
@@ -227,7 +229,7 @@ button.quiet {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin: 29px 2px 13px;
+  margin: 22px 2px 12px;
 }
 .library-heading h2,
 .inspector-heading h2 {
@@ -242,10 +244,10 @@ button.quiet {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 9px;
   text-align: left;
-  padding: 13px 10px;
-  margin-bottom: 9px;
+  padding: 10px 8px;
+  margin-bottom: 7px;
   border-color: #e6eaf2;
   border-radius: 8px;
   cursor: grab;
@@ -255,8 +257,8 @@ button.quiet {
 }
 .device-card .device-icon {
   display: flex;
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   align-items: center;
   justify-content: center;
   border-radius: 9px;
@@ -300,8 +302,105 @@ button.quiet {
   margin: 7px 3px;
 }
 .library-bottom {
-  margin-top: auto;
-  padding-top: 28px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.library-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding-left: 9px;
+  background: #f8faff;
+}
+.library-search > span {
+  color: #8594ae;
+  font-size: 19px;
+}
+.library-search input {
+  border: 0;
+  background: transparent;
+  width: 100%;
+  font-size: 11px;
+  padding: 8px 5px;
+}
+.library-categories {
+  display: flex;
+  gap: 4px;
+  margin: 10px 0 12px;
+}
+.library-categories button {
+  flex: 1;
+  border-color: transparent;
+  font-size: 10px;
+  padding: 5px 4px;
+}
+.library-categories button.active {
+  background: #edf2ff;
+  color: var(--blue);
+  border-color: #dfe7ff;
+}
+.device-library-scroll {
+  flex: 1;
+  min-height: 80px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px;
+}
+.device-card-label {
+  min-width: 0;
+  flex: 1;
+}
+.device-card-label b,
+.device-card-label small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.device-card .drag-dots {
+  flex-shrink: 0;
+}
+.library-empty {
+  text-align: center;
+  color: #96a2b6;
+  padding: 28px 6px;
+  font-size: 11px;
+  line-height: 2;
+}
+.library-empty button {
+  border: 0;
+  font-size: 10px;
+  color: var(--blue);
+}
+.library-more {
+  width: 100%;
+  font-size: 11px;
+  margin: 6px 0;
+}
+.manage-images-button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  margin-bottom: 12px;
+  text-align: left;
+  background: #f8faff;
+}
+.manage-images-button > span:first-child {
+  color: #6484dd;
+  font-size: 17px;
+}
+.manage-images-button b {
+  font-size: 11px;
+  font-weight: 600;
+}
+.manage-images-button > span:last-child {
+  margin-left: auto;
+  font-size: 10px;
+  color: #8c9bb2;
 }
 .example-button {
   display: flex;

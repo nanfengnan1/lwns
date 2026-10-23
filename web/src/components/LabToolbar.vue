@@ -2,6 +2,7 @@
 import { useLabStore } from "../stores/lab";
 import { useEditorStore } from "../stores/editor";
 import { useUiStore } from "../stores/ui";
+import SaveConfigButton from "./SaveConfigButton.vue";
 const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore();
@@ -19,7 +20,7 @@ async function deploy() {
 async function destroy() {
   if (
     !confirm(
-      "清理当前实验创建的容器和 veth？拓扑文件会保留；未写入拓扑的容器内配置会丢失。",
+      "清理当前实验创建的容器和 veth？拓扑和已保存的设备配置会保留；未保存的运行配置会丢失。",
     )
   )
     return;
@@ -58,6 +59,7 @@ async function destroy() {
       <button id="save" :disabled="lab.locked" @click="ui.run(save)">
         保存
       </button>
+      <SaveConfigButton v-if="lab.topology.nodes.some(lab.supportsConfig)" />
       <button
         id="destroy"
         class="danger-subtle"

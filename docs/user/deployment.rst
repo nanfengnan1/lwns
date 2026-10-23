@@ -4,23 +4,37 @@
 宿主机要求
 ----------------------------------------
 
-使用能够运行 Linux 容器的 Linux 主机。现有工具按需使用以下命令：
+先确定使用 Web 工作台还是旧版命令行工具；两者管理的实验相互独立。
+Web 工作台在 Linux Docker 宿主机部署设备，Windows/Linux 客户端只需浏览器。
+各功能所需环境如下：
 
-* 容器管理：``docker``、``bash``、GNU ``getopt``。
-* 网络操作：``ip``（iproute2）、``nsenter``；非 root 用户需要 ``sudo``。
-* OVS 实验：``ovs-vsctl`` 和运行中的 OVS 服务。
-* 抓包与拓扑：宿主机 ``tcpdump``、``python3``、Graphviz 的 ``dot``。
+* Web 后端：Python 3.10+、项目后端依赖、Docker CLI 和同一主机上的 Docker daemon。
+* Web 部署：``ip``（iproute2）、util-linux 的 ``nsenter``，以宿主机 root 运行后端。
+* 前端构建：Node.js 22.12+ 的 22.x 或 24+，建议使用 Node.js 24 LTS；仅运行已构建前端时无需 Node.js。
+* Web 抓包：宿主机增加 ``tcpdump`` 和可登录的 SSH 服务；客户端增加 Wireshark 和本地启动器。
+* 旧版脚本：按功能使用 ``bash``、GNU ``getopt``、``sudo``；OVS 实验另需 ``ovs-vsctl`` 和 OVS 服务。
+* 旧版 SVG 拓扑采集：按采集方式使用 Docker/OVS，以及 Graphviz 的 ``dot``。
 
-先核对环境::
+Web 工作台的交换机使用容器内 Linux bridge，不需要为此安装 OVS 或 Graphviz。
+后端应直接运行在 Docker 所在 Linux 宿主机上，不能只通过远程 Docker context 代替宿主机访问。
 
-  docker version
+先在 Linux 主机核对环境::
+
+  sudo docker version
   ip -Version
-  ovs-vsctl --version
-  dot -V
+  nsenter --version
   python3 --version
 
-执行容器管理的用户需能访问 Docker；登记 netns 和操作 veth 时还需要宿主机网络管理权限。
-发行版安装步骤、已验证的宿主机版本和资源基线：待补充。
+Docker 安装以发行版对应的官方步骤为准，例如
+`Ubuntu 安装 Docker Engine <https://docs.docker.com/engine/install/ubuntu/>`_。
+Debian/Ubuntu 上可按需要安装基础工具::
+
+  sudo apt-get update
+  sudo apt-get install python3 python3-venv iproute2 util-linux tcpdump
+
+远程抓包还需 SSH 服务；已有 SSH 服务时无需重复安装。后端虚拟环境、前端构建和启动命令见
+:ref:`workbench-start`，抓包客户端安装见 :doc:`workbench-capture`。
+设备数量和镜像决定资源需求，目前没有统一的规模与性能保证。
 
 准备镜像
 ----------------------------------------
@@ -41,5 +55,8 @@ VPCS 镜像也可从项目中的 Dockerfile 构建，见开发指南“镜像构
 实验目录
 ----------------------------------------
 
-建议每个实验使用独立目录，保存容器清单、VPCS 状态、协议配置和采集结果。
+Web 工作台默认将实验写入项目根目录的 ``.route-ovs-labs``，也可通过 ``--data-dir`` 指定目录。
+配置备份与迁移见 :doc:`workbench-data`。保持数据目录不变即可在后端重启后继续管理原实验。
+
+使用旧版脚本时，建议每个实验使用独立目录，保存容器清单、VPCS 状态、协议配置和采集结果。
 由于 FRR 名称固定从 ``frr_A`` 开始，不同实验目录并不能避免同一 Docker 主机上的同名冲突。

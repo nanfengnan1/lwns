@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "images": [
+    { "reference": "alpine/frr:latest", "title": "FRR 路由器", "template": "frr" },
+    { "reference": "alpine/vpcs:latest", "title": "VPCS 终端", "template": "linux-host" }
+  ]
+}

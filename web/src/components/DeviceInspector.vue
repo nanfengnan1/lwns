@@ -5,6 +5,7 @@ import { useUiStore } from "../stores/ui";
 import { colors, nodeHeight, nodeWidth, titles } from "../domain/topology";
 import DeviceIcon from "./DeviceIcon.vue";
 import DeleteLabButton from "./DeleteLabButton.vue";
+import DeviceConfigPanel from "./DeviceConfigPanel.vue";
 import { useTerminalsStore } from "../stores/terminals";
 const terminals = useTerminalsStore();
 const lab = useLabStore(),
@@ -138,7 +139,7 @@ function apply() {
                 :disabled="lab.locked"
               ></textarea>
             </label>
-            <label v-if="editor.node.kind === 'router'" class="field"
+            <label v-if="lab.supportsConfig(editor.node)" class="field"
               ><span>FRR 启动配置（可选）</span
               ><textarea
                 id="node-config"
@@ -147,7 +148,10 @@ function apply() {
                 placeholder="router ospf&#10; network 10.0.0.0/8 area 0"
                 :disabled="lab.locked"
               ></textarea
-              ><small>部署时通过 vtysh -f 加载，随拓扑一起保存。</small></label
+              ><small
+                >首次部署用于初始化配置。手动修改后，下次部署会备份并替换磁盘配置；Web
+                保存设备配置会同步此文本。</small
+              ></label
             >
           </details>
           <div class="inspector-actions">
@@ -164,6 +168,10 @@ function apply() {
             </button>
           </div>
         </form>
+        <DeviceConfigPanel
+          v-if="lab.supportsConfig(editor.node)"
+          :node="editor.node"
+        />
         <div class="property-section node-size-section">
           <h3>
             画布尺寸
@@ -204,7 +212,10 @@ function apply() {
           </button>
           <code v-if="lab.runtime?.nodes[editor.node.id]" class="code-line"
             >docker exec -it {{ lab.runtime.nodes[editor.node.id].name }}
-            {{ editor.node.kind === "router" ? "vtysh" : "sh" }}</code
+            {{
+              lab.getTemplate(editor.node)?.console ||
+              (editor.node.kind === "router" ? "vtysh" : "sh")
+            }}</code
           >
           <p v-else class="inspector-help">
             部署后可查看接口、路由和执行连通性测试。
@@ -228,6 +239,22 @@ function apply() {
         <p class="inspector-help">
           两个端口分别位于设备容器内，直接互为 veth 对端，不经过宿主机 OVS。
         </p>
+        <button
+          id="capture-link"
+          class="primary"
+          :disabled="
+            !lab.saved ||
+            !lab.runtime?.deployment ||
+            lab.busy ||
+            !!lab.operation
+          "
+          @click="
+            ui.captureLink = editor.link.id;
+            ui.captureOpen = true;
+          "
+        >
+          在 Wireshark 中抓包
+        </button>
         <div class="inspector-actions">
           <button
             id="delete-selection"

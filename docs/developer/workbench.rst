@@ -101,8 +101,117 @@ Node.js 20.20.2 满足当前 Vite 的运行要求，因此缺少 Linux 原生包
 八方向手柄使用 Pointer Events 和捕获，按视口缩放换算位移，固定对侧边缘；
 手柄保持屏幕尺寸，结束、失焦或卸载时释放捕获。应用属性草稿保留最新位置和尺寸。
 
-添加设备类型时，需要同时扩展类型定义、设备展示及后端目录和部署逻辑。
+设备由 ``lab_devices.py`` 的模板目录和适配器注册表描述；兼容现有模板的新镜像可直接在
+Web 镜像管理中绑定，新增设备行为才需要注册模板及适配器。
 前端校验用于及时反馈，Python 后端仍是 IP、网关和部署约束的最终校验方。
+
+设备模板与配置适配器
+----------------------------------------
+
+``lab_devices.py`` 的模板包含 ``id``、``version``、``adapter``、``kind``、镜像、
+端口默认值、``console`` / ``console_command`` 和 ``capabilities``。
+拓扑仍为版本 1，节点新增可选 ``template``；旧节点按 ``kind`` 映射到默认模板。
+模板名称、镜像和画布类型分开：前端按模板 ID 创建节点，按能力显示保存按钮。
+模板注册来自后端代码，拓扑不能指定宿主机路径或任意适配器实现。
+
+适配器接口为 ``prepare``（准备目录并返回 Docker 参数）、``command``、
+``started``、``linked``、``config_status`` 和 ``save_config``。
+FRR、Linux bridge 和普通 Linux 容器分别实现生命周期钩子；核心管理器负责公共的
+归属校验、容器生命周期和 veth。后续可按同一接口扩展其他设备配置方式。
+
+FRR 持久化目录和备份布局见 :doc:`../user/workbench`。
+``config-meta.json`` 保存适配器版本、UID/GID、最后一次 Web 保存时间和启动文本哈希。
+仅当拓扑的启动文本发生显式变更时才替换 ``frr.conf``，避免覆盖终端 ``write memory``
+生成的文件。后续部署按镜像用户修正权限，保留现有协议启用设置。
+原有无挂载部署可导出配置后重建；错误挂载则拒绝保存。
+
+* ``GET /api/labs/{id}/configs``：所有设备的持久化状态。
+* ``GET /api/labs/{id}/configs/{node}``：单设备磁盘内容、路径和更新时间。
+* ``POST /api/labs/{id}/configs``：``{}`` 保存所有支持的设备，``{"node":"r1"}`` 保存单台。
+  响应为 ``{results:[{node,ok,status?,config?,error?}],runtime}``。
+
+保存复用部署锁，与部署、清理互斥，先检查所有启用进程可用；每台独立汇报错误，
+成功的配置立即同步拓扑并落盘。前端只更新成功设备及配置预览，不调用 ``adopt``，
+因此保留选中设备和终端连接，同时刷新属性草稿并拒绝旧的异步响应。
+当前 FRR 文本沿用每设备 32768 字符限制。备份目前不自动轮转，应按需归档。
+完整迁移需复制数据目录；Compose/YAML 项目迁移属于后续阶段。
+
+镜像服务与设备库
+----------------------------------------
+
+``lab_images.py`` 的 ``ImageService`` 负责 Docker 清单核对、流式上传、后台任务和原子持久化。
+``config/images.defaults.json`` 只在运行时清单缺失时初始化；运行数据位于数据目录的
+``images/registry.json``、``images/jobs/<任务ID>.json`` 和临时 ``images/uploads/<上传ID>/``。
+子目录布局避免镜像清单被实验的 ``*.json`` 扫描误识别。临时文件在完成/失败时回收，
+重启将未结束任务标为失败并清理残留工作目录；历史任务保存日志尾部，API 返回最近 30 项。
+
+接口均沿用 Bearer 令牌和 Origin 校验：
+
+* ``GET /api/catalog``：基础模板与已加载且绑定模板的自定义镜像卡片。
+* ``GET /api/images``、``POST /api/images/refresh``：缓存快照/主动核对 Docker。
+* ``POST /api/images/uploads``：登记文件名、大小与 archive/context 类型；
+  ``PUT /api/images/uploads/{id}`` 使用原始二进制流上传；``DELETE`` 回收未使用上传。
+* ``POST /api/images/jobs``：pull/url/archive/build 任务，返回 202；删除由
+  ``DELETE /api/images/{id}`` 创建后台任务，成功后才移除管理记录。
+* ``PUT /api/images/{id}``：修改显示名称和绑定模板。
+
+JSON 仍限制 1 MiB；大文件使用 ``request.stream()`` 分块写盘，不读入完整内存。
+执行使用参数数组，不经过宿主机 shell。构建上下文拒绝路径逃逸、链接、特殊文件和解压超限。
+任务开始与部署互斥；镜像任务执行中拒绝新部署，允许清理已有实验。
+删除前核对保存实验及 Docker 全部容器，使用非强制删除；失败后重新核对实际镜像，
+避免多镜像归档部分成功后 UI 与 Docker 状态不一致。
+
+前端 ``stores/images.ts`` 管理上传进度、任务和每 2 秒轮询，拒绝旧响应覆盖新任务；
+``ImageManager.vue`` 提供清单、导入表单、设置与日志。任务结束刷新设备目录和环境。
+``DeviceLibrary.vue`` 按名称/镜像搜索、kind 分类、每批 60 项显示，列表独立滚动。
+动态卡片 ``id`` 为镜像记录派生 ID，``template_id`` 指向已注册模板；创建拓扑节点时
+写入基础 ``template_id``，保证后端适配器匹配和旧拓扑格式兼容。
+镜像导入不等于新增厂商适配器，也不改变当前 FRR 配置保存范围。
+
+抓包服务与本地启动器
+----------------------------------------
+
+``lab_capture.py`` 的 ``CaptureService`` 管理内存会话、启动、数据流和启动结果回报的一次性凭证和 tcpdump 子进程。
+``LabManager.capture_target`` 核对实验/部署标签、两端容器当前 PID、veth alias、ifindex
+及对端索引。启动抓包时打开网络命名空间 FD 并重新验证，子进程通过该 FD 进入命名空间，
+降低 PID 重用风险。每 3 秒复查目标；运行时间不超过 60 分钟。
+
+协议分为：
+
+* ``GET /api/capture/capabilities`` 和 ``GET /api/capture/client``：环境能力及客户端 ZIP，沿用 Bearer/Origin。
+* ``GET/POST /api/labs/{id}/captures``：列表/创建会话；创建输入 ``link``、``side``、``filter``、``snaplen``。
+* ``DELETE /api/labs/{id}/captures/{session}``：停止指定会话，保留已结束状态供 UI 查看。
+* ``POST /api/capture/claim``：本地启动器用 5 分钟启动凭证兑换独立流凭证与一次性客户端回报凭证；不需要长期 Web 令牌。
+* ``POST /api/capture/client-report``：使用独立一次性凭证报告本地启动结果、手动认证模式和目标文件路径。
+  路径只作显示信息，不能指定宿主机文件操作；此接口不能将会话标为 running，启动失败可结束 pending 会话。
+* ``POST /api/capture/stream``：只允许回环来源，使用独立 5 分钟凭证。成功返回 PCAP 二进制流，
+  不使用 PTY；请求上限 4 KiB，不允许重定向凭证到其他目标。
+
+三种单次凭证均由服务端生成，绑定同一抓包会话，不可互换。会话最多 8 个，结束历史最多保留
+最近 50 项，所有凭证在重启后失效；数据流不写入实验文件。只有验证 PCAP 文件头后才进入
+running，stderr 单独保存有界日志。数据块最大 64 KiB，按客户端读取速度提供背压。
+停止、流断开、目标变化和后端生命周期结束时终止进程组；清理实验同步关闭其抓包会话。
+
+``clients/capture/launcher.py`` 注册后的入口接收完整 ``route-ovs://capture`` 链接；``route-ovs://configure?server=...`` 只打开本地连接设置。
+本地配置按可信后端 origin 隔离，URL 只携带启动凭证；SSH 目标由用户本地配置确定。
+通过 tshark 检测实际接口名及偏好前缀（Windows 的 ``sshdump.exe`` 可对应 ``sshdump_exe``），
+复用 Wireshark Profile，以进程参数覆盖捕获命令，不读取/转存 Profile 密码。
+仅接受图形程序 Wireshark；检查指定 Profile、检测启动提前退出，并在 Windows 尝试前置窗口。
+每会话创建唯一输出目录，使用 ``-w``、``-o capture.pcap_ng:TRUE`` 和 ``-S`` 指定本机文件及实时显示；
+通过一次性回报接口通知 Web 路径和认证模式。启动器持续排空子进程 stderr 并等待 GUI 退出，
+避免提前关闭 stderr 管道；日志有界且隐藏凭证，不记录完整启动 URI。
+``remote_relay.py`` 由固定代码通过 SSH 执行，普通 SSH 用户访问宿主机回环流接口并转发 stdout；
+stdin EOF/SIGHUP/SIGTERM 结束转发。后台 root 权限不需要授予 SSH 用户。
+
+Windows 使用 PowerShell Forms 配置和当前用户协议注册；Linux 使用 Tk/终端配置及 desktop entry。
+可在 Windows 通过 PyInstaller 构建独立 exe，具体命令见 ``clients/capture/README.md``。
+下载 API 使用固定文件清单打包，存在 ``clients/capture/dist/route-ovs-capture.exe`` 时附带独立版；
+发布源码之外还需保留 ``clients/capture``，不能只复制 Python 和前端目录。
+
+``stores/captures.ts`` / ``CaptureManager.vue`` 管理端点选择、BPF、启动 URI、环境提示及状态轮询。
+切换实验忽略过期响应，并回收迟到的创建结果；关闭窗口保持后台会话。原生协议被浏览器拦截时
+使用“准备抓包 → 点击链接打开本机程序”两步流程，避免异步 location 跳转丢失用户点击上下文。
+界面不将程序启动当作抓包成功；展示手动认证步骤、启动结果及可复制的本机目标路径。
 
 构建与发布
 ----------------------------------------
@@ -173,3 +282,53 @@ Docker 终端测试。浏览器终端测试可先运行 ``tests/serve_terminal_f
 
 需预先启动指定调试端口的 Chromium。该测试验证键盘输入、FRR 配置、多标签、
 实时输出、Ctrl+C、拖动尺寸同步、放大、重连和关闭连接。
+
+``tests/test_configs.py`` 验证共享目录、备份、显式启动配置替换、旧容器导出、
+部分失败和权限/归属边界；``web/tests/configs.test.ts`` 验证保存后保留终端、
+更新草稿及拒绝过期响应。真实 FRR/veth 测试需要 Linux root::
+
+  sudo env ROUTE_OVS_CONFIG_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_config_docker.py' -v
+
+浏览器完整流程测试使用独立临时数据目录，不修改现有实验::
+
+  sudo .venv/bin/python tests/serve_config_fixture.py --port 8102
+  node tests/check_configs.cjs http://127.0.0.1:9343 \
+    'http://127.0.0.1:8102/#token=config-browser-check' /tmp/config-check
+
+需先启动指定调试端口的 Chromium。完成后停止 fixture 服务，会清理它创建的设备和文件。
+
+``tests/test_images.py`` 覆盖清单持久化、导入/删除同步、引用保护、路径边界及上传 API。
+真实镜像测试使用随机标签、临时文件和本机临时仓库，不推送到外部仓库；
+需要可访问 Docker，且本机已存在 ``registry:2``::
+
+  ROUTE_OVS_IMAGE_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_images_docker.py' -v
+
+浏览器测试使用 ``tests/serve_image_fixture.py --large-library --metadata /tmp/image-check/fixture.json``，
+它只向测试目录注入 200 张模拟设备卡片，并为真实导入准备隔离归档。
+将生成的 ``fixture.json`` 及其 ``archive`` 指向的文件（命名为 ``image.tar.xz``）放入浏览器
+测试输出目录，启动 Chromium 调试端口后执行::
+
+  node tests/check_images.cjs http://127.0.0.1:9344 \
+    'http://127.0.0.1:8104/#token=image-browser-check' /tmp/image-check
+
+验证长设备列表、搜索分类、固定底栏、归档和 URL 导入、Dockerfile 构建、设置、删除及刷新恢复。
+停止 fixture 后清理其专属镜像及临时文件，不操作现有实验。
+
+抓包验证
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``test_capture.py`` 覆盖凭证过期/重放、归属与两端接口核对、PCAP 头、错误过滤器、停止/断线、
+回环限制、下载认证以及本地启动器输入边界；前端 ``captures.test.ts`` 覆盖链接内容和异步状态隔离。
+真实 veth 抓包测试在 root/Linux 环境显式运行::
+
+  sudo env ROUTE_OVS_CAPTURE_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_capture_docker.py' -v
+
+它创建两个独立 Linux 容器，分别抓取两端 ICMP 请求/回复，验证 BPF 和进程回收。
+普通用户转发验证可先以 root 启动独立 ``serve_capture_fixture.py --metadata /tmp/capture-check/fixture.json``
+（需先创建 metadata 的父目录），再以普通用户运行 ``check_capture_relay.py --metadata ... --output ...``。
+后者不要求 sudo；测试产生 ping 的步骤需要 Docker 权限，产品转发程序本身不需要。
+
+``check_capture_ssh.py`` 使用真实本机 tshark/sshdump 和指定的现有 Profile，通过 SSH 抓取同一
+隔离 fixture 的流量，命令参数见文件头。``serve_capture_ui.cjs`` + ``check_capture_ui.cjs`` 是
+独立的 UI 模拟验证，仅模拟运行状态和抓包状态，不接触 Docker 或 SSH；真实桌面协议唤起仍需
+在目标 Windows/Linux 浏览器与 Wireshark 版本下验证。

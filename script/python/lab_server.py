@@ -4,6 +4,8 @@ import argparse
 import asyncio
 from contextlib import asynccontextmanager
 import hmac
+import ipaddress
+import io
 import json
 import logging
 import os
@@ -11,12 +13,13 @@ from pathlib import Path
 import secrets
 import sys
 import threading
+import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
     from fastapi import FastAPI, Request, WebSocket
     from starlette.concurrency import run_in_threadpool
-    from starlette.responses import JSONResponse, Response
+    from starlette.responses import JSONResponse, Response, StreamingResponse
     import uvicorn
 except ImportError:
     sys.exit("缺少后端依赖。请运行 python3 -m venv .venv，然后用 "
@@ -25,6 +28,8 @@ except ImportError:
 
 from lab_core import CATALOG, LabError, LabManager
 from lab_terminal import TerminalService
+from lab_images import ImageService, MAX_UPLOAD
+from lab_capture import CaptureService
 
 ROOT = Path(__file__).resolve().parents[2]
 log = logging.getLogger(__name__)
@@ -55,18 +60,70 @@ def join_jobs():
             thread.join()
 
 
-def create_app(manager, token, web_dir=None, terminals=None):
+def create_app(manager, token, web_dir=None, terminals=None, images=None, captures=None, capture_port=8090):
     web_dir = Path(web_dir or ROOT / "web" / "dist").resolve()
     terminals = terminals or TerminalService(manager)
+    images = images or ImageService(manager)
+    captures = captures or CaptureService(manager, port=capture_port)
 
     @asynccontextmanager
     async def lifespan(app):
         yield
+        await captures.close_lab()
         await terminals.close_lab()
         await asyncio.to_thread(join_jobs)
+        await asyncio.to_thread(images.wait)
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.terminals = terminals
+    app.state.images = images
+    app.state.captures = captures
+
+    async def capture_payload(request, full=False):
+        if not same_origin(request) or request.headers.get("content-type", "").split(";")[0] != "application/json":
+            raise LabError("抓包连接需要同源 JSON 请求")
+        data = bytearray()
+        async for chunk in request.stream():
+            data.extend(chunk)
+            if len(data) > 4096:
+                raise LabError("抓包连接请求过大")
+        try:
+            payload = json.loads(data)
+            if not isinstance(payload, dict):
+                raise ValueError()
+            return payload if full else payload.get("ticket")
+        except (ValueError, UnicodeError):
+            raise LabError("抓包连接 JSON 无效")
+
+    @app.post("/api/capture/claim")
+    async def claim_capture(request: Request):
+        # A native launcher redeems this narrow, one-use ticket, never the Web token.
+        try:
+            ticket = await capture_payload(request)
+            return respond(200, await run_in_threadpool(captures.claim, ticket))
+        except LabError as exc:
+            return respond(400, {"error": str(exc)})
+
+    @app.post("/api/capture/client-report")
+    async def report_capture_client(request: Request):
+        try:
+            payload = await capture_payload(request, full=True)
+            return respond(200, await run_in_threadpool(captures.client_report, payload))
+        except LabError as exc:
+            return respond(400, {"error": str(exc)})
+
+    @app.post("/api/capture/stream")
+    async def stream_capture(request: Request):
+        try:
+            peer = ipaddress.ip_address(request.client.host) if request.client else None
+            if not peer or not (peer.is_loopback or (getattr(peer, "ipv4_mapped", None) and peer.ipv4_mapped.is_loopback)):
+                return respond(403, {"error": "抓包数据只允许宿主机回环连接，请通过 SSH 转发"})
+            ticket = await capture_payload(request)
+            session = await captures.open(ticket)
+            return StreamingResponse(session.stream(), media_type="application/vnd.tcpdump.pcap",
+                                     headers={**HEADERS, "X-Accel-Buffering": "no"})
+        except (LabError, ValueError, asyncio.TimeoutError) as exc:
+            return respond(400, {"error": str(exc) or "抓包启动超时"})
 
     @app.websocket("/api/terminal")
     async def terminal(websocket: WebSocket):
@@ -96,16 +153,52 @@ def create_app(manager, token, web_dir=None, terminals=None):
                 return respond(404, {"error": "未找到"})
             return respond(200, candidate.read_bytes(), types[candidate.suffix])
         if method == "GET" and path == "/api/bootstrap":
-            return respond(200, {"catalog": CATALOG, "environment": manager.environment(),
+            images.snapshot(refresh=True)
+            return respond(200, {"catalog": images.catalog(), "environment": manager.environment(),
                                  "labs": manager.list_labs(),
                                  "example": json.loads((ROOT / "examples" / "basic-lab.json").read_text(encoding="utf-8"))})
         if method == "GET" and path == "/api/labs":
             return respond(200, manager.list_labs())
         if method == "GET" and path == "/api/environment":
             return respond(200, manager.environment())
+        if method == "GET" and path == "/api/capture/capabilities":
+            return respond(200, captures.capabilities())
+        if method == "GET" and path == "/api/capture/client":
+            output = io.BytesIO()
+            folder = ROOT / "clients" / "capture"
+            with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for name in ("launcher.py", "remote_relay.py", "configure.ps1", "install.ps1", "install.sh", "README.md"):
+                    archive.write(folder / name, name)
+                if (folder / "dist" / "route-ovs-capture.exe").is_file():
+                    archive.write(folder / "dist" / "route-ovs-capture.exe", "route-ovs-capture.exe")
+            return Response(output.getvalue(), media_type="application/zip", headers={**HEADERS, "Content-Disposition": 'attachment; filename="route-ovs-capture-client.zip"'})
+        if method == "GET" and path == "/api/catalog":
+            return respond(200, images.catalog())
+        if path == "/api/images":
+            if method == "GET":
+                return respond(200, images.snapshot())
+        if path == "/api/images/refresh" and method == "POST":
+            return respond(200, images.snapshot(refresh=True))
+        if path == "/api/images/jobs" and method == "POST":
+            return respond(202, images.start(payload))
+        if path == "/api/images/uploads" and method == "POST":
+            return respond(201, images.create_upload(payload))
         segments = path.strip("/").split("/")
+        if len(segments) == 3 and segments[:2] == ["api", "images"]:
+            if method == "PUT":
+                return respond(200, images.update(segments[2], payload))
+            if method == "DELETE":
+                return respond(202, images.start({"mode": "delete", "id": segments[2]}))
+        if len(segments) == 4 and segments[:3] == ["api", "images", "uploads"] and method == "DELETE":
+            images.discard_upload(segments[3])
+            return respond(200, {"ok": True})
         if len(segments) >= 3 and segments[:2] == ["api", "labs"]:
             lab_id = segments[2]
+            if len(segments) == 4 and segments[3] == "captures":
+                if method == "GET":
+                    return respond(200, captures.list(lab_id))
+                if method == "POST":
+                    return respond(201, captures.issue(lab_id, payload))
             if len(segments) == 3:
                 if method == "GET":
                     return respond(200, manager.status(lab_id))
@@ -118,12 +211,16 @@ def create_app(manager, token, web_dir=None, terminals=None):
                     return respond(200, {"ok": True})
             if len(segments) == 4 and method == "POST":
                 action = segments[3]
+                if action == "configs":
+                    return respond(200, manager.save_configs(lab_id, payload.get("node")))
                 if action in ("deploy", "destroy"):
                     return respond(202, manager.start_job(lab_id, action))
                 if action == "exec":
                     return respond(200, manager.command(lab_id, payload.get("node"), payload.get("command")))
                 if action == "terminals":
                     return respond(201, terminals.issue(lab_id, payload.get("node"), payload.get("mode", "default")))
+            if method == "GET" and len(segments) in (4, 5) and segments[3] == "configs":
+                return respond(200, manager.configs(lab_id, segments[4] if len(segments) == 5 else None))
         return respond(404, {"error": "未知 API"})
 
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
@@ -137,6 +234,29 @@ def create_app(manager, token, web_dir=None, terminals=None):
                     return respond(401, {"error": "请输入服务启动时显示的访问令牌"})
                 if not same_origin(request):
                     return respond(403, {"error": "不接受跨站请求"})
+                segments = path.strip("/").split("/")
+                if request.method == "PUT" and len(segments) == 4 and segments[:3] == ["api", "images", "uploads"]:
+                    if request.headers.get("content-type", "").split(";")[0] != "application/octet-stream":
+                        raise LabError("文件上传需要 application/octet-stream")
+                    upload_id = segments[3]
+                    info = await run_in_threadpool(images.begin_upload, upload_id)
+                    stream, complete, size = None, False, 0
+                    try:
+                        stream = await run_in_threadpool((images.upload_path(upload_id) / "data").open, "xb")
+                        async for chunk in request.stream():
+                            size += len(chunk)
+                            if size > info["size"] or size > images.max_upload:
+                                raise LabError("上传数据超过声明的文件大小")
+                            await run_in_threadpool(stream.write, chunk)
+                        await run_in_threadpool(stream.close)
+                        result = await run_in_threadpool(images.finish_upload, upload_id, size)
+                        complete = True
+                        return respond(200, result)
+                    finally:
+                        if stream and not stream.closed:
+                            await run_in_threadpool(stream.close)
+                        if not complete:
+                            await run_in_threadpool(images.discard_upload, upload_id, True)
                 if request.method in ("POST", "PUT"):
                     if request.headers.get("content-type", "").split(";")[0] != "application/json":
                         raise LabError("请求需要 application/json")
@@ -151,9 +271,13 @@ def create_app(manager, token, web_dir=None, terminals=None):
                             raise ValueError()
                     except (ValueError, UnicodeError):
                         raise LabError("JSON 无效")
-            result = await run_in_threadpool(dispatch, request.method, path, payload)
             segments = path.strip("/").split("/")
+            if request.method == "DELETE" and len(segments) == 5 and segments[:2] == ["api", "labs"] and segments[3] == "captures":
+                await captures.close_lab(segments[2], segments[4])
+                return respond(200, {"ok": True})
+            result = await run_in_threadpool(dispatch, request.method, path, payload)
             if result.status_code == 202 and segments[-1] == "destroy":
+                await captures.close_lab(segments[2])
                 await terminals.close_lab(segments[2])
             return result
         except LabError as exc:
@@ -194,11 +318,15 @@ def main():
     parser.add_argument("--web-dir", type=Path, default=ROOT / "web" / "dist")
     parser.add_argument("--preview", action="store_true", help="仅编辑和保存拓扑")
     parser.add_argument("--docker-socket", default="/var/run/docker.sock")
+    parser.add_argument("--max-image-upload-gib", type=int, default=MAX_UPLOAD // (1024 ** 3))
     args = parser.parse_args()
+    if args.max_image_upload_gib < 1:
+        parser.error("--max-image-upload-gib 必须大于 0")
     token = os.environ.get("ROUTE_OVS_TOKEN") or secrets.token_urlsafe(24)
     lock = acquire_lock(args.data_dir)
     try:
         manager = LabManager(args.data_dir, preview=args.preview, docker_socket=args.docker_socket)
+        images = ImageService(manager, max_upload=args.max_image_upload_gib * 1024 ** 3)
         shown_host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
         print("Route OVS 工作台: http://{}:{}/#token={}".format(shown_host, args.port, token), flush=True)
         print("数据目录: " + str(manager.directory), flush=True)
@@ -207,11 +335,13 @@ def main():
         if args.preview:
             print("设计模式：部署和设备终端已禁用。", flush=True)
         # One process owns the deployment lock, jobs, tickets and terminal sessions.
-        uvicorn.run(create_app(manager, token, args.web_dir), host=args.host, port=args.port,
+        uvicorn.run(create_app(manager, token, args.web_dir, images=images, capture_port=args.port), host=args.host, port=args.port,
                     ws="websockets-sansio", ws_max_size=65536, ws_max_queue=16,
                     timeout_graceful_shutdown=8, proxy_headers=False)
     finally:
         join_jobs()
+        if "images" in locals():
+            images.wait()
         lock.close()
 
 

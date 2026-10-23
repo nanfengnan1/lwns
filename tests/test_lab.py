@@ -4,7 +4,9 @@ FakeHost models ownership, container restarts and namespace-local interfaces.
 These tests do NOT replace the Linux/Docker integration procedure in the guide.
 """
 import copy
+import base64
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -33,6 +35,10 @@ class FakeHost:
         self.fail_link = False
         self.fail_remove = False
         self.missing_image = False
+        self.running_configs = {}
+        self.daemons = "bgpd=yes\nospfd=yes\nospf6d=yes\n"
+        self.live_daemons = "zebra bgpd ospfd ospf6d staticd mgmtd"
+        self.save_error = False
 
     def __call__(self, argv, **kwargs):
         self.calls.append((argv, kwargs))
@@ -43,6 +49,8 @@ class FakeHost:
                 if self.missing_image:
                     raise LabError("No such image")
                 output = "[]"
+            elif args[0] == "run":
+                output = f"{os.getuid()}\n{os.getgid()}\n" + base64.b64encode(self.daemons.encode()).decode() + "\n\n\n"
             elif args[0] == "create":
                 name = args[args.index("--name") + 1]
                 if any(item["Name"] == "/" + name for item in self.containers.values()):
@@ -52,6 +60,13 @@ class FakeHost:
                 labels = dict(args[index + 1].split("=", 1) for index, value in enumerate(args) if value == "--label")
                 self.containers[cid] = {"Id": cid, "Name": "/" + name, "Config": {"Labels": labels},
                                         "HostConfig": {"NetworkMode": "none"}, "State": {"Running": False, "Pid": 1000 + self.counter}}
+                mounts = []
+                for index, value in enumerate(args):
+                    if value == "--mount":
+                        fields = dict(pair.split("=", 1) for pair in args[index + 1].split(","))
+                        mounts.append({"Type": fields["type"], "Source": fields["src"], "Destination": fields["dst"], "RW": True})
+                self.containers[cid]["Mounts"] = mounts
+                self.running_configs[cid] = "!\n"
                 self.interfaces[cid] = {"lo": {"ifname": "lo", "ifindex": 1, "flags": ["UP"]}}
                 output = cid
             elif args[0] == "start":
@@ -77,6 +92,30 @@ class FakeHost:
                             del interfaces[name]
             elif args[0] == "exec":
                 output = "command output"
+                index = next((i for i, arg in enumerate(args) if arg in self.containers), None)
+                if index is not None:
+                    cid, command = args[index], args[index + 1:]
+                    mounts = self.containers[cid].get("Mounts", [])
+                    folder = Path(mounts[0]["Source"]) if mounts else None
+                    if command == ["cat", "/etc/frr/daemons"]:
+                        output = self.daemons
+                    elif command == ["vtysh", "-c", "show daemons"]:
+                        output = self.live_daemons
+                    elif command[:2] == ["sh", "-c"] and "daemon_list" in command[-1]:
+                        output = "mgmtd zebra staticd bgpd ospfd ospf6d"
+                    elif command == ["vtysh", "-c", "show running-config"]:
+                        output = self.running_configs[cid]
+                    elif command == ["vtysh", "-b"] and folder:
+                        self.running_configs[cid] = (folder / "frr.conf").read_text()
+                    elif command == ["vtysh", "-w"]:
+                        if self.save_error:
+                            raise LabError("simulated save error")
+                        if folder:
+                            (folder / "frr.conf").write_text(self.running_configs[cid])
+                        output = "Configuration saved"
+                    elif command[:2] == ["sh", "-c"] and "config-read" in command:
+                        output = {"frr.conf": self.running_configs[cid], "daemons": self.daemons,
+                                  "vtysh.conf": "service integrated-vtysh-config\n"}[command[-1].split("/")[-1]]
             elif args[0] == "info":
                 output = "linux"
             elif args[:2] == ["image", "ls"]:
@@ -113,7 +152,7 @@ class FakeHost:
                     interface["flags"] = ["UP"]
                 if "master" in args:
                     interface["master"] = args[-1]
-            elif args[:2] == ["addr", "add"] or args[0] in ("-4", "-6"):
+            elif args[:2] in (["addr", "add"], ["addr", "replace"]) or args[0] in ("-4", "-6"):
                 pass
             else:
                 raise AssertionError("Unexpected namespace command: " + repr(args))

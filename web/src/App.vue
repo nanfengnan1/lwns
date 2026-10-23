@@ -10,6 +10,8 @@ import TopologyCanvas from "./components/TopologyCanvas.vue";
 import DeviceInspector from "./components/DeviceInspector.vue";
 import WorkbenchPanels from "./components/WorkbenchPanels.vue";
 import WorkbenchDialogs from "./components/WorkbenchDialogs.vue";
+import ImageManager from "./components/ImageManager.vue";
+import CaptureManager from "./components/CaptureManager.vue";
 import polarBear from "./assets/polar-bear.svg";
 
 const lab = useLabStore(),
@@ -22,7 +24,9 @@ function keydown(event: KeyboardEvent) {
       "input,textarea,select,dialog,.device-terminal,#console",
     ) ||
     ui.accessOpen ||
-    ui.infoOpen
+    ui.infoOpen ||
+    ui.imagesOpen ||
+    ui.captureOpen
   )
     return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -113,4 +117,6 @@ onBeforeUnmount(() => {
     <DeviceInspector />
   </main>
   <WorkbenchDialogs />
+  <ImageManager />
+  <CaptureManager />
 </template>

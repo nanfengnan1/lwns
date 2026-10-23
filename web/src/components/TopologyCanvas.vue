@@ -18,7 +18,7 @@ import {
   resizeNodeBounds,
 } from "../domain/topology";
 import type { ResizeHandle } from "../domain/topology";
-import type { Device, DeviceKind, Point } from "../types/lab";
+import type { Device, Point } from "../types/lab";
 import TopologyNode from "./TopologyNode.vue";
 
 const lab = useLabStore(),
@@ -197,11 +197,11 @@ function dragOver(event: DragEvent) {
 }
 function drop(event: DragEvent) {
   const kind = event.dataTransfer?.getData("text/plain");
-  if (kind && ["router", "switch", "host"].includes(kind))
-    editor.addNode(
-      kind as DeviceKind,
-      screenPoint(event.clientX, event.clientY),
-    );
+  if (
+    kind &&
+    lab.catalog.some((item) => item.id === kind || item.kind === kind)
+  )
+    editor.addNode(kind, screenPoint(event.clientX, event.clientY));
 }
 watch(
   () => editor.fitRevision,

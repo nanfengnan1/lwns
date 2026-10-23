@@ -1,18 +1,33 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useLabStore } from "../stores/lab";
 import { useEditorStore } from "../stores/editor";
 import { useUiStore } from "../stores/ui";
 import { parseTopology } from "../domain/topology";
-import type { DeviceKind } from "../types/lab";
 import DeviceIcon from "./DeviceIcon.vue";
 import DeleteLabButton from "./DeleteLabButton.vue";
+import { filterDevices } from "../domain/library";
 
 const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore();
 const fileInput = ref<HTMLInputElement>();
-function drag(event: DragEvent, kind: DeviceKind) {
+const search = ref(""),
+  category = ref("all"),
+  visibleCount = ref(60);
+const categories = [
+  { id: "all", title: "全部" },
+  { id: "router", title: "路由" },
+  { id: "switch", title: "交换" },
+  { id: "host", title: "主机" },
+];
+const filtered = computed(() =>
+  filterDevices(lab.catalog, search.value, category.value),
+);
+watch([search, category], () => {
+  visibleCount.value = 60;
+});
+function drag(event: DragEvent, kind: string) {
   if (event.dataTransfer) {
     event.dataTransfer.setData("text/plain", kind);
     event.dataTransfer.effectAllowed = "copy";
@@ -91,37 +106,82 @@ async function importTopology(event: Event) {
     </div>
     <div class="library-heading">
       <h2>设备库</h2>
-      <span>拖入画布</span>
+      <span>{{ filtered.length }} / {{ lab.catalog.length }}</span>
     </div>
-    <div id="device-library">
+    <div class="library-search">
+      <span aria-hidden="true">⌕</span>
+      <input
+        id="device-search"
+        v-model="search"
+        type="search"
+        placeholder="搜索设备或镜像"
+        aria-label="搜索设备或镜像"
+      />
+    </div>
+    <div class="library-categories" aria-label="设备分类">
       <button
-        v-for="item in lab.catalog"
-        :key="item.kind"
+        v-for="item in categories"
+        :key="item.id"
+        :data-category="item.id"
+        :aria-pressed="category === item.id"
+        :class="{ active: category === item.id }"
+        @click="category = item.id"
+      >
+        {{ item.title }}
+      </button>
+    </div>
+    <div
+      id="device-library"
+      class="device-library-scroll"
+      tabindex="0"
+      aria-label="设备列表，可拖入画布"
+    >
+      <button
+        v-for="item in filtered.slice(0, visibleCount)"
+        :key="item.id || item.kind"
         class="device-card"
         :class="item.kind"
         :data-kind="item.kind"
+        :data-template="item.id || item.kind"
+        :title="item.title + '\n' + item.image + '\n点击添加，或拖入画布'"
         :draggable="!lab.locked"
         :disabled="lab.locked"
-        @dragstart="drag($event, item.kind)"
-        @click="ui.run(() => editor.addNode(item.kind))"
+        @dragstart="drag($event, item.id || item.kind)"
+        @click="ui.run(() => editor.addNode(item.id || item.kind))"
       >
         <span class="device-icon"><DeviceIcon :kind="item.kind" /></span>
-        <span
+        <span class="device-card-label"
           ><b>{{ item.title }}</b
-          ><small>{{
-            item.kind === "router"
-              ? "FRRouting · L3"
-              : item.kind === "switch"
-                ? "Linux bridge · L2"
-                : "Linux · 测试终端"
-          }}</small></span
+          ><small>{{ item.image }}</small></span
         ><span class="drag-dots">⠿</span>
       </button>
+      <div v-if="!filtered.length" class="library-empty">
+        没有匹配的设备<br /><button
+          @click="
+            search = '';
+            category = 'all';
+          "
+        >
+          清除筛选
+        </button>
+      </div>
+      <button
+        v-if="filtered.length > visibleCount"
+        class="library-more"
+        @click="visibleCount += 60"
+      >
+        显示更多（剩余 {{ filtered.length - visibleCount }}）
+      </button>
     </div>
-    <div class="library-note">
-      每台设备运行在独立容器中。<br />选择端口，用 veth 连接设备。
-    </div>
+    <div class="library-note">点击添加或拖入画布 · veth 连接端口</div>
     <div class="library-bottom">
+      <button
+        id="manage-images"
+        class="manage-images-button"
+        @click="ui.imagesOpen = true"
+      >
+        <span>▣</span><b>镜像管理</b><span>导入 / 构建 ↗</span>
+      </button>
       <button
         id="example"
         class="example-button"

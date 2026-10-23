@@ -1,0 +1,57 @@
+/* Chromium UI check against serve_capture_ui.cjs, simulated captures only. */
+const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
+const [debugURL, appURL, output] = process.argv.slice(2);
+(async()=>{
+  fs.mkdirSync(output,{recursive:true});
+  const target=await(await fetch(debugURL+'/json/new?about:blank',{method:'PUT'})).json();
+  const ws=new WebSocket(target.webSocketDebuggerUrl); await new Promise(r=>ws.addEventListener('open',r,{once:true}));
+  let id=0;const pending=new Map(),errors=[];
+  const send=(method,params={})=>new Promise((resolve,reject)=>{const key=++id,timer=setTimeout(()=>{pending.delete(key);reject(Error('Timeout '+method))},15000);pending.set(key,{resolve,reject,timer});ws.send(JSON.stringify({id:key,method,params}));});
+  ws.addEventListener('message',event=>{const m=JSON.parse(event.data),p=pending.get(m.id);if(p){clearTimeout(p.timer);pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result)}if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.text);});
+  const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result.value;};
+  const wait=async expression=>{for(let i=0;i<150;i++){if(await evaluate(expression))return;await new Promise(r=>setTimeout(r,100));}throw Error('Timed out '+expression);};
+  const click=async selector=>{const p=await evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing element');e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`);for(const type of ['mousePressed','mouseReleased'])await send('Input.dispatchMouseEvent',{type,...p,button:'left',clickCount:1});};
+  const input=(selector,value)=>evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.value=${JSON.stringify(value)};e.dispatchEvent(new Event(e.tagName==='SELECT'?'change':'input',{bubbles:true}));})()`);
+  const shot=async name=>{const r=await send('Page.captureScreenshot');fs.writeFileSync(path.join(output,name),Buffer.from(r.data,'base64'));};
+  await send('Page.enable');await send('Runtime.enable');await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+  try{
+    await send('Page.navigate',{url:appURL});
+    await wait('document.querySelectorAll(".topology-node").length === 2');
+    await evaluate('document.querySelector(".edge .hit-area").dispatchEvent(new PointerEvent("pointerdown",{bubbles:true,button:0}))');
+    await wait('!!document.querySelector("#capture-link")');await click('#capture-link');
+    await wait('document.querySelector("#capture-manager").open && !document.querySelector("#start-capture").disabled');
+    await input('#capture-side','b');await input('#capture-filter','arp or icmp');await input('#capture-snaplen','128');
+    await click('#start-capture');
+    await wait('!!document.querySelector("#capture-launch-link")');
+    const url=new URL(await evaluate('document.querySelector("#capture-launch-link").href'));
+    assert.equal(url.protocol,'route-ovs:');assert.equal(url.searchParams.get('server'),new URL(appURL).origin);
+    assert.deepEqual([...url.searchParams.keys()],['server','ticket']);
+    assert.equal(await evaluate('document.querySelector(".capture-state").textContent'),'等待打开本机程序');
+    assert.equal(await evaluate('document.querySelector("#start-capture").disabled'),true);
+    assert.equal(await evaluate('document.querySelector(".capture-session b").textContent'),'PC2 / eth0');
+    const alignment=await evaluate('(()=>{const a=document.querySelector("#capture-side").getBoundingClientRect(),b=document.querySelector("#capture-snaplen").getBoundingClientRect(),c=document.querySelector("#capture-filter").getBoundingClientRect();return{aligned:Math.abs(a.y-b.y)<1,equalHeight:a.height===b.height&&b.height===c.height,noHorizontalOverflow:document.querySelector(".capture-body").scrollWidth<=document.querySelector(".capture-body").clientWidth}})()');
+    assert.deepEqual(alignment,{aligned:true,equalHeight:true,noHorizontalOverflow:true});
+    await shot('capture-prepared.png');
+    await evaluate('fetch("/test/ready",{method:"POST"})');
+    await wait('document.querySelector(".capture-state").textContent === "等待在 Wireshark 中认证"');
+    assert.ok(await evaluate('document.querySelector(".capture-next").textContent.includes("Authentication")'));
+    assert.ok(await evaluate('document.querySelector(".capture-output code").textContent.endsWith("capture.pcapng")'));
+    assert.equal(await evaluate('!!document.querySelector("#capture-launch-link")'),false);
+    await shot('capture-password.png');
+    await evaluate('fetch("/test/connect",{method:"POST"})');
+    await wait('document.querySelector(".capture-state").textContent === "抓包中"');
+    await shot('capture-running.png');
+    await click('.capture-setup summary');
+    assert.ok(await evaluate('document.querySelector(".capture-setup").textContent.includes("密码")'));
+    await click('#close-captures');await wait('!document.querySelector("#capture-manager").open');await click('#capture-link');
+    await wait('document.querySelector("#capture-manager").open && document.querySelector(".capture-state").textContent === "抓包中"');
+    await click('.stop-capture');await wait('document.querySelector(".capture-state").textContent === "已停止"');
+    assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),2);
+    await shot('capture-stopped.png');assert.deepEqual(errors,[]);
+    await send('Emulation.setDeviceMetricsOverride',{width:1024,height:768,deviceScaleFactor:1,mobile:false});
+    assert.equal(await evaluate('document.querySelector(".capture-body").scrollWidth <= document.querySelector(".capture-body").clientWidth'),true);
+    await shot('capture-compact.png');
+    const result={passed:true,checks:['deployed link capture button','endpoint and BPF selection','short-lived launch URI without credentials','waiting is not running','server-confirmed running state','close/reopen preserves capture','stop session','local SSH setup instructions','canvas preserved']};
+    fs.writeFileSync(path.join(output,'ui-results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+  }catch(e){await shot('capture-ui-failure.png').catch(()=>{});throw e}finally{ws.close()}
+})().catch(error=>{console.error(error);process.exitCode=1});

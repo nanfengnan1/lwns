@@ -8,6 +8,7 @@ export interface Point {
   y: number;
 }
 export interface Device extends Point {
+  template?: string;
   width?: number;
   height?: number;
   id: string;
@@ -62,6 +63,13 @@ export interface Environment {
   images: string[];
 }
 export interface DeviceTemplate {
+  id?: string;
+  template_id?: string;
+  source?: string;
+  version?: number;
+  adapter?: string;
+  console?: string;
+  capabilities?: { save_config: boolean; startup_config: boolean };
   kind: DeviceKind;
   title: string;
   image: string;
@@ -77,5 +85,24 @@ export interface Bootstrap {
 export interface CommandResult {
   code: number;
   output: string;
+}
+export interface DeviceConfigStatus {
+  supported: boolean;
+  persisted?: boolean;
+  saved_at?: string | null;
+  modified_at?: number | null;
+  path?: string;
+  content?: string;
+  shared?: boolean;
+}
+export interface ConfigSaveResult {
+  results: {
+    node: string;
+    ok: boolean;
+    status?: DeviceConfigStatus;
+    config?: string;
+    error?: string;
+  }[];
+  runtime: Runtime;
 }
 export type Selection = { type: "node" | "link"; id: string } | null;

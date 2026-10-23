@@ -6,6 +6,9 @@ export const useUiStore = defineStore("ui", () => {
   const notification = ref<{ message: string; error: boolean } | null>(null);
   const accessOpen = ref(false),
     infoOpen = ref(false);
+  const imagesOpen = ref(false);
+  const captureOpen = ref(false),
+    captureLink = ref("");
   const panel = ref<"logs" | "console">("logs"),
     collapsed = ref(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -39,6 +42,9 @@ export const useUiStore = defineStore("ui", () => {
     notification,
     accessOpen,
     infoOpen,
+    imagesOpen,
+    captureOpen,
+    captureLink,
     panel,
     collapsed,
     notify,

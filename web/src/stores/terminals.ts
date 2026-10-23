@@ -31,7 +31,11 @@ export const useTerminalsStore = defineStore("terminals", () => {
       lab.operation
     )
       throw Error("请先部署设备，运行就绪后再打开终端");
-    if (node.kind !== "router") mode = "shell";
+    if (
+      (lab.getTemplate(node)?.console ||
+        (node.kind === "router" ? "vtysh" : "sh")) === "sh"
+    )
+      mode = "shell";
     const id = `${lab.topology.id}:${deployment}:${nodeId}:${mode}`;
     if (!tabs.value.some((tab) => tab.id === id)) {
       if (tabs.value.length >= 12)

@@ -145,7 +145,7 @@ class TerminalSession:
             tty.setraw(slave)
             os.set_blocking(self.master, False)
             self.resize(cols, rows)
-            program = ["vtysh"] if self.target["program"] == "vtysh" else ["sh", "-i"]
+            program = self.target["argv"]
             argv = self.manager.docker + ["exec", "-it", "-u", "0", "-e", "TERM=xterm-256color",
                                           "-e", "ROUTE_OVS_TERMINAL=" + self.marker,
                                           self.target["container"]] + program

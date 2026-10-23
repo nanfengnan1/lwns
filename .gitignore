@@ -6,3 +6,6 @@ web/node_modules/
 web/dist/
 web/.env.local
 web/.env.*.local
+clients/capture/dist/
+clients/capture/build/
+clients/capture/*.spec

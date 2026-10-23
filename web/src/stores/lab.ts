@@ -13,7 +13,8 @@ import type { NodeBounds } from "../domain/topology";
 import type {
   Bootstrap,
   Device,
-  DeviceKind,
+  ConfigSaveResult,
+  DeviceConfigStatus,
   DeviceTemplate,
   Endpoint,
   Environment,
@@ -33,6 +34,7 @@ export const useLabStore = defineStore("lab", () => {
     links: [],
   });
   const runtime = ref<Runtime | null>(null);
+  const configs = ref<Record<string, DeviceConfigStatus>>({});
   const catalog = ref<DeviceTemplate[]>([]),
     labs = ref<LabSummary[]>([]);
   const environment = ref<Environment>({
@@ -80,6 +82,75 @@ export const useLabStore = defineStore("lab", () => {
   function getNode(id: string) {
     return topology.value.nodes.find((node) => node.id === id);
   }
+  function getTemplate(node: Device) {
+    return catalog.value.find((item) =>
+      node.template ? item.id === node.template : item.kind === node.kind,
+    );
+  }
+  function supportsConfig(node: Device) {
+    return (
+      getTemplate(node)?.capabilities?.save_config ??
+      (!node.template && node.kind === "router")
+    );
+  }
+  function canSaveConfig(nodeId?: string) {
+    return (
+      saved.value &&
+      !!runtime.value?.deployment &&
+      environment.value.ready &&
+      !busy.value &&
+      !operation.value &&
+      !["deploying", "destroying"].includes(phase.value) &&
+      topology.value.nodes.some(
+        (node) =>
+          (!nodeId || node.id === nodeId) &&
+          supportsConfig(node) &&
+          runtime.value?.nodes[node.id],
+      )
+    );
+  }
+  async function loadConfig(nodeId: string) {
+    if (!saved.value || operation.value) return;
+    const version = documentVersion.value,
+      revision = runtimeRevision;
+    const result = await api<Record<string, DeviceConfigStatus>>(
+      `/api/labs/${topology.value.id}/configs/${nodeId}`,
+    );
+    if (
+      version === documentVersion.value &&
+      revision === runtimeRevision &&
+      !operation.value
+    )
+      Object.assign(configs.value, result);
+  }
+  async function saveConfigs(nodeId?: string) {
+    if (!canSaveConfig(nodeId))
+      throw Error("请先部署支持保存配置的设备，等待操作完成");
+    operation.value = "save-config";
+    runtimeRevision++;
+    try {
+      const result = await api<ConfigSaveResult>(
+        `/api/labs/${topology.value.id}/configs`,
+        "POST",
+        nodeId ? { node: nodeId } : {},
+      );
+      runtime.value = result.runtime;
+      for (const item of result.results) {
+        if (!item.ok) continue;
+        if (item.status) configs.value[item.node] = item.status;
+        const node = getNode(item.node);
+        if (node && item.config !== undefined) node.config = item.config;
+      }
+      const failures = result.results.filter((item) => !item.ok);
+      if (failures.length)
+        throw Error(
+          `部分配置未保存：${failures.map((item) => `${getNode(item.node)?.name || item.node}：${item.error}`).join("；")}`,
+        );
+      return result.results;
+    } finally {
+      operation.value = "";
+    }
+  }
   function getConnection(node: string, port: string) {
     return connection(topology.value, node, port);
   }
@@ -91,6 +162,7 @@ export const useLabStore = defineStore("lab", () => {
   }
   function adopt(value: Topology, record?: LabRecord) {
     topology.value = parseTopology(value);
+    configs.value = {};
     runtimeRevision++;
     runtime.value = record?.runtime ?? null;
     saved.value = !!record;
@@ -144,11 +216,14 @@ export const useLabStore = defineStore("lab", () => {
     topology.value.name = name || "未命名实验";
     dirty.value = true;
   }
-  function addNode(kind: DeviceKind, point: Point) {
+  function addNode(templateId: string, point: Point) {
     assertEditable();
     if (topology.value.nodes.length >= 64) throw Error("最多支持 64 台设备");
-    const template = catalog.value.find((item) => item.kind === kind);
+    const template = catalog.value.find(
+      (item) => item.id === templateId || item.kind === templateId,
+    );
     if (!template) throw Error("未知设备类型");
+    const kind = template.kind;
     const prefix = kind === "router" ? "r" : kind === "switch" ? "sw" : "pc";
     let i = 1;
     while (getNode(prefix + i)) i++;
@@ -161,6 +236,7 @@ export const useLabStore = defineStore("lab", () => {
       id: prefix + i,
       name: template.prefix + number,
       kind,
+      ...(template.id ? { template: template.template_id || template.id } : {}),
       image: template.image,
       x: Math.round(point.x / 12) * 12,
       y: Math.round(point.y / 12) * 12,
@@ -291,6 +367,9 @@ export const useLabStore = defineStore("lab", () => {
     environment.value = await api<Environment>("/api/environment");
     await refresh();
   }
+  async function refreshCatalog() {
+    catalog.value = await api<DeviceTemplate[]>("/api/catalog");
+  }
   async function deleteLab() {
     assertEditable();
     runtimeRevision++;
@@ -318,6 +397,7 @@ export const useLabStore = defineStore("lab", () => {
   return {
     topology,
     runtime,
+    configs,
     catalog,
     labs,
     environment,
@@ -334,6 +414,11 @@ export const useLabStore = defineStore("lab", () => {
     canDestroy,
     assertEditable,
     getNode,
+    getTemplate,
+    supportsConfig,
+    canSaveConfig,
+    loadConfig,
+    saveConfigs,
     getConnection,
     peerLabel,
     adopt,
@@ -353,6 +438,7 @@ export const useLabStore = defineStore("lab", () => {
     startJob,
     refresh,
     refreshEnvironment,
+    refreshCatalog,
     deleteLab,
   };
 });

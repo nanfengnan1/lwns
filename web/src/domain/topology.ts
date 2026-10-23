@@ -149,6 +149,9 @@ export function parseTopology(value: unknown): Topology {
       id,
       name,
       kind: node.kind as DeviceKind,
+      ...(node.template === undefined
+        ? {}
+        : { template: identifier(node.template) }),
       image,
       x: node.x,
       y: node.y,

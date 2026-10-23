@@ -1,18 +1,34 @@
+.. _workbench:
+
 Docker 图形组网工作台
 ========================================
 
 工作台在浏览器中编辑网络拓扑，在 Docker 所在的 Linux 宿主机部署设备。
 第一版提供 FRR 路由器、以太网交换机、VPCS 三种模板，所有设备都是容器，
 每根网线是一对 veth，两个端点分别位于对应容器的网络命名空间。
+“VPCS”卡片在当前工作台中对应 Linux 主机模板，终端使用 sh 和 Linux 命令。
+
+.. contents:: 本页导航
+   :local:
+   :depth: 2
+
+.. toctree::
+   :maxdepth: 1
+   :caption: 专项操作
+
+   workbench-capture
+   workbench-data
 
 支持范围
 ----------------------------------------
 
 * 添加、拖动、删除设备，选择端口连接和删除网线。
+* 搜索和分类设备库；从 Web 拉取、导入、构建、管理 Docker 镜像。
 * 配置本机 Docker 镜像、端口数量、IPv4/IPv6 CIDR 地址和默认网关。
-* 为 FRR 配置可重复部署的启动配置。
+* FRR 配置目录读写共享，Web 保存运行配置，清理后重新部署恢复。
 * 保存实验，导入和导出版本为 ``1`` 的 JSON 拓扑。
 * 部署整个实验、查看日志与实际运行状态、打开交互式设备终端、清理设备。
+* 点击已部署 veth 连线，通过本地 Wireshark/sshdump 抓取任一端点流量。
 
 底部“部署日志 / 设备终端”面板上方的分隔条可上下拖动，调整面板高度。
 双击分隔条恢复默认高度，聚焦后也可使用上下方向键微调。
@@ -26,6 +42,8 @@ Docker 图形组网工作台
 现有 ``frr_init.sh``、VPCS 管理工具和只读 SVG 拓扑采集器仍独立使用。
 工作台不接管这些工具已经创建的容器。
 
+.. _workbench-start:
+
 环境与启动
 ----------------------------------------
 
@@ -36,10 +54,15 @@ util-linux 的 ``nsenter``。真实部署需要宿主机 root 权限。
 画布由 Vue 组件渲染 SVG。
 
 首次从源码使用，需要先构建前端。构建环境使用 Node.js 22.12+ 的 22.x 或 24+，
-建议 Node.js 24 LTS。在项目根目录执行::
+建议 Node.js 24 LTS，安装来源和支持状态见 `Node.js 官方发布说明 <https://nodejs.org/en/about/previous-releases>`_。
+在项目根目录执行::
 
-  npm --prefix web ci
+  node --version
+  npm --prefix web ci --include=optional
   npm --prefix web run build
+
+Windows 与 Linux 不要共用同一份 ``node_modules`` 或 Python 虚拟环境。
+通过 Samba 共享源码时，建议各平台使用独立检出目录；遇到原生依赖错误见 :doc:`troubleshooting`。
 
 生成的 ``web/dist/`` 包含运行时需要的全部前端资源，不使用外部 CDN。
 可在 Windows 或构建机上构建，再把整个 ``web/dist/`` 复制到 Linux 项目中。
@@ -47,7 +70,7 @@ util-linux 的 ``nsenter``。真实部署需要宿主机 root 权限。
 源码仓库不包含构建产物；缺少 ``web/dist/index.html`` 时，后端首页会提示构建命令。
 也可通过 ``--web-dir /实际路径/dist`` 指定构建产物目录。
 
-先加载项目提供的镜像并核对标签::
+可以先在命令行加载项目提供的镜像，也可以启动后从 Web“镜像管理”导入::
 
   docker load -i devices/route/frr.tar.xz
   docker load -i devices/vpcs/vpcs.tar.xz
@@ -55,7 +78,7 @@ util-linux 的 ``nsenter``。真实部署需要宿主机 root 权限。
 
 默认模板使用 ``alpine/frr:latest`` 和 ``alpine/vpcs:latest``。
 归档内的标签若不同，在右侧设备属性中选用实际标签。
-部署会预先检查所有镜像；不会自动下载镜像。
+部署会预先检查所有镜像；缺少时先到“镜像管理”导入，再部署实验。
 
 安装依赖并启动后端::
 
@@ -74,6 +97,8 @@ util-linux 的 ``nsenter``。真实部署需要宿主机 root 权限。
 不指定 ``--host`` 时，只监听 ``127.0.0.1``。服务面向单用户可信实验网络；
 持有令牌的人可以创建和清理实验容器、在这些容器内执行命令。
 可通过环境变量 ``ROUTE_OVS_TOKEN`` 设置固定令牌，否则每次启动随机生成。
+使用 sudo 时需确认该变量传入后端，例如使用 ``sudo --preserve-env=ROUTE_OVS_TOKEN``。
+登录失败时使用当前后端进程打印的令牌，不要沿用上次随机生成的值。
 
 仅编辑和预览
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -82,15 +107,96 @@ util-linux 的 ``nsenter``。真实部署需要宿主机 root 权限。
 
   .venv/bin/python script/python/lab_server.py --preview --port 8090
 
-Windows 使用 ``py -m venv .venv`` 创建独立环境，再使用
-``.venv\Scripts\python.exe`` 安装同一依赖文件并启动。
+Windows 在项目根目录的 PowerShell 中执行::
+
+  py -m venv .venv
+  .\.venv\Scripts\python.exe -m pip install -r script/python/requirements.txt
+  .\.venv\Scripts\python.exe script/python/lab_server.py --preview --port 8090
+
 不要将 Linux 的 ``.venv`` 直接用于 Windows。
-设计模式仍支持编辑和保存拓扑，但部署、清理和设备终端不会执行。
+设计模式仍支持编辑和保存拓扑，但部署、清理、设备终端及镜像导入/删除不会执行。
 Windows 浏览器能管理 Linux 后端，不代表 Windows 后端能创建 Linux veth。
 
 后端默认固定访问 ``/var/run/docker.sock``，不会跟随 Docker 的远程 context。
 若本机 socket 不在默认路径，可使用 ``--docker-socket /实际路径/docker.sock``。
 后端与 Docker daemon 必须位于同一 Linux 宿主机，才能正确操作容器 PID 对应的 netns。
+
+日常启动与更新
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+前端已经构建、依赖已经安装时，日常使用只需启动 Linux 后端::
+
+  sudo .venv/bin/python script/python/lab_server.py --host 0.0.0.0 --port 8090
+
+日常访问 8090 不需要同时运行 Vite。修改前端源码时才需要开发服务器；例如在 Linux 宿主机上
+用 ``npm --prefix web run dev -- --host 0.0.0.0`` 供其他电脑访问 5173。
+Vite 仍需配合后端；后端处于设计模式时，访问 5173 也不能创建设备。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - 改动内容
+     - 生效方式
+   * - 拓扑、设备属性、FRR 配置
+     - 不需要重新构建前端。按需保存配置、清理设备、修改拓扑并重新部署。
+   * - 前端 Vue/TypeScript/CSS
+     - 正常运行模式重新执行 npm --prefix web run build，再刷新浏览器；Vite 开发模式通常热更新。
+   * - 后端 Python
+     - 不需要编译；重启后端。依赖文件变化时先更新虚拟环境依赖。
+   * - Windows/Linux 抓包启动器
+     - 重新下载本地包并运行安装脚本；只更新 Web 或后端不会替换客户端程序。
+   * - 用户文档
+     - 重新构建文档即可，不影响实验设备。
+
+更新全部源码时，从项目根目录按需执行::
+
+  npm --prefix web ci --include=optional
+  npm --prefix web run build
+  .venv/bin/python -m pip install -r script/python/requirements.txt
+
+完成后停止旧后端，在相同数据目录启动新后端，并刷新浏览器；不要同时启动两个后端访问同一数据目录。
+后端退出会结束终端和抓包会话，但保留已部署容器，仍需保存重要运行配置。
+更新后的抓包功能若缺少状态或路径回报，请同时更新本地启动器。
+
+设备库与镜像管理
+----------------------------------------
+
+左侧设备库采用紧凑列表，可按设备名称或镜像地址搜索，并筛选路由、交换、主机。
+列表独立滚动，每次显示 60 项，点击“显示更多”继续加载；底部“镜像管理”、示例、
+导入导出入口保持可见。搜索作用于整个设备库，不限于当前已显示的 60 项。
+
+点击“镜像管理”，选择一种来源：
+
+* **镜像地址**：输入 ``alpine/frr:latest``、``registry.example.com/router:1.0`` 等仓库地址，
+  后端执行拉取；也支持指向 Docker 镜像归档的 HTTP(S) 下载 URL。
+* **镜像归档**：上传 ``docker save`` 生成的 ``.tar``、``.tar.xz`` 等文件，后端执行加载，
+  保留归档中的镜像标签。它不是 ``docker export`` 导出的容器根文件系统。
+* **Dockerfile**：选择文件或填写内容，并指定生成的镜像标签。使用 ``COPY`` / ``ADD``
+  时可附带 tar、tar.gz、tar.xz 或 zip 构建上下文；所需文件须位于归档根目录。
+  上方 Dockerfile 覆盖上下文根目录的同名文件。上下文不接受链接和特殊文件。
+
+可填写显示名称，并选择兼容的 FRR、Linux/VPCS 主机或 Linux bridge 模板，加载后自动
+加入设备库；选择“仅管理镜像”则只管理镜像。已有镜像也可通过“设置”修改名称和绑定模板。
+模板绑定复用现有设备启动、终端和配置能力，不会自动将任意厂商或 VPP 镜像变为受支持设备。
+
+操作以后台任务执行，下方显示日志、成功或失败结果。任务提交后关闭窗口仍继续执行；
+上传过程中可以取消。单文件默认上限 8 GiB，可用后端参数 ``--max-image-upload-gib 16``
+调整；Dockerfile 上限 512 KiB，上下文解压上限 16 GiB / 100000 项。
+若使用反向代理，还需相应调整代理的上传限制。私有仓库使用后端运行账户的 Docker 登录凭据。
+镜像操作需要可访问的本机 Linux Docker daemon；设备部署仍需要 root、ip 和 nsenter。
+
+清单文件分为两层：
+
+* ``config/images.defaults.json`` 是源码中的初始默认清单。首次创建管理清单时读取，
+  不自动拉取镜像，也不会在重启时重新添加已经删除的管理记录。
+* ``.route-ovs-labs/images/registry.json`` 是运行时管理清单，记录镜像地址、名称、模板、
+  来源、镜像 ID 和是否存在，导入及删除成功后自动原子写入。使用 ``--data-dir`` 时随之改变。
+
+“刷新清单”还会发现命令行加载的镜像，外部删除的镜像显示为“未加载”，可移除其记录。
+删除使用普通 ``docker image rm``，拒绝删除被已保存实验或任何现存容器使用的镜像。
+删除失败保留管理记录；删除成功同步移除记录及对应的自定义设备卡片。
+内置的三种基础模板仍保留，缺少镜像时需重新导入才能部署。删除标签不保证释放共享镜像层。
 
 完成一次实验
 ----------------------------------------
@@ -100,7 +206,8 @@ Windows 浏览器能管理 Linux 后端，不代表 Windows 后端能创建 Linu
 3. 点击“保存”，再点击“部署实验”。下方显示容器创建、连线和配置进度。
 4. 等待状态变为“运行中”；交换机的 STP 收敛可能还需要数秒。
 5. 双击 ``PC1``，打开“设备终端”，执行 ``ping 10.10.2.10``；按 Ctrl+C 停止。
-6. 实验结束后点击“清理设备”。容器和 veth 会移除，拓扑文件保留。
+6. FRR 终端配置完成后点击“保存设备配置”，确认成功后再点击“清理设备”。容器和 veth 会移除，拓扑和已保存配置保留。
+7. 再次点击“部署实验”，重新打开终端核对配置和连通性。需要抓包时按 :doc:`workbench-capture` 操作。
 
 示例关系为::
 
@@ -130,8 +237,14 @@ Windows 浏览器能管理 Linux 后端，不代表 Windows 后端能创建 Linu
 这个例子使用路由器的直连路由，不依赖 OSPF/BGP 邻居建立。
 完整示例文件为 ``examples/basic-lab.json``。
 
+.. _workbench-edit:
+
 编辑与连线
 ----------------------------------------
+
+左侧“我的实验”用于新建和切换实验。新建后可在顶部名称输入框修改实验显示名称，
+点击“保存”后写入后端；名称与内部实验 ID 不同，改名不会复制实验。
+有未保存修改时，切换实验或导入前先保存，或明确放弃当前草稿。
 
 拖动左侧设备卡片到画布，或点击卡片添加设备。
 拖动设备改变位置；滚轮缩放，拖动画布空白区域平移。
@@ -156,7 +269,7 @@ Windows 浏览器能管理 Linux 后端，不代表 Windows 后端能创建 Linu
 也可在未选中设备或网线时，从右侧实验属性中删除。
 确认删除未保存实验后，清空当前画布和属性草稿，回到“空白画布”；
 导入但未保存的草稿即使与已有实验 ID 相同，也不会删除已有实验文件。
-删除已保存实验会移除其文件及列表项。已部署实验需先清理设备，才能删除。
+删除已保存实验会移除其拓扑文件、设备配置目录、备份及列表项。已部署实验需先清理设备，才能删除。
 
 端口数量表示可用于接线的插槽。只有实际连接网线的端口才创建 veth 接口，
 因此不能给尚未连接的端口配置地址。交换机端口为二层端口，不配置 IP。
@@ -167,11 +280,12 @@ Windows 浏览器能管理 Linux 后端，不代表 Windows 后端能创建 Linu
 FRR 与设备终端
 ----------------------------------------
 
-路由器默认使用镜像的 ``/usr/lib/frr/docker-start`` 启动脚本，并启用
+路由器默认使用镜像的 ``/usr/lib/frr/docker-start`` 启动脚本，首次初始化时启用
 ``bgpd``、``ospfd``、``ospf6d``。Docker 参数开启容器内 IPv4/IPv6 转发。
 自定义镜像应兼容这些 FRR 路径；也可在“高级配置”中填写启动命令 JSON 数组。
 
-“FRR 启动配置”保存配置文件内容，部署完成接口和地址设置后通过 ``vtysh -f`` 加载。
+“FRR 启动配置”用于首次初始化共享目录中的 ``frr.conf``；部署完成网线和地址设置后
+校验配置并通过 ``vtysh -b`` 再次应用，保证接口配置恢复。
 例如根据实验拓扑填写::
 
   router ospf
@@ -192,10 +306,11 @@ FRR 与设备终端
   ip -br addr
   ip route
   ping -c 3 10.10.2.10
-  vtysh -c 'show ip route'
-  vtysh -c 'show ip ospf neighbor'
 
-终端使用 xterm.js、WebSocket 和 Docker PTY，实时显示输出，支持 Ctrl+C、
+如果进入的是 FRR 容器的 Linux Shell，可以运行 ``vtysh -c 'show ip route'`` 或
+``vtysh -c 'show ip ospf neighbor'``；普通 VPCS/Linux 主机和交换机镜像不保证带有 vtysh。
+
+终端实时显示输出，支持 Ctrl+C、
 Tab 补全、方向键历史和复制粘贴；补全与历史能力取决于镜像内程序。
 使用浏览器常规复制粘贴快捷键；Ctrl+C 用于中断前台程序。
 拖动面板或点击“放大”会同步调整容器终端行列数。
@@ -206,10 +321,71 @@ Tab 补全、方向键历史和复制粘贴；补全与历史能力取决于镜�
 刷新网页后建立新会话，不恢复原 shell 的目录、历史或正在执行的命令。
 网络断开后可点击“重连”；设备清理或重新部署会使旧会话失效。
 每个页面最多打开 12 个标签，后端最多同时接纳 32 个会话。
-原有 ``/exec`` 单次命令 API 保留兼容，仍有 15 秒等待上限。
 
-在容器里临时改动的配置不会自动写回拓扑 JSON。
-清理设备会删除这些临时改动；需要重建后保留的 FRR 配置应放进设备启动配置。
+连线抓包与本地 Wireshark
+----------------------------------------
+
+点击已部署网线 → “在 Wireshark 中抓包” → 选择端点/BPF → “准备抓包” → “打开本机 Wireshark”。
+密码认证无需私钥；未启用自动开始时，在 Wireshark 的 SSH 接口配置中输入密码并开始。
+
+新版默认将 ``capture.pcapng`` 保存到浏览器所在电脑的 ``~/route-ovs/captures`` 独立子目录，
+Windows 对应 ``%USERPROFILE%\route-ovs\captures``。Web 会话显示完整目标路径，可复制到本机使用。
+安装步骤、认证配置、状态含义和排障见 :doc:`workbench-capture`。
+
+.. _workbench-frr-config:
+
+FRR 配置保存与恢复
+----------------------------------------
+
+终端配置完成后，顶部“保存设备配置”保存当前实验所有支持的设备；右侧设备属性中
+的同名按钮只保存选中设备。此操作不会关闭终端，也不要求先清理设备。
+后端检查设备归属、读写挂载和已启用的 FRR 进程，备份旧文件，再执行 ``vtysh -w``。
+有协议进程未运行时拒绝保存，避免遗漏该协议的配置。多设备保存会逐台反馈结果。
+
+数据结构如下（使用 ``--data-dir`` 时以指定目录为根）::
+
+  .route-ovs-labs/
+    <实验ID>.json
+    devices/<实验ID>/<设备ID>/
+      config-meta.json
+      frr/                     # 读写挂载到容器 /etc/frr
+        frr.conf
+        daemons
+        vtysh.conf
+      backups/<时间-随机标识>/  # 保存或替换前的文件
+
+首次部署从本机镜像读取默认配置和 FRR 用户 UID/GID，初始化文件及写入权限。
+后续部署复用共享目录，不会重新覆盖 ``daemons`` 或已保存的配置。
+Web 保存还将 ``frr.conf`` 同步到拓扑 ``node.config``，因此导出 JSON 能带走这份 FRR
+启动配置。属性栏“查看磁盘配置”可查看保存内容、共享路径和文件更新时间。
+
+可按以下过程验证::
+
+  # 在 R1 的 Web vtysh 终端输入
+  configure terminal
+  interface lo
+   ip address 198.51.100.77/32
+  exit
+  router ospf
+   ospf router-id 203.0.113.77
+  end
+
+然后依次点击“保存设备配置”→“清理设备”→“部署实验”，重新打开终端运行
+``show running-config`` 和 ``show ip route``，应恢复 OSPF router-id 和 Loopback 地址。
+
+也可以在 FRR 终端执行 ``write memory``，共享文件会立即写入宿主机并在下次部署恢复；
+它不会自动同步拓扑 JSON，导出拓扑前应在设备仍运行时点击 Web 的 **保存设备配置**，
+而不是只点击拓扑“保存”。
+清理设备只保留已写入磁盘的配置，未保存的运行配置仍会丢失。
+旧版本部署的容器尚未共享目录时，Web 保存会先导出配置；清理并重新部署后启用挂载。
+
+清理后手动修改“FRR 启动配置”，下次部署会先备份再用修改后的文本替换磁盘配置。
+不要在设备运行中同时通过宿主机编辑文件和 Web 保存。迁移完整实验时应备份整个
+数据目录；JSON 导出不包含 ``daemons``、``vtysh.conf`` 和历史备份。
+配置按实验 ID 和设备 ID 定位，同 ID 表示同一设备；为新设备使用新的 ID。
+当前仍使用版本 1 JSON 项目文件，尚未生成 Compose。
+本阶段只保存 FRR 配置，主机/交换机 Shell 的临时配置不在保存范围内。
+各按钮的区别、JSON 导入同 ID 的行为以及离线备份恢复步骤见 :doc:`workbench-data`。
 
 保存、回滚和状态核对
 ----------------------------------------
@@ -227,43 +403,23 @@ Tab 补全、方向键历史和复制粘贴；补全与历史能力取决于镜�
 如果设备在外部重启、端口被关闭或网线丢失，状态会显示“需要检查”，
 不会仅凭保存过的拓扑宣称链路运行正常。
 
-验证范围
+使用后检查
 ----------------------------------------
 
-前端类型检查和行为测试::
+完成实验后可以按下面几项确认结果：
 
-  npm --prefix web run typecheck
-  npm --prefix web test
-  npm --prefix web run build
+1. 重新打开已保存实验，检查设备、位置和连线是否一致。
+2. 部署后在终端检查地址、路由和连通性；状态异常时先查看底部部署日志。
+3. FRR 保存后查看右侧“查看磁盘配置”，清理重建后核对配置恢复。
+4. 抓包结束后在本机用 Wireshark 打开保存文件，确认能读取预期报文。
+5. 清理设备后确认实验回到未部署状态；需要长期留存时按 :doc:`workbench-data` 备份。
 
-前端测试覆盖拓扑文件兼容性、连线约束、属性草稿提交、保存互斥、部署与清理状态、
-实验切换时的过期响应和 API 认证。开发模式与代码结构见 :doc:`../developer/workbench`。
+常见问题见 :doc:`troubleshooting`；开发模式、自动化测试和真实 Docker 集成测试见
+:doc:`../developer/workbench`。不需要为日常使用运行测试脚本。
 
-行为测试覆盖拓扑校验、重复端口、部署失败回滚、归属变化、外部重启、
-命令执行边界、HTTP 认证、设计模式与数据目录锁::
+尚未实现的功能
+----------------------------------------
 
-  .venv/bin/python -m pip install -r tests/requirements.txt
-  .venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
-
-真实 Docker 终端测试使用已有 FRR/VPCS 镜像，创建独立测试容器并在结束后清理::
-
-  ROUTE_OVS_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_terminal.py' -v
-
-该测试验证 FRR 连续配置、Shell 目录保留、实时 ping、Ctrl+C、行列数调整以及
-关闭会话后回收进程。它不创建 veth，不替代数据平面连通性验收。
-
-这些测试通过模拟 Docker/netns 验证控制逻辑，不代表实际数据平面已经验证。
-真实 Linux/Docker 验收应按本页示例完成跨交换机、跨子网 ping，检查
-``docker ps`` 和容器内 ``ip -d link``，最后确认清理后只剩原有容器。
-
-浏览器自动检查使用 Chromium DevTools 协议及 Node.js 22+，无需额外 npm 包。
-先用独立数据目录启动设计模式服务，再启动带 ``--remote-debugging-port=9338`` 的
-独立 Chromium 测试实例，运行::
-
-  node tests/check_workbench.cjs \
-    http://127.0.0.1:9338 \
-    'http://127.0.0.1:8090/#token=启动时显示的令牌' \
-    /tmp/route-ovs-browser-check
-
-该检查会创建、保存和删除测试实验，验证拖动、连线、端口冲突、导入导出、
-刷新后恢复和设计模式禁用部署，并输出界面截图。请使用独立数据目录。
+完整项目包保存/导入导出、项目新名称、VPP 手动端口发现与在线接线仍属于待办或讨论方案。
+现有“保存”和“导出 JSON”继续按当前拓扑机制工作；载入新 Docker 镜像不代表已经适配其 CLI、
+接口管理或配置恢复能力。当前不提供多用户权限体系、虚拟机设备和跨宿主机连线。

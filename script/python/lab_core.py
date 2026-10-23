@@ -17,21 +17,14 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 import uuid
+
+from lab_devices import CATALOG, LabError, adapter_for, device_root, template_for
 
 
 LABEL = "io.route-ovs.lab"
-CATALOG = [
-    {"kind": "router", "title": "FRR 路由器", "image": "alpine/frr:latest", "ports": 4, "prefix": "R"},
-    {"kind": "switch", "title": "以太网交换机", "image": "alpine/vpcs:latest", "ports": 8, "prefix": "SW"},
-    {"kind": "host", "title": "VPCS 终端", "image": "alpine/vpcs:latest", "ports": 1, "prefix": "PC"},
-]
+# Kept for compatibility with the standalone terminal test fixture.
 FRR_START = "sed -i 's/^bgpd=no/bgpd=yes/;s/^ospfd=no/ospfd=yes/;s/^ospf6d=no/ospf6d=yes/' /etc/frr/daemons && exec /usr/lib/frr/docker-start"
-
-
-class LabError(Exception):
-    pass
 
 
 def stamp():
@@ -78,6 +71,9 @@ def validate_topology(raw):
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./:@-]*", image):
             raise LabError("镜像名称不合法")
         node = {"id": nid, "name": name, "kind": kind, "image": image, "ports": []}
+        if "template" in raw_node:
+            node["template"] = identifier(raw_node["template"])
+        template = template_for(node)
         for axis in ("x", "y"):
             value = raw_node.get(axis, 0)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or abs(value) > 100000:
@@ -129,8 +125,8 @@ def validate_topology(raw):
             raise LabError("启动命令必须是字符串数组")
         node["command"] = command
         config = string(raw_node.get("config", ""), "FRR 配置", 32768, empty=True)
-        if config and kind != "router":
-            raise LabError("只有 FRR 路由器支持启动配置")
+        if config and not template["capabilities"]["startup_config"]:
+            raise LabError("该设备模板不支持启动配置")
         node["config"] = config
         by_id[nid] = node
         names.add(name)
@@ -200,6 +196,7 @@ class LabManager:
         self.docker = ["docker", "--host", "unix://" + docker_socket]
         self.lock = threading.RLock()
         self.busy = None
+        self.image_busy = False
 
     def path(self, lab_id):
         return self.directory / (identifier(lab_id) + ".json")
@@ -246,7 +243,51 @@ class LabManager:
             record = self.read(lab_id)
             if self.busy == lab_id or record["runtime"].get("deployment"):
                 raise LabError("请先清理设备，再删除实验文件")
+            configurations = device_root(self, lab_id)
+            if configurations.exists():
+                shutil.rmtree(configurations)
             self.path(lab_id).unlink()
+
+    def configs(self, lab_id, node_id=None):
+        with self.lock:
+            record = self.read(lab_id)
+            nodes = record["topology"]["nodes"]
+            if node_id is not None:
+                identifier(node_id)
+                nodes = [node for node in nodes if node["id"] == node_id]
+                if not nodes:
+                    raise LabError("设备不存在")
+            return {node["id"]: adapter_for(node).config_status(self, record, node) for node in nodes}
+
+    def save_configs(self, lab_id, node_id=None):
+        self.authorize()
+        with self.lock:
+            if self.busy is not None:
+                raise LabError("部署或清理任务进行中，请稍后保存配置")
+            record = self.read(lab_id)
+            if not record["runtime"].get("deployment"):
+                raise LabError("设备尚未部署")
+            nodes = record["topology"]["nodes"]
+            if node_id is not None:
+                identifier(node_id)
+                nodes = [node for node in nodes if node["id"] == node_id]
+                if not nodes:
+                    raise LabError("设备不存在")
+            else:
+                nodes = [node for node in nodes if template_for(node)["capabilities"]["save_config"]]
+            if not nodes:
+                raise LabError("当前实验没有支持保存配置的设备")
+            results = []
+            for node in nodes:
+                try:
+                    status = adapter_for(node).save_config(self, record, node)
+                    self.note(record, "已保存设备配置: " + node["name"])
+                    results.append({"node": node["id"], "ok": True, "status": status, "config": node["config"]})
+                except (LabError, OSError, ValueError) as exc:
+                    message = str(exc)
+                    self.note(record, "保存设备配置失败 " + node["name"] + ": " + message)
+                    results.append({"node": node["id"], "ok": False, "error": message})
+            return {"results": results, "runtime": record["runtime"]}
 
     def run(self, *argv, **kwargs):
         return self.runner(list(argv), **kwargs).stdout.strip()
@@ -318,6 +359,8 @@ class LabManager:
             raise LabError("未知操作")
         self.authorize()
         with self.lock:
+            if action == "deploy" and self.image_busy:
+                raise LabError("镜像任务正在执行，请完成后再部署")
             if self.busy is not None:
                 raise LabError("另一个部署或清理任务正在执行，请稍后重试")
             record = self.read(lab_id)
@@ -365,16 +408,15 @@ class LabManager:
         self.note(record, "开始部署：所有设备使用独立网络命名空间，网线使用 veth")
         try:
             for node in topology["nodes"]:
+                adapter = adapter_for(node)
                 name = "rov-{}-{}".format(topology["id"], node["id"])
                 args = ["create", "--name", name, "--hostname", node["name"], "--network", "none",
                         "--label", LABEL + "=" + topology["id"],
                         "--label", LABEL + ".deployment=" + runtime["deployment"],
                         "--label", LABEL + ".node=" + node["id"],
                         "--cap-add", "NET_ADMIN", "--cap-add", "NET_RAW"]
-                if node["kind"] == "router":
-                    args += ["--cap-add", "SYS_ADMIN", "--sysctl", "net.ipv4.ip_forward=1",
-                             "--sysctl", "net.ipv6.conf.all.forwarding=1"]
-                command = node["command"] or (["/bin/sh", "-c", FRR_START] if node["kind"] == "router" else ["sleep", "infinity"])
+                args += adapter.prepare(self, record, node)
+                command = adapter.command(node)
                 cid = self.dock(*(args + [node["image"]] + command))
                 runtime["nodes"][node["id"]] = {"id": cid, "name": name, "pid": 0}
                 self.note(record, "创建设备 " + node["name"])
@@ -383,9 +425,7 @@ class LabManager:
                 runtime["nodes"][node["id"]]["pid"] = item["State"]["Pid"]
                 self.write(record)
                 self.ns(record, node["id"], "ip", "link", "set", "lo", "up")
-                if node["kind"] == "switch":
-                    self.ns(record, node["id"], "ip", "link", "add", "br0", "type", "bridge", "stp_state", "1", "forward_delay", "2")
-                    self.ns(record, node["id"], "ip", "link", "set", "br0", "up")
+                adapter.started(self, record, node)
             for link in topology["links"]:
                 a, b = link["a"], link["b"]
                 ca, cb = self.live(record, a["node"]), self.live(record, b["node"])
@@ -406,22 +446,11 @@ class LabManager:
                     if node["kind"] == "switch":
                         self.ns(record, node["id"], "ip", "link", "set", "dev", port["name"], "master", "br0")
                     elif port["address"]:
-                        self.ns(record, node["id"], "ip", "addr", "add", port["address"], "dev", port["name"])
+                        self.ns(record, node["id"], "ip", "addr", "replace", port["address"], "dev", port["name"])
                 if node["gateway"]:
                     family = "-6" if ":" in node["gateway"] else "-4"
-                    self.ns(record, node["id"], "ip", family, "route", "add", "default", "via", node["gateway"])
-                if node["config"]:
-                    cid = runtime["nodes"][node["id"]]["id"]
-                    for attempt in range(20):
-                        try:
-                            self.dock("exec", cid, "vtysh", "-c", "show version")
-                            break
-                        except LabError:
-                            if attempt == 19:
-                                raise
-                            time.sleep(0.5)
-                    self.dock("exec", "-i", "-u", "0", cid, "sh", "-c", "cat > /tmp/route-ovs-startup.conf", input_text=node["config"] + "\n")
-                    self.dock("exec", "-u", "0", cid, "vtysh", "-f", "/tmp/route-ovs-startup.conf")
+                    self.ns(record, node["id"], "ip", family, "route", "replace", "default", "via", node["gateway"])
+                adapter_for(node).linked(self, record, node)
             for node in topology["nodes"]:
                 self.live(record, node["id"])
             runtime["phase"] = "running"
@@ -517,7 +546,42 @@ class LabManager:
             node = next(n for n in record["topology"]["nodes"] if n["id"] == node_id)
             target = {"lab": lab_id, "node": node_id, "mode": mode,
                       "deployment": record["runtime"].get("deployment"), "container": item["Id"],
-                      "program": "vtysh" if node["kind"] == "router" and mode == "default" else "sh"}
+                      "program": template_for(node)["console"] if mode == "default" else "sh",
+                      "argv": template_for(node)["console_command"] if mode == "default" else ["sh", "-i"]}
             if expected is not None and target != expected:
                 raise LabError("设备部署已变化，请重新连接终端")
+            return target
+
+    def capture_target(self, lab_id, link_id, side="a", expected=None):
+        """Resolve only a current, owned veth endpoint, checking both peers."""
+        identifier(link_id)
+        if side not in ("a", "b"):
+            raise LabError("请选择连线端点 a 或 b")
+        with self.lock:
+            record = self.read(lab_id)
+            if self.busy == lab_id or record["runtime"]["phase"] in ("deploying", "destroying"):
+                raise LabError("设备正在部署或清理，请稍后抓包")
+            link = next((link for link in record["topology"]["links"] if link["id"] == link_id), None)
+            if not link or not record["runtime"].get("deployment"):
+                raise LabError("连线不存在或尚未部署")
+            ends, containers = {}, {}
+            for key in ("a", "b"):
+                end = link[key]
+                if end["node"] not in record["runtime"].get("nodes", {}):
+                    raise LabError("连线设备尚未部署")
+                item = containers[key] = self.live(record, end["node"])
+                rows = json.loads(self.run("nsenter", "-t", str(item["State"]["Pid"]), "-n", "--", "ip", "-j", "-d", "link", "show"))
+                actual = ends[key] = next((row for row in rows if row["ifname"] == end["port"]), {})
+                alias = "route-ovs:" + record["runtime"]["deployment"] + ":" + link_id + ":" + key
+                if actual.get("ifalias") != alias or actual.get("linkinfo", {}).get("info_kind") != "veth":
+                    raise LabError("抓包接口已失效或归属变化：" + end["port"])
+            if ends["a"].get("link_index") != ends["b"].get("ifindex") or ends["b"].get("link_index") != ends["a"].get("ifindex"):
+                raise LabError("抓包连线的 veth 对端已变化")
+            end, item = link[side], containers[side]
+            node = next(n for n in record["topology"]["nodes"] if n["id"] == end["node"])
+            target = {"lab": lab_id, "link": link_id, "side": side, "node": end["node"], "port": end["port"],
+                      "label": node["name"] + " / " + end["port"], "deployment": record["runtime"]["deployment"],
+                      "container": item["Id"], "pid": item["State"]["Pid"], "ifindex": ends[side]["ifindex"]}
+            if expected is not None and target != expected:
+                raise LabError("抓包目标已变化，请重新选择连线")
             return target

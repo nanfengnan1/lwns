@@ -15,7 +15,7 @@ async function remove() {
   if (empty.value) return;
   const saved = lab.saved;
   const message = saved
-    ? `删除实验“${lab.topology.name}”？实验文件和当前未保存的修改都会删除。`
+    ? `删除实验“${lab.topology.name}”？实验文件、设备配置目录和备份，以及当前未保存的修改都会删除。`
     : `删除未保存的实验“${lab.topology.name}”？当前画布和未保存的设备设置将被丢弃。`;
   if (!window.confirm(message)) return;
   await lab.deleteLab();
@@ -34,7 +34,7 @@ async function remove() {
         : empty
           ? '当前画布为空'
           : lab.saved
-            ? '删除当前实验文件及未保存修改'
+            ? '删除当前实验文件、设备配置和备份'
             : '删除当前未保存的实验'
     "
     aria-label="删除当前实验"

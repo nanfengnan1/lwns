@@ -1,13 +1,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import { defineStore } from "pinia";
 import { assertConnection, clone, resizedPorts } from "../domain/topology";
-import type {
-  Device,
-  DeviceKind,
-  Endpoint,
-  Point,
-  Selection,
-} from "../types/lab";
+import type { Device, Endpoint, Point, Selection } from "../types/lab";
 import { useLabStore } from "./lab";
 
 export const useEditorStore = defineStore("editor", () => {
@@ -84,7 +78,7 @@ export const useEditorStore = defineStore("editor", () => {
     mode.value = value;
     pending.value = null;
   }
-  function addNode(kind: DeviceKind, point?: Point) {
+  function addNode(templateId: string, point?: Point) {
     commitDraft();
     const position = point || {
       x:
@@ -92,7 +86,7 @@ export const useEditorStore = defineStore("editor", () => {
         (lab.topology.nodes.length % 3) * 20,
       y: (viewport.height / 2 - view.y) / view.scale,
     };
-    const added = lab.addNode(kind, position);
+    const added = lab.addNode(templateId, position);
     selected.value = { type: "node", id: added.id };
     resetDraft();
   }
@@ -135,6 +129,12 @@ export const useEditorStore = defineStore("editor", () => {
   watch(node, () => {
     if (!draftDirty.value) resetDraft();
   });
+  watch(
+    () => node.value?.config,
+    () => {
+      if (!draftDirty.value) resetDraft();
+    },
+  );
   return {
     selected,
     pending,
