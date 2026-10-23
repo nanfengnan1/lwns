@@ -117,7 +117,32 @@ Node.js 20.20.2 满足当前 Vite 的运行要求，因此缺少 Linux 原生包
 ``annotationBox`` 负责多行排版、自动换行和适应画布边界。
 设备与注释拖动均使用 Pointer Events 和捕获，结束、失焦或卸载时释放。
 ``AnnotationInspector.vue`` 复用 editor 草稿提交机制，应用时保留最新拖动坐标；
-无效草稿阻止切换和保存。注释、对齐和连线优化均遵循已有部署编辑锁。
+无效草稿阻止切换和保存。新增/删除注释及编辑内容仍遵循部署编辑锁。
+
+画布滚动与运行中布局
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``TopologyCanvas.vue`` 使用 ``overflow: scroll`` 容器提供原生横纵滚动条，
+占位区域取 ``scrollBounds`` 算出的内容边界（含负坐标）及额外平移空间；
+实际 SVG 通过 ``position: sticky`` 保持视口大小，避免创建巨大的 SVG。
+``scrollLeft`` / ``scrollTop`` 与 ``editor.view`` 双向同步，适应画布、缩放和拖动沿用同一坐标系。
+ResizeObserver 读取容器 clientWidth/clientHeight，扣除滚动条后再计算可见范围。
+滚轮处理支持像素、行、页三种 deltaMode；普通滚轮平移，Shift 横移，Ctrl 围绕鼠标缩放，
+取消画布区域的默认滚轮行为以避免页面缩放。视口变化不触发拓扑脏标记，不写入 JSON。
+
+``layoutLocked`` 在忙碌、部署/清理阶段或本地操作期间禁用位置修改；
+``locked`` 额外检查部署记录，继续禁止拓扑增删及属性编辑。
+运行中可移动设备和已有注释、自动对齐及切换连线优化；顶部“保存布局”使用::
+
+  POST /api/labs/{id}/layout
+  {"nodes":[{"id":"r1","x":100,"y":200}],"annotations":[],"optimizeLinks":true}
+
+nodes/annotations 必须完整覆盖已保存项目的各自 ID 集合；只接受 id/x/y，
+禁止未知、重复、缺失 ID 和额外配置字段，坐标必须有限且范围 ±100000。
+``LabManager.save_layout`` 持锁读取最新记录并原子写回，不执行宿主机命令，
+保留非布局字段及 runtime。接口沿用 Bearer/Origin 检查，忙碌或部署/清理阶段拒绝写入。
+普通 PUT 仍拒绝修改已部署拓扑。前端仅在成功后清除脏标记，不替换设备对象、
+运行状态或 documentVersion，因此保留选中设备和终端连接；保存失败保留草稿。
 
 设备由 ``lab_devices.py`` 的模板目录和适配器注册表描述；兼容现有模板的新镜像可直接在
 Web 镜像管理中绑定，新增设备行为才需要注册模板及适配器。
@@ -329,6 +354,16 @@ Linux、Docker 和 root 权限要求保持不变，使用方法见 :doc:`../user
 ``web/tests/layout.test.ts`` / ``web/tests/project-name.test.ts`` 覆盖布局存储和命名状态；
 ``tests/test_lab.py`` 覆盖改名 API 的认证、参数、持久化及部署保护。
 Docker/netns 行为测试使用模拟执行器，真实容器连通性仍须在 Linux 主机验收。
+
+``tests/check_canvas_navigation.cjs`` 验证实际原生滚动条拖动、普通/Shift/Ctrl 滚轮、
+鼠标缩放锚点、运行中移动与对齐、保存后刷新恢复以及增删改限制。
+使用独立 FakeHost 服务提供运行中的实验，不操作 Docker；先启动专用 Chromium 调试端口，然后运行::
+
+  .venv/bin/python tests/serve_canvas_fixture.py --port 8106
+  node tests/check_canvas_navigation.cjs http://127.0.0.1:9350 \
+    'http://127.0.0.1:8106/#token=canvas-scroll-check' /tmp/canvas-navigation-results
+
+每次验证使用新启动的 fixture 服务；停止服务即回收临时数据目录。
 
 ``tests/test_terminal.py`` 包含凭证、Origin 和归属检查，并提供显式启用的真实
 Docker 终端测试。浏览器终端测试可先运行 ``tests/serve_terminal_fixture.py``，

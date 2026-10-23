@@ -6,6 +6,7 @@ import { api, ApiError, setToken } from "../src/api/client";
 import { clone, parseTopology } from "../src/domain/topology";
 import { useLabStore } from "../src/stores/lab";
 import { useEditorStore } from "../src/stores/editor";
+import { useTerminalsStore } from "../src/stores/terminals";
 import type { LabRecord, Runtime } from "../src/types/lab";
 
 const idle = (): Runtime => ({ phase: "idle", nodes: {}, logs: [] });
@@ -54,15 +55,84 @@ describe("editor and deployment state", () => {
     editor.commitDraft();
     expect(lab.getNode("r1")).toMatchObject({ name: "ROUTER", x: 600, y: 400 });
   });
-  it("does not allow topology mutations during a deployment", () => {
+  it("allows layout changes while deployed but keeps topology settings locked", () => {
     const { lab } = setup();
     lab.runtime = { ...idle(), phase: "running", deployment: "owned" };
     expect(() => lab.remove("node", "r1")).toThrow();
-    expect(() => lab.moveNode("r1", { x: 1, y: 1 })).toThrow();
-    expect(() => lab.autoAlign("grid")).toThrow();
+    expect(() => lab.moveNode("r1", { x: 1, y: 1 })).not.toThrow();
+    expect(() => lab.autoAlign("grid")).not.toThrow();
     expect(() => lab.addAnnotation({ x: 0, y: 0 })).toThrow();
-    expect(() => lab.setLinkOptimization(false)).toThrow();
+    expect(() => lab.setLinkOptimization(false)).not.toThrow();
+    expect(() =>
+      lab.updateNode({ ...lab.getNode("r1")!, name: "CHANGED" }),
+    ).toThrow();
+    expect(() =>
+      lab.connect({ node: "r1", port: "eth2" }, { node: "sw1", port: "eth2" }),
+    ).toThrow();
     expect(lab.canDeploy).toBe(false);
+  });
+  it("saves deployed layout without replacing devices, runtime, selection or terminal state", async () => {
+    const { lab, editor } = setup();
+    lab.saved = true;
+    lab.runtime = {
+      ...idle(),
+      phase: "running",
+      deployment: "owned",
+      nodes: { r1: { id: "container-r1", name: "R1", pid: 123 } },
+    };
+    lab.environment.ready = true;
+    const terminals = useTerminalsStore();
+    terminals.open("r1");
+    terminals.tabs[0].state = "connected";
+    const tab = terminals.tabs[0],
+      active = terminals.active;
+    editor.select({ type: "node", id: "r1" });
+    lab.moveNode("r1", { x: -300, y: 900 });
+    const runtime = lab.runtime,
+      node = lab.getNode("r1"),
+      version = lab.documentVersion;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(response({ id: lab.topology.id }));
+    vi.stubGlobal("fetch", fetchMock);
+    await lab.save();
+    await nextTick();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`/api/labs/${lab.topology.id}/layout`);
+    expect(init.method).toBe("POST");
+    const payload = JSON.parse(init.body);
+    expect(Object.keys(payload).sort()).toEqual([
+      "annotations",
+      "nodes",
+      "optimizeLinks",
+    ]);
+    expect(payload.nodes[0]).toEqual({ id: "r1", x: -300, y: 900 });
+    expect(lab.getNode("r1")).toBe(node);
+    expect(lab.runtime).toBe(runtime);
+    expect(lab.documentVersion).toBe(version);
+    expect(terminals.tabs).toHaveLength(1);
+    expect(terminals.tabs[0]).toBe(tab);
+    expect(terminals.tabs[0].state).toBe("connected");
+    expect(terminals.active).toBe(active);
+    expect(editor.selected).toEqual({ type: "node", id: "r1" });
+    expect(lab.dirty).toBe(false);
+    lab.moveNode("r1", { x: 0, y: 0 });
+    fetchMock.mockResolvedValueOnce(response({ error: "保存失败" }, 400));
+    await expect(lab.save()).rejects.toThrow("保存失败");
+    expect(lab.dirty).toBe(true);
+    expect(lab.operation).toBe("");
+  });
+  it("blocks layout changes and saving during deployment, cleanup and pending operations", async () => {
+    const { lab } = setup();
+    for (const phase of ["deploying", "destroying"] as const) {
+      lab.runtime = { ...idle(), phase, deployment: "owned" };
+      expect(() => lab.moveNode("r1", { x: 1, y: 2 })).toThrow();
+      expect(() => lab.autoAlign("grid")).toThrow();
+      await expect(lab.save()).rejects.toThrow();
+    }
+    lab.runtime = { ...idle(), phase: "running", deployment: "owned" };
+    lab.operation = "save-config";
+    expect(() => lab.setLinkOptimization(false)).toThrow();
   });
   it("clears transient selection and pending cable when changing documents", () => {
     const { lab, editor } = setup();

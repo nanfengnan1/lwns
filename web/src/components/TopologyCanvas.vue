@@ -16,6 +16,7 @@ import {
   nodeBox,
   portAnchors,
   routeLink,
+  scrollBounds,
 } from "../domain/canvas";
 import type { Point } from "../types/lab";
 import TopologyNode from "./TopologyNode.vue";
@@ -26,6 +27,7 @@ const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore();
 const canvas = ref<SVGSVGElement>();
+const scroller = ref<HTMLDivElement>();
 const layout = useLayoutStore();
 const transform = computed(
   () =>
@@ -37,6 +39,52 @@ const edges = computed(() =>
     routeLink(lab.topology, link, anchors.value),
   ),
 );
+const boxes = computed(() => [
+  ...lab.topology.nodes.map((node) => nodeBox(node)),
+  ...(lab.topology.annotations || []).map(annotationBox),
+]);
+const bounds = computed(() =>
+  scrollBounds(
+    boxes.value,
+    editor.viewport.width,
+    editor.viewport.height,
+    editor.view.scale,
+  ),
+);
+const surfaceSize = computed(() => ({
+  width: `${Math.ceil((bounds.value.right - bounds.value.left) * editor.view.scale)}px`,
+  height: `${Math.ceil((bounds.value.bottom - bounds.value.top) * editor.view.scale)}px`,
+}));
+function syncScroll() {
+  const el = scroller.value;
+  if (!el) return;
+  const left = -bounds.value.left * editor.view.scale,
+    top = -bounds.value.top * editor.view.scale;
+  const x = Math.max(
+    0,
+    Math.min(el.scrollWidth - el.clientWidth, left - editor.view.x),
+  );
+  const y = Math.max(
+    0,
+    Math.min(el.scrollHeight - el.clientHeight, top - editor.view.y),
+  );
+  if (Math.abs(el.scrollLeft - x) > 0.5) el.scrollLeft = x;
+  if (Math.abs(el.scrollTop - y) > 0.5) el.scrollTop = y;
+  // Clamp only at the workspace edges; retain subpixel coordinates while zooming.
+  editor.view.x = left - x;
+  editor.view.y = top - y;
+}
+function scroll() {
+  const el = scroller.value;
+  if (!el) return;
+  const x = -bounds.value.left * editor.view.scale - el.scrollLeft;
+  const y = -bounds.value.top * editor.view.scale - el.scrollTop;
+  if (Math.abs(x - editor.view.x) > 1) editor.view.x = x;
+  if (Math.abs(y - editor.view.y) > 1) editor.view.y = y;
+}
+watch([bounds, () => editor.view.x, () => editor.view.y], syncScroll, {
+  flush: "post",
+});
 type Drag = { pointerId: number; start: Point } & (
   | { type: "pan"; x: number; y: number }
   | { type: "node" | "annotation"; id: string; x: number; y: number }
@@ -60,18 +108,14 @@ function fit() {
   if (!canvas.value) return;
   finishDrag();
   const rect = canvas.value.getBoundingClientRect();
-  const boxes = [
-    ...lab.topology.nodes.map((node) => nodeBox(node)),
-    ...(lab.topology.annotations || []).map(annotationBox),
-  ];
-  if (!boxes.length) {
+  if (!boxes.value.length) {
     Object.assign(editor.view, { x: 0, y: 0, scale: 1 });
     return;
   }
-  const minX = Math.min(...boxes.map((box) => box.left)) - 46,
-    maxX = Math.max(...boxes.map((box) => box.right)) + 46;
-  const minY = Math.min(...boxes.map((box) => box.top)) - 50,
-    maxY = Math.max(...boxes.map((box) => box.bottom)) + 40;
+  const minX = Math.min(...boxes.value.map((box) => box.left)) - 46,
+    maxX = Math.max(...boxes.value.map((box) => box.right)) + 46;
+  const minY = Math.min(...boxes.value.map((box) => box.top)) - 50,
+    maxY = Math.max(...boxes.value.map((box) => box.bottom)) + 40;
   const scale = Math.min(
     1.3,
     Math.max(
@@ -101,6 +145,22 @@ function zoom(factor: number, clientX?: number, clientY?: number) {
     y: y - rect.top - point.y * scale,
   });
 }
+function wheel(event: WheelEvent) {
+  if (drag) return;
+  const unit =
+    event.deltaMode === 1
+      ? 16
+      : event.deltaMode === 2
+        ? editor.viewport.height
+        : 1;
+  const dx = event.deltaX * unit,
+    dy = event.deltaY * unit;
+  if (event.ctrlKey) zoom(Math.exp(-dy * 0.001), event.clientX, event.clientY);
+  else {
+    editor.view.x -= event.shiftKey && !dx ? dy : dx;
+    if (!event.shiftKey || dx) editor.view.y -= dy;
+  }
+}
 function pointerDown(event: PointerEvent) {
   if (drag || (event.button !== 0 && event.button !== 1)) return;
   const target = event.target as Element;
@@ -110,7 +170,7 @@ function pointerDown(event: PointerEvent) {
     return;
   }
   const port = target.closest<SVGElement>("[data-port]");
-  if (port && event.button === 0) {
+  if (port && event.button === 0 && !lab.locked) {
     if (
       editor.choosePort({ node: port.dataset.node!, port: port.dataset.port! })
     )
@@ -124,7 +184,7 @@ function pointerDown(event: PointerEvent) {
     const id = note.dataset.annotation!;
     editor.select({ type: "annotation", id });
     if (layout.sides.right.collapsed) layout.toggle("right");
-    if (!lab.locked)
+    if (!lab.layoutLocked)
       drag = {
         type: "annotation",
         id,
@@ -137,7 +197,7 @@ function pointerDown(event: PointerEvent) {
     const id = element.dataset.node!;
     editor.select({ type: "node", id });
     const node = lab.getNode(id)!;
-    if (!lab.locked && editor.mode !== "connect") {
+    if (!lab.layoutLocked && (editor.mode !== "connect" || lab.locked)) {
       drag = {
         type: "node",
         id,
@@ -167,7 +227,7 @@ function pointerMove(event: PointerEvent) {
     editor.view.x = drag.x + event.clientX - drag.start.x;
     editor.view.y = drag.y + event.clientY - drag.start.y;
   } else {
-    if (lab.locked) {
+    if (lab.layoutLocked) {
       finishDrag();
       return;
     }
@@ -203,16 +263,21 @@ watch(
 );
 onMounted(() => {
   window.addEventListener("blur", finishDrag);
-  observer = new ResizeObserver((entries) => {
-    const rect = entries[0]?.contentRect;
-    if (rect)
+  observer = new ResizeObserver(() => {
+    const el = scroller.value;
+    if (el)
       Object.assign(editor.viewport, {
-        width: rect.width,
-        height: rect.height,
+        width: el.clientWidth,
+        height: el.clientHeight,
       });
   });
-  observer.observe(canvas.value!);
+  observer.observe(scroller.value!);
+  Object.assign(editor.viewport, {
+    width: scroller.value!.clientWidth,
+    height: scroller.value!.clientHeight,
+  });
   fit();
+  void nextTick(syncScroll);
 });
 onBeforeUnmount(() => {
   finishDrag();
@@ -274,82 +339,101 @@ onBeforeUnmount(() => {
       ></i
       >{{ phases[lab.phase] }}
     </div>
-    <svg
-      id="canvas"
-      ref="canvas"
-      :class="{
-        'connect-mode': editor.mode === 'connect',
-        'annotation-mode': editor.mode === 'annotation',
-      }"
-      role="img"
-      aria-label="网络拓扑画布，拖动圆形设备或注释调整位置，点击端口连接网线"
+    <div
+      id="canvas-scroll"
+      ref="scroller"
+      class="canvas-scroll"
+      @scroll="scroll"
+      @wheel.prevent="wheel"
+      aria-label="拓扑画布滚动区域"
       tabindex="0"
-      @pointerdown.prevent="ui.run(() => pointerDown($event))"
-      @pointermove="pointerMove"
-      @pointerup="finishDrag"
-      @pointercancel="finishDrag"
-      @lostpointercapture="finishDrag"
-      @wheel.prevent="
-        zoom(Math.exp(-$event.deltaY * 0.001), $event.clientX, $event.clientY)
-      "
     >
-      <defs>
-        <pattern
-          id="grid"
-          width="24"
-          height="24"
-          patternUnits="userSpaceOnUse"
-          :patternTransform="transform"
+      <div class="canvas-surface" :style="surfaceSize">
+        <svg
+          id="canvas"
+          ref="canvas"
+          :style="{
+            width: `${editor.viewport.width}px`,
+            height: `${editor.viewport.height}px`,
+          }"
+          :class="{
+            'connect-mode': editor.mode === 'connect',
+            'annotation-mode': editor.mode === 'annotation',
+          }"
+          role="img"
+          aria-label="网络拓扑画布，滚动条或滚轮平移，Ctrl 加滚轮缩放，拖动设备或注释调整位置"
+          tabindex="0"
+          @pointerdown.prevent="ui.run(() => pointerDown($event))"
+          @pointermove="pointerMove"
+          @pointerup="finishDrag"
+          @pointercancel="finishDrag"
+          @lostpointercapture="finishDrag"
         >
-          <circle cx="1" cy="1" r="1" fill="#dce2ec" />
-        </pattern>
-        <filter id="node-shadow" x="-30%" y="-30%" width="160%" height="170%">
-          <feDropShadow
-            dx="0"
-            dy="4"
-            stdDeviation="6"
-            flood-color="#263958"
-            flood-opacity=".07"
-          />
-        </filter>
-      </defs>
-      <rect width="100%" height="100%" fill="url(#grid)" />
-      <g id="viewport" :transform="transform">
-        <g id="annotations">
-          <TopologyAnnotation
-            v-for="note in lab.topology.annotations || []"
-            :key="note.id"
-            :note="note"
-          />
-        </g>
-        <g id="edges">
-          <g
-            v-for="edge in edges"
-            :key="edge.id"
-            class="edge"
-            :class="{
-              selected:
-                editor.selected?.type === 'link' &&
-                editor.selected.id === edge.id,
-              running: lab.phase === 'running',
-            }"
-            :data-link="edge.id"
-          >
-            <path class="wire" :d="edge.d" />
-            <path class="hit-area" :d="edge.d" />
-            <text :x="edge.x" :y="edge.y" text-anchor="middle">veth</text>
+          <defs>
+            <pattern
+              id="grid"
+              width="24"
+              height="24"
+              patternUnits="userSpaceOnUse"
+              :patternTransform="transform"
+            >
+              <circle cx="1" cy="1" r="1" fill="#dce2ec" />
+            </pattern>
+            <filter
+              id="node-shadow"
+              x="-30%"
+              y="-30%"
+              width="160%"
+              height="170%"
+            >
+              <feDropShadow
+                dx="0"
+                dy="4"
+                stdDeviation="6"
+                flood-color="#263958"
+                flood-opacity=".07"
+              />
+            </filter>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid)" />
+          <g id="viewport" :transform="transform">
+            <g id="annotations">
+              <TopologyAnnotation
+                v-for="note in lab.topology.annotations || []"
+                :key="note.id"
+                :note="note"
+              />
+            </g>
+            <g id="edges">
+              <g
+                v-for="edge in edges"
+                :key="edge.id"
+                class="edge"
+                :class="{
+                  selected:
+                    editor.selected?.type === 'link' &&
+                    editor.selected.id === edge.id,
+                  running: lab.phase === 'running',
+                }"
+                :data-link="edge.id"
+              >
+                <path class="wire" :d="edge.d" />
+                <path class="hit-area" :d="edge.d" />
+                <text :x="edge.x" :y="edge.y" text-anchor="middle">veth</text>
+              </g>
+            </g>
+            <g id="nodes">
+              <TopologyNode
+                v-for="node in lab.topology.nodes"
+                :key="node.id"
+                :node="node"
+                :anchors="anchors[node.id]"
+              />
+            </g>
           </g>
-        </g>
-        <g id="nodes">
-          <TopologyNode
-            v-for="node in lab.topology.nodes"
-            :key="node.id"
-            :node="node"
-            :anchors="anchors[node.id]"
-          />
-        </g>
-      </g>
-    </svg>
+        </svg>
+      </div>
+    </div>
     <div
       id="empty-state"
       :hidden="

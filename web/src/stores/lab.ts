@@ -51,10 +51,16 @@ export const useLabStore = defineStore("lab", () => {
     busy = ref(false);
   const operation = ref(""),
     documentVersion = ref(0);
-  const locked = computed(
-    () => busy.value || !!runtime.value?.deployment || !!operation.value,
-  );
   const phase = computed(() => runtime.value?.phase || "idle");
+  const layoutLocked = computed(
+    () =>
+      busy.value ||
+      !!operation.value ||
+      ["deploying", "destroying"].includes(phase.value),
+  );
+  const locked = computed(
+    () => layoutLocked.value || !!runtime.value?.deployment,
+  );
   const canRename = computed(
     () =>
       !busy.value &&
@@ -86,6 +92,9 @@ export const useLabStore = defineStore("lab", () => {
 
   function assertEditable() {
     if (locked.value) throw Error("请等待操作完成，并清理设备后再编辑拓扑");
+  }
+  function assertLayoutEditable() {
+    if (layoutLocked.value) throw Error("请等待当前操作完成后再调整布局");
   }
   function getNode(id: string) {
     return topology.value.nodes.find((node) => node.id === id);
@@ -292,7 +301,9 @@ export const useLabStore = defineStore("lab", () => {
     dirty.value = true;
   }
   function moveNode(id: string, point: Point) {
-    assertEditable();
+    assertLayoutEditable();
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y))
+      throw Error("布局坐标无效");
     const node = getNode(id);
     if (node) {
       node.x = Math.max(-100000, Math.min(100000, point.x));
@@ -307,7 +318,7 @@ export const useLabStore = defineStore("lab", () => {
     dirty.value = true;
   }
   function autoAlign(mode: AlignMode) {
-    assertEditable();
+    assertLayoutEditable();
     if (!["layers", "horizontal", "vertical", "grid"].includes(mode))
       throw Error("未知对齐方式");
     const positions = alignDevices(topology.value, mode);
@@ -316,7 +327,7 @@ export const useLabStore = defineStore("lab", () => {
     if (topology.value.nodes.length) dirty.value = true;
   }
   function setLinkOptimization(enabled: boolean) {
-    assertEditable();
+    assertLayoutEditable();
     topology.value.optimizeLinks = enabled;
     dirty.value = true;
   }
@@ -347,13 +358,15 @@ export const useLabStore = defineStore("lab", () => {
     dirty.value = true;
   }
   function moveAnnotation(id: string, point: Point) {
+    assertLayoutEditable();
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y))
+      throw Error("布局坐标无效");
     const note = topology.value.annotations?.find((item) => item.id === id);
-    if (note)
-      updateAnnotation({
-        ...note,
-        x: Math.max(-100000, Math.min(100000, point.x)),
-        y: Math.max(-100000, Math.min(100000, point.y)),
-      });
+    if (note) {
+      note.x = Math.max(-100000, Math.min(100000, point.x));
+      note.y = Math.max(-100000, Math.min(100000, point.y));
+      dirty.value = true;
+    }
   }
   function remove(type: "node" | "link" | "annotation", id: string) {
     assertEditable();
@@ -373,6 +386,7 @@ export const useLabStore = defineStore("lab", () => {
     dirty.value = true;
   }
   async function save() {
+    if (runtime.value?.deployment) return saveLayout();
     assertEditable();
     const payload = parseTopology(topology.value);
     runtimeRevision++;
@@ -388,6 +402,26 @@ export const useLabStore = defineStore("lab", () => {
       saved.value = true;
       dirty.value = false;
       labs.value = await api<LabSummary[]>("/api/labs");
+    } finally {
+      operation.value = "";
+    }
+  }
+  async function saveLayout() {
+    assertLayoutEditable();
+    if (!saved.value) throw Error("请先保存项目");
+    const id = topology.value.id,
+      version = documentVersion.value;
+    const position = ({ id, x, y }: { id: string } & Point) => ({ id, x, y });
+    const payload = {
+      nodes: topology.value.nodes.map(position),
+      annotations: (topology.value.annotations || []).map(position),
+      optimizeLinks: topology.value.optimizeLinks !== false,
+    };
+    operation.value = "save";
+    runtimeRevision++;
+    try {
+      await api(`/api/labs/${id}/layout`, "POST", payload);
+      if (documentVersion.value === version) dirty.value = false;
     } finally {
       operation.value = "";
     }
@@ -475,12 +509,14 @@ export const useLabStore = defineStore("lab", () => {
     operation,
     documentVersion,
     locked,
+    layoutLocked,
     phase,
     images,
     canDeploy,
     canRename,
     canDestroy,
     assertEditable,
+    assertLayoutEditable,
     getNode,
     getTemplate,
     supportsConfig,

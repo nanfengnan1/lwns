@@ -46,7 +46,7 @@ export const useEditorStore = defineStore("editor", () => {
         ? "依次点击两台设备的空闲端口 · Esc 取消"
         : mode.value === "annotation"
           ? "点击画布放置注释 · Esc 取消"
-          : "拖动设备或注释 · 顶部自动对齐 · 滚轮缩放",
+          : "滚轮平移 · Ctrl＋滚轮缩放 · 拖动设备或注释",
   );
 
   function resetDraft() {

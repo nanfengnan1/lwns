@@ -19,7 +19,7 @@ function align() {
 async function save() {
   editor.commitDraft();
   await lab.save();
-  ui.notify("拓扑已保存");
+  ui.notify(lab.runtime?.deployment ? "布局已保存" : "拓扑已保存");
 }
 async function deploy() {
   editor.commitDraft();
@@ -64,8 +64,8 @@ async function destroy() {
       }}</span>
     </div>
     <div class="toolbar-actions">
-      <button id="save" :disabled="lab.locked" @click="ui.run(save)">
-        保存
+      <button id="save" :disabled="lab.layoutLocked" @click="ui.run(save)">
+        {{ lab.runtime?.deployment ? "保存布局" : "保存" }}
       </button>
       <SaveConfigButton v-if="lab.topology.nodes.some(lab.supportsConfig)" />
       <button
@@ -96,7 +96,7 @@ async function destroy() {
     <select
       id="align-mode"
       v-model="alignMode"
-      :disabled="lab.locked"
+      :disabled="lab.layoutLocked"
       aria-label="自动对齐方式"
     >
       <option value="layers">智能分层</option>
@@ -106,14 +106,14 @@ async function destroy() {
     </select>
     <button
       id="auto-align"
-      :disabled="lab.locked || lab.topology.nodes.length < 2"
+      :disabled="lab.layoutLocked || lab.topology.nodes.length < 2"
       @click="ui.run(align)"
     >
       自动对齐
     </button>
     <button
       id="optimize-links"
-      :disabled="lab.locked"
+      :disabled="lab.layoutLocked"
       :aria-pressed="lab.topology.optimizeLinks !== false"
       :class="{ active: lab.topology.optimizeLinks !== false }"
       title="就近选择图形端口并缩短连线，优先绕开设备；实际接口关系保持不变"

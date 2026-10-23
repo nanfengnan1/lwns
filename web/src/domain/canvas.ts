@@ -78,6 +78,24 @@ export interface Box {
   top: number;
   bottom: number;
 }
+/** A finite scrollable workspace, including negative coordinates and room to pan. */
+export function scrollBounds(
+  boxes: Box[],
+  width: number,
+  height: number,
+  scale: number,
+): Box {
+  const w = Math.max(1, width) / scale,
+    h = Math.max(1, height) / scale;
+  const paddingX = Math.max(400, w),
+    paddingY = Math.max(400, h);
+  return {
+    left: Math.min(0, ...boxes.map((box) => box.left)) - paddingX,
+    right: Math.max(w, ...boxes.map((box) => box.right)) + paddingX,
+    top: Math.min(0, ...boxes.map((box) => box.top)) - paddingY,
+    bottom: Math.max(h, ...boxes.map((box) => box.bottom)) + paddingY,
+  };
+}
 export function nodeBox(node: Device, padding = 0): Box {
   const r = nodeRadius(node) + padding;
   return {

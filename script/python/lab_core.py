@@ -272,6 +272,38 @@ class LabManager:
             self.write(record)
             return {"id": lab_id, "name": name}
 
+    def save_layout(self, lab_id, payload):
+        if not isinstance(payload, dict) or set(payload) != {"nodes", "annotations", "optimizeLinks"}:
+            raise LabError("布局只接受 nodes、annotations 坐标及 optimizeLinks")
+        if not isinstance(payload["optimizeLinks"], bool):
+            raise LabError("连线优化选项必须为布尔值")
+        with self.lock:
+            record = self.read(lab_id)
+            if self.busy == lab_id or record["runtime"].get("phase") in ("deploying", "destroying"):
+                raise LabError("请等待当前操作完成后再保存布局")
+            for key in ("nodes", "annotations"):
+                items = payload[key]
+                originals = {item["id"]: item for item in record["topology"].get(key, [])}
+                if not isinstance(items, list) or len(items) != len(originals):
+                    raise LabError("布局中的设备或注释与已保存项目不一致，请重新加载")
+                seen = set()
+                for item in items:
+                    if not isinstance(item, dict) or set(item) != {"id", "x", "y"}:
+                        raise LabError("布局条目只接受 id、x、y")
+                    item_id = identifier(item["id"])
+                    if item_id not in originals or item_id in seen:
+                        raise LabError("布局 ID 无效或重复，请重新加载项目")
+                    seen.add(item_id)
+                    for axis in ("x", "y"):
+                        value = item[axis]
+                        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or abs(value) > 100000:
+                            raise LabError("布局坐标无效")
+                        originals[item_id][axis] = value
+            # Read the latest record under the lock; never accept device settings or runtime.
+            record["topology"]["optimizeLinks"] = payload["optimizeLinks"]
+            self.write(record)
+            return {"id": lab_id}
+
     def list_labs(self):
         result = []
         with self.lock:

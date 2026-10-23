@@ -10,6 +10,7 @@ import {
   nodeRadius,
   portAnchors,
   routeLink,
+  scrollBounds,
   type AlignMode,
 } from "../src/domain/canvas";
 import { useLabStore } from "../src/stores/lab";
@@ -247,7 +248,32 @@ describe("annotations", () => {
     expect(() => editor.select({ type: "node", id: "r1" })).toThrow();
     expect(editor.annotation!.id).toBe(id);
     lab.runtime = { phase: "running", deployment: "live", nodes: {}, logs: [] };
-    expect(() => lab.moveAnnotation(id, { x: 5, y: 5 })).toThrow();
+    expect(() => lab.moveAnnotation(id, { x: 5, y: 5 })).not.toThrow();
+    expect(editor.annotation).toMatchObject({ x: 5, y: 5 });
+    expect(() =>
+      lab.updateAnnotation({ ...editor.annotation!, text: "changed" }),
+    ).toThrow();
     expect(() => lab.remove("annotation", id)).toThrow();
   });
+});
+describe("scrollable workspace", () => {
+  it.each([0.25, 1, 2.5])(
+    "covers distant and negative content plus panning space at scale %s",
+    (scale) => {
+      const boxes = [
+        nodeBox({ ...parseTopology(example).nodes[0], x: -100000, y: 100000 }),
+        annotationBox(note()),
+      ];
+      const bounds = scrollBounds(boxes, 800, 500, scale);
+      for (const box of boxes) {
+        expect(bounds.left).toBeLessThan(box.left);
+        expect(bounds.right).toBeGreaterThan(box.right);
+        expect(bounds.top).toBeLessThan(box.top);
+        expect(bounds.bottom).toBeGreaterThan(box.bottom);
+      }
+      const empty = scrollBounds([], 800, 500, scale);
+      expect((empty.right - empty.left) * scale).toBeGreaterThan(800);
+      expect((empty.bottom - empty.top) * scale).toBeGreaterThan(500);
+    },
+  );
 });

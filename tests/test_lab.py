@@ -307,6 +307,42 @@ class DeploymentTests(unittest.TestCase):
         with self.assertRaisesRegex(LabError, "已经部署"):
             self.manager.save(changed)
 
+    def test_running_layout_save_preserves_settings_runtime_and_host(self):
+        self.record["topology"]["annotations"] = [{"id": "note-1", "text": "网段", "x": 10, "y": 20}]
+        self.manager.deploy(self.record)
+        before = self.manager.read("first-lab")
+        calls = len(self.host.calls)
+        payload = {"nodes": [{"id": n["id"], "x": n["x"] + 25, "y": n["y"] - 40} for n in before["topology"]["nodes"]],
+                   "annotations": [{"id": "note-1", "x": -500, "y": 1000}], "optimizeLinks": False}
+        self.manager.save_layout("first-lab", payload)
+        after = self.manager.read("first-lab")
+        self.assertEqual(after["runtime"], before["runtime"])
+        self.assertEqual(after["topology"]["links"], before["topology"]["links"])
+        for original, current in zip(before["topology"]["nodes"], after["topology"]["nodes"]):
+            self.assertEqual(current, dict(original, x=original["x"] + 25, y=original["y"] - 40))
+        self.assertEqual(after["topology"]["annotations"][0], dict(before["topology"]["annotations"][0], x=-500, y=1000))
+        self.assertFalse(after["topology"]["optimizeLinks"])
+        self.assertEqual(len(self.host.calls), calls)
+        self.assertEqual(LabManager(self.temp.name, runner=self.host).read("first-lab"), after)
+        with self.assertRaises(LabError): self.manager.save(after["topology"])
+
+    def test_layout_rejects_invalid_ids_settings_and_busy_without_writing(self):
+        payload = {"nodes": [{key: n[key] for key in ("id", "x", "y")} for n in self.record["topology"]["nodes"]],
+                   "annotations": [], "optimizeLinks": True}
+        before = self.manager.path("first-lab").read_bytes()
+        invalid = [dict(payload, links=[]), dict(payload, nodes=[]), dict(payload, optimizeLinks=1)]
+        for patch in ({"id": "missing"}, {"id": "sw1"}, {"name": "CHANGED"}, {"x": True}, {"x": 100001}, {"y": float("nan")}):
+            value = copy.deepcopy(payload)
+            value["nodes"][0].update(patch)
+            invalid.append(value)
+        invalid.append(dict(payload, annotations=[{"id": "new", "x": 0, "y": 0}]))
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaises(LabError): self.manager.save_layout("first-lab", value)
+            self.assertEqual(self.manager.path("first-lab").read_bytes(), before)
+        self.manager.busy = "first-lab"
+        with self.assertRaisesRegex(LabError, "等待"): self.manager.save_layout("first-lab", payload)
+        self.assertEqual(self.manager.path("first-lab").read_bytes(), before)
+
     def test_missing_image_or_unconnected_address_has_no_side_effects(self):
         self.host.missing_image = True
         with self.assertRaisesRegex(LabError, "镜像"): self.manager.deploy(self.record)
@@ -512,6 +548,19 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(code, 503)
         self.assertIn(b"npm --prefix web run build", body)
         self.assertEqual(self.request("/api/bootstrap")[0], 200)
+
+    def test_layout_api_authentication_persistence_and_field_restrictions(self):
+        lab = self.manager.save(example())["topology"]
+        payload = {"nodes": [{"id": n["id"], "x": -20, "y": 30} for n in lab["nodes"]],
+                   "annotations": [], "optimizeLinks": False}
+        path = "/api/labs/first-lab/layout"
+        self.assertEqual(self.request(path, "POST", payload, auth=False)[0], 401)
+        self.assertEqual(self.request(path, "POST", payload, origin="http://untrusted.invalid")[0], 403)
+        self.assertEqual(self.request(path, "POST", dict(payload, config="changed"))[0], 400)
+        self.assertEqual(self.request(path, "POST", payload)[0], 200)
+        saved = self.manager.read("first-lab")["topology"]
+        self.assertEqual(saved["nodes"][0], dict(lab["nodes"][0], x=-20, y=30))
+        self.assertFalse(saved["optimizeLinks"])
 
     def test_second_server_directory_lock(self):
         lock = acquire_lock(Path(self.temp.name))
