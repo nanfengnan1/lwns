@@ -1,0 +1,183 @@
+# Standalone build (Docker BuildKit):
+#   docker build -f Dockerfile.ovs -t aline/ovs:latest .
+# Run on a Linux Docker host with the openvswitch kernel module available:
+#   docker run -d --name ovs-odl --cap-add=NET_ADMIN --cap-add=NET_RAW \
+#     -p 127.0.0.1:8181:8181 -p 6653:6653 \
+#     -v ovs-db:/var/lib/openvswitch -v odl-data:/opt/opendaylight/data \
+#     aline/ovs:latest
+# No source files besides this Dockerfile are needed.
+
+ARG ALPINE_VERSION=3.22
+FROM alpine:${ALPINE_VERSION} AS runtime-base
+RUN apk add --no-cache bash ca-certificates curl gcompat iproute2 iputils libstdc++ openjdk21-jre-headless openvswitch su-exec tcpdump tini
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk \
+    KARAF_HOME=/opt/opendaylight
+
+FROM runtime-base
+ARG ODL_VERSION=0.24.0
+ARG ODL_SHA256=3b2806c61563d3dfe78bc09ec06f1fe71f519bb861a4a7225f2eb6eca17a92f2
+# Override URL only for a trusted local cache; the SHA-256 is still checked.
+ARG ODL_URL=https://nexus.opendaylight.org/content/repositories/opendaylight.release/org/opendaylight/integration/karaf/${ODL_VERSION}/karaf-${ODL_VERSION}.tar.gz
+LABEL org.opencontainers.image.title="Alpine Open vSwitch and OpenDaylight" \
+      org.opencontainers.image.version="${ODL_VERSION}" \
+      org.opencontainers.image.description="OVS plus OpenDaylight Chromium with automatic startup"
+
+RUN set -eux; \
+    curl --fail --location --retry 3 --connect-timeout 20 --max-time 600 \
+      "$ODL_URL" -o /tmp/opendaylight.tar.gz; \
+    echo "$ODL_SHA256  /tmp/opendaylight.tar.gz" | sha256sum -c -; \
+    mkdir -p "$KARAF_HOME"; \
+    tar -xzf /tmp/opendaylight.tar.gz -C "$KARAF_HOME" --strip-components=1; \
+    rm /tmp/opendaylight.tar.gz; \
+    addgroup -S odl; adduser -S -D -H -G odl -h "$KARAF_HOME" odl; \
+    sed -i '/^featuresBoot =/ s/$/,odl-restconf,odl-openflowplugin-flow-services-rest,odl-ovsdb-southbound-impl-rest/' \
+      "$KARAF_HOME/etc/org.apache.karaf.features.cfg"; \
+    sed -i 's/^sshHost = .*/sshHost = 127.0.0.1/' "$KARAF_HOME/etc/org.apache.karaf.shell.cfg"; \
+    mkdir -p "$KARAF_HOME/data/state" /var/lib/openvswitch /run/openvswitch; \
+    ln -s data/state "$KARAF_HOME/state"; \
+    mv "$KARAF_HOME/etc" "$KARAF_HOME/etc.dist"; \
+    mv "$KARAF_HOME/configuration" "$KARAF_HOME/configuration.dist"; \
+    ln -s data/etc "$KARAF_HOME/etc"; \
+    ln -s data/configuration "$KARAF_HOME/configuration"; \
+    chown -R odl:odl "$KARAF_HOME"
+
+ENV JAVA_OPTS="-Xms256m -Xmx1024m" \
+    KARAF_OPTS="-Dkaraf.log.console=ALL" \
+    OVS_BRIDGE=br0 \
+    OVS_DATAPATH_TYPE=system \
+    OVS_CONTROLLER=tcp:127.0.0.1:6653 \
+    OVS_MANAGER=tcp:127.0.0.1:6640
+
+COPY <<'START' /usr/local/sbin/start-ovs-odl
+#!/bin/bash
+set -Eeuo pipefail
+if [[ "${1:-serve}" != serve ]]; then
+    exec "$@"
+fi
+children=()
+cleanup() {
+    trap - EXIT TERM INT
+    if ((${#children[@]})); then
+        echo '[startup] Stopping OpenDaylight and OVS.'
+        kill -TERM "${children[@]}" 2>/dev/null || true
+        for ((i=0; i<25; i++)); do
+            alive=0
+            for pid in "${children[@]}"; do
+                if kill -0 "$pid" 2>/dev/null; then alive=1; fi
+            done
+            ((alive == 0)) && break
+            sleep 1
+        done
+        kill -KILL "${children[@]}" 2>/dev/null || true
+        wait "${children[@]}" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+trap 'exit 0' TERM INT
+
+mkdir -p /run/openvswitch /var/lib/openvswitch "$KARAF_HOME/data/state"
+chown odl:odl "$KARAF_HOME/data" "$KARAF_HOME/data/state"
+# Keep generated feature configuration together with the OSGi cache and datastore.
+# Seed new named volumes or empty bind mounts without overwriting existing config.
+for directory in etc configuration; do
+    if [[ ! -d "$KARAF_HOME/data/$directory" ]]; then
+        cp -a "$KARAF_HOME/$directory.dist" "$KARAF_HOME/data/$directory"
+    fi
+done
+# Docker's network=none does not add the container hostname; Java still needs it.
+if ! awk -v host="$(hostname)" '{for(i=2;i<=NF;i++)if($i==host)found=1} END{exit !found}' /etc/hosts; then
+    printf '\n127.0.0.1 %s\n' "$(hostname)" >> /etc/hosts
+fi
+if [[ ! -e /var/lib/openvswitch/conf.db ]]; then
+    ovsdb-tool create /var/lib/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
+fi
+ovsdb-server /var/lib/openvswitch/conf.db \
+    --remote=punix:/run/openvswitch/db.sock \
+    --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+    --pidfile=/run/openvswitch/ovsdb-server.pid \
+    --unixctl=/run/openvswitch/ovsdb-server.ctl --no-chdir &
+db_pid=$!
+children+=("$db_pid")
+db_ready=0
+for ((i=0; i<100; i++)); do
+    kill -0 "$db_pid" 2>/dev/null || { echo 'ovsdb-server exited.' >&2; exit 1; }
+    if ovs-vsctl --timeout=1 --no-wait show >/dev/null 2>&1; then db_ready=1; break; fi
+    sleep 0.1
+done
+((db_ready)) || { echo 'OVS database did not become ready.' >&2; exit 1; }
+ovs-vsctl --no-wait init
+system_id="$(ovs-vsctl get Open_vSwitch . external_ids:system-id 2>/dev/null || true)"
+if [[ -z "$system_id" || "$system_id" == '[]' || "$system_id" == '""' ]]; then
+    ovs-vsctl --no-wait set Open_vSwitch . external_ids:system-id="$(cat /proc/sys/kernel/random/uuid)"
+fi
+ovs-vsctl --no-wait set Open_vSwitch . ovs_version="$(ovs-vswitchd --version | awk 'NR==1 {print $NF}')"
+
+ovs-vswitchd unix:/run/openvswitch/db.sock \
+    --pidfile=/run/openvswitch/ovs-vswitchd.pid \
+    --unixctl=/run/openvswitch/ovs-vswitchd.ctl --no-chdir &
+vswitchd_pid=$!
+children+=("$vswitchd_pid")
+if [[ -n "$OVS_BRIDGE" ]]; then
+    ovs-vsctl --timeout=15 --may-exist add-br "$OVS_BRIDGE" \
+      -- set Bridge "$OVS_BRIDGE" datapath_type="$OVS_DATAPATH_TYPE" protocols=OpenFlow13 \
+      -- set-fail-mode "$OVS_BRIDGE" secure
+    # An unchanged, persisted DB can return before vswitchd recreates the bridge.
+    bridge_ready=0
+    for ((i=0; i<150; i++)); do
+        kill -0 "$vswitchd_pid" 2>/dev/null || break
+        if ovs-ofctl -O OpenFlow13 show "$OVS_BRIDGE" >/dev/null 2>&1; then
+            bridge_ready=1; break
+        fi
+        sleep 0.1
+    done
+    ((bridge_ready)) || { echo 'OVS bridge unavailable; check NET_ADMIN and the host openvswitch module.' >&2; exit 1; }
+    # Keep the controller's node ID stable when this container is recreated.
+    configured_dpid="$(ovs-vsctl get Bridge "$OVS_BRIDGE" other_config:datapath-id 2>/dev/null || true)"
+    if [[ -z "$configured_dpid" || "$configured_dpid" == '[]' ]]; then
+        dpid="$(ovs-vsctl get Bridge "$OVS_BRIDGE" datapath_id | tr -d '\"')"
+        ovs-vsctl --timeout=10 set Bridge "$OVS_BRIDGE" other_config:datapath-id="$dpid"
+    fi
+    if [[ -n "$OVS_CONTROLLER" ]]; then
+        ovs-vsctl --timeout=10 set-controller "$OVS_BRIDGE" "$OVS_CONTROLLER"
+        ovs-vsctl --timeout=10 set Controller "$OVS_BRIDGE" connection_mode=out-of-band
+    fi
+fi
+if [[ -n "$OVS_MANAGER" ]]; then
+    ovs-vsctl --timeout=10 set-manager "$OVS_MANAGER"
+fi
+
+echo "[startup] Starting OpenDaylight; bridge=${OVS_BRIDGE:-disabled}."
+# Karaf's daemon mode execs Java, so the PID below receives stop signals directly.
+su-exec odl "$KARAF_HOME/bin/karaf" daemon &
+children+=("$!")
+set +e
+wait -n "${children[@]}"
+status=$?
+set -e
+echo "[startup] A required service exited (status=$status); shutting down." >&2
+((status != 0)) || status=1
+exit "$status"
+START
+
+COPY <<'HEALTH' /usr/local/sbin/ovs-odl-healthcheck
+#!/bin/sh
+set -eu
+ovs-appctl -t /run/openvswitch/ovsdb-server.ctl version >/dev/null
+ovs-appctl -t /run/openvswitch/ovs-vswitchd.ctl version >/dev/null
+ovs-vsctl --timeout=3 show >/dev/null
+nc -z -w 2 127.0.0.1 6653
+curl --fail --silent --show-error --max-time 5 \
+    --user "${ODL_HEALTH_USER:-admin}:${ODL_HEALTH_PASSWORD:-admin}" \
+    http://127.0.0.1:8181/rests/data >/dev/null
+HEALTH
+
+RUN chmod 0755 /usr/local/sbin/start-ovs-odl /usr/local/sbin/ovs-odl-healthcheck \
+    && bash -n /usr/local/sbin/start-ovs-odl
+WORKDIR /opt/opendaylight
+VOLUME ["/var/lib/openvswitch", "/opt/opendaylight/data"]
+EXPOSE 6653/tcp 6640/tcp 8181/tcp
+STOPSIGNAL SIGTERM
+HEALTHCHECK --interval=15s --timeout=10s --start-period=180s --retries=4 \
+    CMD ["/usr/local/sbin/ovs-odl-healthcheck"]
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/sbin/start-ovs-odl"]
+CMD ["serve"]
