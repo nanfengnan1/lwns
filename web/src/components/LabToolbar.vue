@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref } from "vue";
+import type { AlignMode } from "../domain/canvas";
 import { useLabStore } from "../stores/lab";
 import { useEditorStore } from "../stores/editor";
 import { useUiStore } from "../stores/ui";
@@ -6,6 +8,14 @@ import SaveConfigButton from "./SaveConfigButton.vue";
 const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore();
+const alignMode = ref<AlignMode>("layers");
+function align() {
+  editor.commitDraft();
+  lab.autoAlign(alignMode.value);
+  editor.pending = null;
+  editor.fitRevision++;
+  ui.notify("设备已自动对齐，注释保留原位置；保存后保留布局");
+}
 async function save() {
   editor.commitDraft();
   await lab.save();
@@ -80,5 +90,51 @@ async function destroy() {
         <span>▶</span> 部署实验
       </button>
     </div>
+  </div>
+  <div class="canvas-toolbar" aria-label="拓扑排版工具">
+    <label for="align-mode">排版</label>
+    <select
+      id="align-mode"
+      v-model="alignMode"
+      :disabled="lab.locked"
+      aria-label="自动对齐方式"
+    >
+      <option value="layers">智能分层</option>
+      <option value="horizontal">水平排列</option>
+      <option value="vertical">垂直排列</option>
+      <option value="grid">网格排列</option>
+    </select>
+    <button
+      id="auto-align"
+      :disabled="lab.locked || lab.topology.nodes.length < 2"
+      @click="ui.run(align)"
+    >
+      自动对齐
+    </button>
+    <button
+      id="optimize-links"
+      :disabled="lab.locked"
+      :aria-pressed="lab.topology.optimizeLinks !== false"
+      :class="{ active: lab.topology.optimizeLinks !== false }"
+      title="就近选择图形端口并缩短连线，优先绕开设备；实际接口关系保持不变"
+      @click="
+        ui.run(() =>
+          lab.setLinkOptimization(lab.topology.optimizeLinks === false),
+        )
+      "
+    >
+      连线优化 {{ lab.topology.optimizeLinks !== false ? "已开启" : "已关闭" }}
+    </button>
+    <button
+      id="add-annotation"
+      :disabled="lab.locked || (lab.topology.annotations?.length || 0) >= 100"
+      :aria-pressed="editor.mode === 'annotation'"
+      :class="{ active: editor.mode === 'annotation' }"
+      @click="
+        editor.setMode(editor.mode === 'annotation' ? 'select' : 'annotation')
+      "
+    >
+      ＋ 添加注释
+    </button>
   </div>
 </template>

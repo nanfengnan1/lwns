@@ -1,19 +1,26 @@
 import { computed, reactive, ref, watch } from "vue";
 import { defineStore } from "pinia";
 import { assertConnection, clone, resizedPorts } from "../domain/topology";
-import type { Device, Endpoint, Point, Selection } from "../types/lab";
+import type {
+  Annotation,
+  Device,
+  Endpoint,
+  Point,
+  Selection,
+} from "../types/lab";
 import { useLabStore } from "./lab";
 
 export const useEditorStore = defineStore("editor", () => {
   const lab = useLabStore();
   const selected = ref<Selection>(null),
     pending = ref<Endpoint | null>(null);
-  const mode = ref<"select" | "connect">("select");
+  const mode = ref<"select" | "connect" | "annotation">("select");
   const view = reactive({ x: 0, y: 0, scale: 1 });
   const viewport = reactive({ width: 800, height: 500 });
   const fitRevision = ref(0);
   const draft = ref<Device | null>(null),
     draftDirty = ref(false);
+  const annotationDraft = ref<Annotation | null>(null);
   const portCount = ref<number | string>(0),
     commandText = ref("");
   const node = computed(() =>
@@ -27,16 +34,24 @@ export const useEditorStore = defineStore("editor", () => {
       : undefined,
   );
   const unsaved = computed(() => lab.dirty || draftDirty.value);
+  const annotation = computed(() =>
+    selected.value?.type === "annotation"
+      ? lab.topology.annotations?.find((note) => note.id === selected.value?.id)
+      : undefined,
+  );
   const hint = computed(() =>
     pending.value
       ? `已选 ${lab.getNode(pending.value.node)?.name}.${pending.value.port}，点击另一台设备的空闲端口 · Esc 取消`
       : mode.value === "connect"
         ? "依次点击两台设备的空闲端口 · Esc 取消"
-        : "拖动设备 · 选中后拖动手柄调整大小 · 滚轮缩放",
+        : mode.value === "annotation"
+          ? "点击画布放置注释 · Esc 取消"
+          : "拖动设备或注释 · 顶部自动对齐 · 滚轮缩放",
   );
 
   function resetDraft() {
     draft.value = node.value ? clone(node.value) : null;
+    annotationDraft.value = annotation.value ? clone(annotation.value) : null;
     portCount.value = node.value?.ports.length || 0;
     commandText.value = node.value?.command.length
       ? JSON.stringify(node.value.command)
@@ -47,6 +62,15 @@ export const useEditorStore = defineStore("editor", () => {
     if (!lab.locked) draftDirty.value = true;
   }
   function commitDraft() {
+    if (draftDirty.value && annotationDraft.value && annotation.value) {
+      lab.updateAnnotation({
+        ...annotationDraft.value,
+        x: annotation.value.x,
+        y: annotation.value.y,
+      });
+      resetDraft();
+      return;
+    }
     if (!draftDirty.value || !draft.value || !node.value) return;
     const next = clone(draft.value);
     // Canvas geometry can change while a properties draft is open.
@@ -74,7 +98,7 @@ export const useEditorStore = defineStore("editor", () => {
     selected.value = value;
     resetDraft();
   }
-  function setMode(value: "select" | "connect") {
+  function setMode(value: "select" | "connect" | "annotation") {
     mode.value = value;
     pending.value = null;
   }
@@ -103,6 +127,13 @@ export const useEditorStore = defineStore("editor", () => {
     pending.value = null;
     return true;
   }
+  function addAnnotation(point: Point) {
+    commitDraft();
+    const note = lab.addAnnotation(point);
+    selected.value = { type: "annotation", id: note.id };
+    setMode("select");
+    resetDraft();
+  }
   function deleteSelection() {
     if (!selected.value || lab.locked) return;
     lab.remove(selected.value.type, selected.value.id);
@@ -129,6 +160,9 @@ export const useEditorStore = defineStore("editor", () => {
   watch(node, () => {
     if (!draftDirty.value) resetDraft();
   });
+  watch(annotation, () => {
+    if (!draftDirty.value) resetDraft();
+  });
   watch(
     () => node.value?.config,
     () => {
@@ -143,6 +177,8 @@ export const useEditorStore = defineStore("editor", () => {
     viewport,
     fitRevision,
     draft,
+    annotation,
+    annotationDraft,
     draftDirty,
     portCount,
     commandText,
@@ -155,6 +191,7 @@ export const useEditorStore = defineStore("editor", () => {
     select,
     setMode,
     addNode,
+    addAnnotation,
     choosePort,
     deleteSelection,
     discardOK,

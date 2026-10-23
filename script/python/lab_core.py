@@ -155,6 +155,38 @@ def validate_topology(raw):
         if link["a"]["node"] == link["b"]["node"]:
             raise LabError("第一版不支持设备自身环回连线")
         result["links"].append(link)
+    if "optimizeLinks" in raw:
+        if not isinstance(raw["optimizeLinks"], bool):
+            raise LabError("连线优化选项必须为布尔值")
+        result["optimizeLinks"] = raw["optimizeLinks"]
+    if "annotations" in raw:
+        annotations = raw["annotations"]
+        if not isinstance(annotations, list) or len(annotations) > 100:
+            raise LabError("最多支持 100 条注释")
+        result["annotations"], annotation_ids = [], set()
+        for item in annotations:
+            if not isinstance(item, dict):
+                raise LabError("注释必须是 JSON 对象")
+            aid = identifier(item.get("id"))
+            if aid in annotation_ids:
+                raise LabError("注释 ID 重复")
+            annotation_ids.add(aid)
+            note = {"id": aid, "text": string(item.get("text"), "注释内容", 1000)}
+            for axis in ("x", "y"):
+                value = item.get(axis)
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or abs(value) > 100000:
+                    raise LabError("注释坐标无效")
+                note[axis] = value
+            font = item.get("fontSize", 16)
+            if isinstance(font, bool) or not isinstance(font, (int, float)) or not math.isfinite(font) or int(font) != font or not 12 <= font <= 28:
+                raise LabError("注释字号必须为 12–28 的整数")
+            note["fontSize"] = int(font)
+            for key, default in (("color", "#66521c"), ("background", "#fff7d6")):
+                value = item.get(key, default)
+                if not isinstance(value, str) or (not re.fullmatch(r"#[0-9a-fA-F]{6}", value) and not (key == "background" and value == "none")):
+                    raise LabError("注释颜色无效")
+                note[key] = value
+            result["annotations"].append(note)
     return result
 
 

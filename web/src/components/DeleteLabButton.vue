@@ -8,7 +8,11 @@ const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore();
 const empty = computed(
-  () => !lab.saved && !editor.unsaved && !lab.topology.nodes.length,
+  () =>
+    !lab.saved &&
+    !editor.unsaved &&
+    !lab.topology.nodes.length &&
+    !lab.topology.annotations?.length,
 );
 async function remove() {
   lab.assertEditable();

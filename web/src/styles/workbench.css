@@ -596,6 +596,58 @@ button.quiet {
   background: #f7f9fc;
   overflow: hidden;
 }
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 8px 14px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border);
+  background: #fbfcff;
+}
+.canvas-toolbar label {
+  font-size: 10px;
+  color: #8996ab;
+}
+.canvas-toolbar button,
+.canvas-toolbar select {
+  font-size: 11px;
+  padding: 6px 8px;
+}
+.canvas-toolbar button.active {
+  color: var(--blue);
+  background: #edf2ff;
+  border-color: #cddcff;
+}
+.topology-annotation {
+  cursor: grab;
+  outline: none;
+}
+.annotation-body {
+  stroke: #d8cfa8;
+  stroke-width: 1;
+}
+.topology-annotation.selected .annotation-body,
+.topology-annotation:focus-visible .annotation-body {
+  stroke: #6385ef;
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+}
+.annotation-text {
+  pointer-events: none;
+  white-space: pre;
+}
+#canvas.annotation-mode {
+  cursor: crosshair;
+}
+#annotation-form input[type="color"] {
+  height: 34px;
+  padding: 4px;
+}
+#annotation-form .inspector-help {
+  margin-top: 14px;
+}
 .canvas-controls {
   position: absolute;
   top: 17px;
@@ -717,6 +769,9 @@ button.quiet {
   font-size: 13px;
   fill: #3a4961;
   text-anchor: middle;
+  paint-order: stroke;
+  stroke: #f7f9fc;
+  stroke-width: 4;
 }
 .topology-node .node-kind {
   font-size: 9px;
@@ -743,32 +798,9 @@ button.quiet {
   font-size: 8px;
   fill: #9aa7bb;
   pointer-events: none;
-}
-.node-resize-outline {
-  fill: none;
-  stroke: #8ba5ea;
-  stroke-width: 1;
-  stroke-dasharray: 4 3;
-  pointer-events: none;
-}
-.node-resize-handle {
-  outline: none;
-}
-.node-resize-hit {
-  fill: transparent;
-}
-.node-resize-grip {
-  fill: #fff;
-  stroke: #6385ef;
-  stroke-width: 1.5;
-  pointer-events: none;
-}
-.node-resize-handle:hover .node-resize-grip,
-.node-resize-handle:focus .node-resize-grip {
-  fill: #6385ef;
-}
-#canvas.resizing-device * {
-  cursor: inherit !important;
+  paint-order: stroke;
+  stroke: #f7f9fc;
+  stroke-width: 3;
 }
 .edge path.wire {
   fill: none;

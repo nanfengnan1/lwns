@@ -31,6 +31,10 @@ watch(
 function close() {
   if (!submitting.value) ui.labDialogMode = null;
 }
+function closed() {
+  // A queued close event may arrive after the same dialog has reopened.
+  if (!dialog.value?.open) close();
+}
 async function submit() {
   if (submitting.value || lab.operation || !ui.labDialogMode) return;
   error.value = "";
@@ -63,7 +67,7 @@ async function submit() {
     ref="dialog"
     aria-labelledby="project-name-heading"
     @cancel.prevent="close"
-    @close="close"
+    @close="closed"
   >
     <form @submit.prevent="submit">
       <div class="dialog-top">

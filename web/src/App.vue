@@ -43,6 +43,8 @@ function keydown(event: KeyboardEvent) {
     editor.deleteSelection();
   } else if (event.key.toLowerCase() === "c" && !lab.locked)
     editor.setMode("connect");
+  else if (event.key.toLowerCase() === "t" && !lab.locked)
+    editor.setMode("annotation");
   else if (event.key.toLowerCase() === "v") editor.setMode("select");
 }
 function beforeUnload(event: BeforeUnloadEvent) {

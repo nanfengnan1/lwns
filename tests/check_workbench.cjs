@@ -131,67 +131,57 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   await click('#logs-tab');
   await click('#fit');
 
-  const nodeBounds = () => evaluate(`(()=>{
-    const node=document.querySelector('.topology-node[data-node=r1]');
-    const body=node.querySelector('.node-body'), transform=node.transform.baseVal.consolidate().matrix;
-    return {x:transform.e,y:transform.f,width:+body.getAttribute('width'),height:+body.getAttribute('height')};
-  })()`);
-  const dragDeviceHandle = async (handle, dx, dy) => {
-    const point = await evaluate(`(()=>{
-      const rect=document.querySelector('.topology-node[data-node=r1] [data-resize=${handle}] .node-resize-grip').getBoundingClientRect();
-      return {x:rect.x+rect.width/2,y:rect.y+rect.height/2,scale:document.querySelector('#viewport').transform.baseVal.consolidate().matrix.a};
-    })()`);
-    await send('Input.dispatchMouseEvent',{type:'mousePressed',x:point.x,y:point.y,button:'left',clickCount:1});
-    await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:point.x+dx*point.scale,y:point.y+dy*point.scale,button:'left',buttons:1});
-    await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:point.x+dx*point.scale,y:point.y+dy*point.scale,button:'left',clickCount:1});
-    assert.equal(await evaluate('document.querySelector("#canvas").classList.contains("resizing-device")'),false,'resize cursor released');
-  };
+  const nodeBounds = () => evaluate("(()=>{const n=document.querySelector('.topology-node[data-node=r1]'),m=n.transform.baseVal.consolidate().matrix;return{x:m.e,y:m.f,r:+n.querySelector('.node-body').getAttribute('r')}})()");
   await click('.topology-node[data-node=r1] .node-name');
-  assert.equal(await evaluate('document.querySelectorAll("[data-resize]").length'),8,'selected editable device has eight handles');
-  const originalBounds = await nodeBounds();
-  await evaluate('window.resizeTestNode = document.querySelector(".topology-node[data-node=r1]")');
-  for (const handle of ['n','s','e','w','ne','nw','se','sw']) {
-    const horizontal=handle.includes('e')?1:handle.includes('w')?-1:0;
-    const vertical=handle.includes('s')?1:handle.includes('n')?-1:0;
-    await dragDeviceHandle(handle,horizontal*24,vertical*20);
-    assert.deepEqual(await nodeBounds(),{
-      x:originalBounds.x+horizontal*12,y:originalBounds.y+vertical*10,
-      width:originalBounds.width+(horizontal?24:0),height:originalBounds.height+(vertical?20:0),
-    },handle+' grows with the opposite edge fixed');
-    await dragDeviceHandle(handle,-horizontal*24,-vertical*20);
-    assert.deepEqual(await nodeBounds(),originalBounds,handle+' shrinks back');
+  assert.equal(await evaluate('document.querySelector(".node-body").tagName'),'circle');
+  assert.equal((await nodeBounds()).r,32,'compact default radius');
+  assert.equal(await evaluate('document.querySelectorAll("[data-resize]").length'),0,'device resize handles removed');
+  assert.equal(await evaluate('!!document.querySelector("#reset-node-size")'),false,'obsolete size inspector removed');
+  for(const mode of ['horizontal','vertical','grid','layers']) {
+    await evaluate("document.querySelector('#align-mode').value="+JSON.stringify(mode)+";document.querySelector('#align-mode').dispatchEvent(new Event('change',{bubbles:true}))");
+    await click('#auto-align');
+    await waitFor('document.querySelector("#toast").textContent.includes("自动对齐")');
+    const positions=await evaluate("[...document.querySelectorAll('.topology-node')].map(n=>{const m=n.transform.baseVal.consolidate().matrix;return{x:m.e,y:m.f}})");
+    assert.equal(new Set(positions.map(p=>p.x+':'+p.y)).size,5);
+    if(mode==='horizontal')assert.equal(new Set(positions.map(p=>p.y)).size,1);
+    if(mode==='vertical')assert.equal(new Set(positions.map(p=>p.x)).size,1);
   }
-  assert.equal(await evaluate('window.resizeTestNode === document.querySelector(".topology-node[data-node=r1]")'),true,'resize preserves the Vue node');
-  await click('#zoom-out');
-  await dragDeviceHandle('se',72,60);
-  let sized = await nodeBounds();
-  assert.equal(sized.width,200,'resizing at a different zoom uses canvas coordinates');
-  assert.equal(sized.height,160);
-  assert.equal(await evaluate(`(()=>{
-    const node=document.querySelector('.topology-node[data-node=r1]'), port=node.querySelector('[data-port=eth0]');
-    const t=node.transform.baseVal.consolidate().matrix;
-    const start=document.querySelector('.edge[data-link=l1] .wire').getAttribute('d').match(/^M ([0-9.-]+) ([0-9.-]+)/);
-    return start && +start[1]===t.e+(+port.getAttribute('cx')) && +start[2]===t.f+(+port.getAttribute('cy'));
-  })()`),true,'wire stays attached to the resized port');
-  await screenshot('workbench-device-resized.png');
-  await click('#reset-node-size');
-  assert.deepEqual(await nodeBounds(),{...sized,width:128,height:100},'reset preserves device center');
+  assert.equal(await evaluate('document.querySelector("#optimize-links").getAttribute("aria-pressed")'),'true');
+  await click('#optimize-links');
+  assert.equal(await evaluate('document.querySelector(".wire").getAttribute("d").includes(" C ")'),true);
+  await click('#optimize-links');
+  assert.equal(await evaluate('document.querySelector(".wire").getAttribute("d").includes(" C ")'),false);
+  // Wire start always coincides with the actual named port on its circular device.
+  assert.equal(await evaluate("(()=>{const n=document.querySelector('.topology-node[data-node=r1]'),p=n.querySelector('[data-port=eth0]'),m=n.transform.baseVal.consolidate().matrix,s=document.querySelector('.edge[data-link=l1] .wire').getAttribute('d').match(/^M ([0-9.-]+) ([0-9.-]+)/);return Math.abs(+s[1]-m.e-(+p.getAttribute('cx')))<.02&&Math.abs(+s[2]-m.f-(+p.getAttribute('cy')))<.02})()"),true);
+  const savedBounds=await nodeBounds();
+
+  await click('#add-annotation');
+  const notePoint=await evaluate("(()=>{const r=document.querySelector('#canvas').getBoundingClientRect();return{x:r.x+50,y:r.y+120}})()");
+  for(const type of ['mousePressed','mouseReleased'])await send('Input.dispatchMouseEvent',{type,...notePoint,button:'left',clickCount:1});
+  await waitFor('!!document.querySelector("#annotation-text")');
+  const annotationId=await evaluate('document.querySelector(".topology-annotation").dataset.annotation');
+  await evaluate('document.querySelector("#annotation-text").value="网段：10.10.1.0/24\\nOSPF Area 0";document.querySelector("#annotation-text").dispatchEvent(new Event("input",{bubbles:true}))');
+  await evaluate('document.querySelector("#annotation-font-size").value="18";document.querySelector("#annotation-font-size").dispatchEvent(new Event("input",{bubbles:true}))');
+  await evaluate('document.querySelector("#annotation-background").value="#e8f1ff";document.querySelector("#annotation-background").dispatchEvent(new Event("change",{bubbles:true}))');
+  // Invalid drafts block selection without losing the original note.
+  await evaluate('document.querySelector("#annotation-text").value=" ";document.querySelector("#annotation-text").dispatchEvent(new Event("input",{bubbles:true}))');
+  await click('#annotation-form button[type=submit]');
+  await waitFor('document.querySelector("#toast").classList.contains("error")');
+  assert.equal(await evaluate('document.querySelectorAll(".topology-annotation").length'),1);
+  await evaluate('document.querySelector("#annotation-text").value="网段：10.10.1.0/24\\nOSPF Area 0";document.querySelector("#annotation-text").dispatchEvent(new Event("input",{bubbles:true}))');
+  await click('#annotation-form button[type=submit]');
+  await waitFor('document.querySelector(".annotation-text").textContent.includes("OSPF")');
   await click('#fit');
-  await dragDeviceHandle('w',1000,0);
-  await dragDeviceHandle('n',0,1000);
-  assert.equal((await nodeBounds()).width,96,'minimum device width');
-  assert.equal((await nodeBounds()).height,72,'minimum device height');
-  await click('#reset-node-size');
-  await dragDeviceHandle('se',72,60);
-  await evaluate('document.querySelector("[data-resize=e]").focus()');
-  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
-  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
-  assert.equal((await nodeBounds()).width,206,'keyboard resize');
-  const savedBounds = await nodeBounds();
-  await click('#connect-tool');
-  assert.equal(await evaluate('document.querySelectorAll("[data-resize]").length'),0,'connection mode hides handles');
-  await click('#select-tool');
-  await click('#fit');
+  const annotationBefore=await evaluate('document.querySelector(".topology-annotation").getAttribute("transform")');
+  const noteDrag=await evaluate("(()=>{const r=document.querySelector('.annotation-body').getBoundingClientRect();return{x:r.x+12,y:r.y+12}})()");
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',...noteDrag,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:noteDrag.x+36,y:noteDrag.y+24,button:'left',buttons:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:noteDrag.x+36,y:noteDrag.y+24,button:'left',clickCount:1});
+  assert.notEqual(await evaluate('document.querySelector(".topology-annotation").getAttribute("transform")'),annotationBefore);
+  const annotationPosition=await evaluate("(()=>{const m=document.querySelector('.topology-annotation').transform.baseVal.consolidate().matrix;return{x:m.e,y:m.f}})()");
+  await screenshot('workbench-annotations.png');
+  await click('#connect-tool'); await click('#select-tool');
+  assert.equal(await evaluate('document.querySelectorAll("[data-resize]").length'),0);
 
   await click('.device-card.host');
   await waitFor('document.querySelectorAll(".topology-node").length===6');
@@ -225,7 +215,10 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   assert.equal(saved.nodes.length,6);assert.equal(saved.links.length,5);
   assert.equal(saved.nodes.find(node=>node.id==='pc3').name,'PC_SAVED','Save must include pending inspector edits');
   const exportedRouter = saved.nodes.find(node=>node.id==='r1');
-  for (const key of ['x','y','width','height']) assert.equal(exportedRouter[key],savedBounds[key],'export preserves '+key);
+  for (const key of ['x','y']) assert.equal(exportedRouter[key],savedBounds[key],'export preserves aligned '+key);
+  assert.equal(saved.optimizeLinks,true);
+  assert.equal(saved.annotations.length,1);
+  assert.deepEqual(saved.annotations[0],{id:annotationId,text:'网段：10.10.1.0/24\nOSPF Area 0',...annotationPosition,fontSize:18,color:'#66521c',background:'#e8f1ff'});
   assert.equal(await evaluate('[...document.querySelector("#lab-select").options].some(option=>option.value==="")'),false,'saved experiments do not show a phantom unsaved option');
   const doc=await send('DOM.getDocument');
   const input=await send('DOM.querySelector',{nodeId:doc.root.nodeId,selector:'#import-file'});
@@ -245,8 +238,13 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   await waitFor('[...document.querySelectorAll(".node-name")].some(el=>el.textContent==="PC_SAVED")');
   assert.equal(await panelHeight(),preferredPanelHeight,'panel height survives reload');
   assert.equal(await evaluate('document.querySelectorAll(".edge").length'),5,'links survive reload');
-  assert.deepEqual(await nodeBounds(),savedBounds,'device dimensions survive save, import and reload');
+  assert.deepEqual(await nodeBounds(),savedBounds,'circular device layout survives save, import and reload');
+  assert.equal(await evaluate('document.querySelectorAll(".topology-annotation").length'),1);
+  assert.equal(await evaluate('document.querySelector(".annotation-body").getAttribute("fill")'),'#e8f1ff');
   await screenshot('workbench-edited.png');
+  await click('.annotation-body'); await click('#delete-annotation');
+  assert.equal(await evaluate('document.querySelectorAll(".topology-annotation").length'),0,'delete note only');
+  assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),6);
 
   // Delete the saved test lab through the same UI, leaving a fresh example.
   await click('#delete-lab');
@@ -261,6 +259,6 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   await click('.topology-node[data-node=r1] .node-name');
   await screenshot('workbench-properties.png');
   assert.deepEqual(errors,[],'browser JavaScript errors');
-  console.log(JSON.stringify({ok:true,checks:['token authentication dialog','polar bear brand and favicon','initial topology','preview deployment disabled','environment refresh','cancel draft deletion preserves invalid properties','delete unsaved experiment from library','clear draft state without server deletion','delete unsaved experiment from inspector','no phantom unsaved option for saved experiments','discard imported draft without deleting same-ID saved experiment','resize output panel in both directions','keyboard resize and bounds','resize window preserves canvas','reset panel height','command output fills panel','collapse and expand preserve height','panel height survives reload','eight device handles grow and shrink with fixed opposite edge','stable Vue node while resizing','device resize at different zoom','wire follows resized port','reset device size preserves position','minimum device dimensions','keyboard device resize','connection mode hides resize handles','device dimensions survive save export import and reload','add device','edit properties','drag device','stable Vue node while dragging','connect ports','reject occupied port','save pending inspector edits','export','import','reload persistence','delete saved lab and remove list entry'],screenshots:outputDirectory},null,2));
+  console.log(JSON.stringify({ok:true,checks:['token authentication dialog','polar bear brand and favicon','initial topology','preview deployment disabled','environment refresh','cancel draft deletion preserves invalid properties','delete unsaved experiment from library','clear draft state without server deletion','delete unsaved experiment from inspector','no phantom unsaved option for saved experiments','discard imported draft without deleting same-ID saved experiment','resize output panel in both directions','keyboard resize and bounds','resize window preserves canvas','reset panel height','command output fills panel','collapse and expand preserve height','panel height survives reload','compact circular devices without resize handles','four automatic alignment modes','optimized wires retain actual named endpoints','annotation create multiline style and drag','invalid note draft preserved','annotation save export import reload and delete','add device','edit properties','drag device','stable Vue node while dragging','connect ports','reject occupied port','save pending inspector edits','export','import','reload persistence','delete saved lab and remove list entry'],screenshots:outputDirectory},null,2));
   ws.close();
 })().catch(error=>{console.error(error);process.exit(1);});

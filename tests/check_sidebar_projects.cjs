@@ -60,9 +60,10 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
 
     // Cancel and invalid input must not replace the original canvas.
     await click('#new-lab'); await wait('document.querySelector("#project-name-dialog").open');
-    await click('.project-name-cancel');
+    await click('.project-name-cancel'); await wait('!document.querySelector("#project-name-dialog").open');
     assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),5);
-    await click('#new-lab'); await input('#project-name-input','   '); await click('#confirm-project-name');
+    await click('#new-lab'); await wait('document.querySelector("#project-name-dialog").open');
+    await input('#project-name-input','   '); await click('#confirm-project-name');
     await wait('!!document.querySelector("#project-name-error")');
     assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),5);
     await input('#project-name-input','  OSPF 中文项目  '); await click('#confirm-project-name');
@@ -90,7 +91,8 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await input('#node-name','invalid draft!');
     await click('#toggle-right-sidebar'); await click('#toggle-right-sidebar');
     assert.equal(await evaluate('document.querySelector("#node-name").value'),'invalid draft!');
-    await click('#lab-name'); await input('#project-name-input','  已改名的实验  '); await click('#confirm-project-name');
+    await click('#lab-name'); await wait('document.querySelector("#project-name-dialog").open');
+    await input('#project-name-input','  已改名的实验  '); await click('#confirm-project-name');
     await wait('!document.querySelector("#project-name-dialog").open');
     assert.equal(await evaluate('document.querySelector("#node-name").value'),'invalid draft!','rename preserves properties');
     assert.ok(await evaluate('document.querySelector("#save-state").textContent.includes("未保存")'));
@@ -119,7 +121,8 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await click('#toggle-left-sidebar');await click('#toggle-right-sidebar');
     for (const side of ['left','right']) await evaluate(`document.querySelector('#${side}-sidebar-resize').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`);
     await shot('project-named.png');
-    await click('#lab-name');await input('#project-name-input','取消的名称');await click('.project-name-cancel');
+    await click('#lab-name');await wait('document.querySelector("#project-name-dialog").open');
+    await input('#project-name-input','取消的名称');await click('.project-name-cancel');
     assert.equal((await api('/api/labs/'+savedId)).topology.name,'已改名的实验');
     assert.deepEqual(errors,[],'browser exceptions');
     console.log(JSON.stringify({ok:true,checks:['new project name and cancellation','whitespace validation','save and reload Chinese name','same ID after rename','rename preserves unsaved properties','left/right drag and keyboard','collapse preserves width and draft','browser preference persistence','viewport constraints and no horizontal overflow','no dirty topology from layout changes'],screenshots:output},null,2));

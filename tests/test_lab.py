@@ -199,6 +199,30 @@ class ValidationTests(unittest.TestCase):
                     with self.assertRaisesRegex(LabError, "尺寸"):
                         validate_topology(lab)
 
+    def test_annotations_and_routing_round_trip_with_legacy_files(self):
+        lab = example()
+        self.assertNotIn("annotations", validate_topology(lab))
+        lab["annotations"] = [{"id": "note-1", "text": "网段 10.1.0.0/24\nArea 0", "x": 12, "y": 24,
+                               "fontSize": 18, "color": "#123456", "background": "none"}]
+        lab["optimizeLinks"] = False
+        result = validate_topology(lab)
+        self.assertEqual(result["annotations"], lab["annotations"])
+        self.assertFalse(result["optimizeLinks"])
+        self.assertEqual(validate_topology(json.loads(json.dumps(result))), result)
+
+    def test_invalid_annotations_rejected(self):
+        note = {"id": "note-1", "text": "网段", "x": 0, "y": 0}
+        for patch in ({"id":"../escape"}, {"text":" "}, {"text":"x"*1001}, {"x":True}, {"y":float("nan")},
+                      {"x":100001}, {"fontSize":True}, {"fontSize":12.5}, {"fontSize":29},
+                      {"color":"red"}, {"background":"url(x)"}):
+            with self.subTest(patch=patch), self.assertRaises(LabError):
+                validate_topology(dict(example(), annotations=[dict(note, **patch)]))
+        for value in (None, {}, [note, note], [dict(note, id="note-"+str(i)) for i in range(101)]):
+            with self.subTest(value_type=type(value)), self.assertRaises(LabError):
+                validate_topology(dict(example(), annotations=value))
+        for value in (None, 1, "true"):
+            with self.assertRaises(LabError): validate_topology(dict(example(), optimizeLinks=value))
+
     def test_duplicate_or_missing_endpoint(self):
         lab = example(); lab["links"][1]["a"] = copy.deepcopy(lab["links"][0]["a"])
         with self.assertRaisesRegex(LabError, "一个端口"): validate_topology(lab)
@@ -444,6 +468,18 @@ class HTTPTests(unittest.TestCase):
         code, _ = self.request("/api/labs/first-lab/deploy", "POST", {})
         self.assertEqual(code, 400)
         self.assertEqual(self.request("/api/labs/first-lab", "DELETE")[0], 200)
+
+    def test_annotation_save_restart_and_invalid_update_preserves_original(self):
+        lab = example()
+        lab["annotations"] = [{"id":"note-subnet", "text":"<script>alert(1)</script>\n10.0.0.0/24", "x":25, "y":50}]
+        lab["optimizeLinks"] = True
+        self.assertEqual(self.request("/api/labs/first-lab", "PUT", lab)[0], 200)
+        expected = validate_topology(lab)
+        self.assertEqual(LabManager(self.temp.name, preview=True).read("first-lab")["topology"], expected)
+        self.assertEqual(json.loads(self.request("/api/labs/first-lab")[1])["topology"], expected)
+        lab["annotations"][0]["text"] = " "
+        self.assertEqual(self.request("/api/labs/first-lab", "PUT", lab)[0], 400)
+        self.assertEqual(self.manager.read("first-lab")["topology"], expected)
 
     def test_vite_assets_are_served_without_exposing_source(self):
         self.assertEqual(self.request("/assets/app-test.js", auth=False), (200, b'console.log("built")'))

@@ -2,7 +2,8 @@
 import { useLabStore } from "../stores/lab";
 import { useEditorStore } from "../stores/editor";
 import { useUiStore } from "../stores/ui";
-import { colors, nodeHeight, nodeWidth, titles } from "../domain/topology";
+import { colors, titles } from "../domain/topology";
+import AnnotationInspector from "./AnnotationInspector.vue";
 import DeviceIcon from "./DeviceIcon.vue";
 import DeleteLabButton from "./DeleteLabButton.vue";
 import DeviceConfigPanel from "./DeviceConfigPanel.vue";
@@ -22,11 +23,18 @@ function apply() {
     <div class="inspector-heading">
       <h2>属性</h2>
       <span id="selection-type">{{
-        editor.node ? "设备" : editor.link ? "链路" : "实验"
+        editor.node
+          ? "设备"
+          : editor.link
+            ? "链路"
+            : editor.annotation
+              ? "注释"
+              : "实验"
       }}</span>
     </div>
     <div id="inspector-content">
-      <template v-if="editor.node && editor.draft">
+      <AnnotationInspector v-if="editor.annotation" />
+      <template v-else-if="editor.node && editor.draft">
         <div class="inspector-summary">
           <div class="large-icon" :style="{ color: colors[editor.node.kind] }">
             <DeviceIcon :kind="editor.node.kind" />
@@ -172,30 +180,6 @@ function apply() {
           v-if="lab.supportsConfig(editor.node)"
           :node="editor.node"
         />
-        <div class="property-section node-size-section">
-          <h3>
-            画布尺寸
-            <span id="node-size"
-              >{{ nodeWidth(editor.node) }} ×
-              {{ nodeHeight(editor.node) }}</span
-            >
-          </h3>
-          <p class="inspector-help">
-            选中设备后，拖动四边或四角的手柄调整大小。
-          </p>
-          <button
-            id="reset-node-size"
-            type="button"
-            :disabled="
-              lab.locked ||
-              (editor.node.width === undefined &&
-                editor.node.height === undefined)
-            "
-            @click="ui.run(() => lab.resetNodeSize(editor.node!.id))"
-          >
-            恢复默认大小
-          </button>
-        </div>
         <div class="property-section">
           <h3>设备终端</h3>
           <button
@@ -302,7 +286,8 @@ function apply() {
         <div class="property-section">
           <h3>快捷操作</h3>
           <p class="inspector-help">
-            V　选择设备<br />C　连线模式<br />Delete　删除所选设备 / 网线<br />Esc　取消连线
+            V　选择设备<br />C　连线模式<br />T　添加注释<br />Delete　删除所选设备
+            / 网线 / 注释<br />Esc　取消当前工具
           </p>
         </div>
         <div class="property-section">

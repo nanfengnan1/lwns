@@ -26,7 +26,10 @@ export function usePanelResize(panel: Ref<HTMLElement | undefined>) {
     const root = panel.value,
       stage = root?.parentElement;
     const canvas = stage?.querySelector<HTMLElement>(".canvas-wrap");
-    const toolbar = stage?.querySelector<HTMLElement>(".lab-toolbar");
+    const toolbarHeight = Array.from(
+      stage?.querySelectorAll<HTMLElement>(".lab-toolbar, .canvas-toolbar") ??
+        [],
+    ).reduce((sum, item) => sum + item.offsetHeight, 0);
     const tabs = root?.querySelector<HTMLElement>(".panel-tabs");
     const handle = root?.querySelector<HTMLElement>(".panel-resize-handle");
     if (!root || !stage || !canvas || !tabs || !handle) return;
@@ -37,12 +40,7 @@ export function usePanelResize(panel: Ref<HTMLElement | undefined>) {
     const canvasMinimum = parseFloat(getComputedStyle(canvas).minHeight) || 280;
     maxHeight.value = Math.max(
       MIN_HEIGHT,
-      Math.floor(
-        stage.clientHeight -
-          (toolbar?.offsetHeight || 0) -
-          canvasMinimum -
-          chrome,
-      ),
+      Math.floor(stage.clientHeight - toolbarHeight - canvasMinimum - chrome),
     );
   }
   function persist() {

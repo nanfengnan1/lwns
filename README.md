@@ -15,6 +15,7 @@
 Web 工作台使用 **Vue 3 + TypeScript + Vite + Pinia + xterm.js**，Python 后端使用 **FastAPI + Uvicorn**。支持：
 
 - 拖放 FRR 路由器、Linux bridge 交换机和 VPCS 容器；
+- 紧凑圆形设备、顶部自动对齐、就近连线优化；支持多行网段注释与样式保存；
 - 左右侧边栏收起/展开、拖动调宽及浏览器布局记忆；
 - 新建项目时命名，支持已部署项目重命名并保留设备和终端；
 - 设备库搜索、分类、分批显示；Web 拉取仓库镜像、下载或上传镜像归档、通过 Dockerfile 构建；

@@ -59,35 +59,10 @@ describe("editor and deployment state", () => {
     lab.runtime = { ...idle(), phase: "running", deployment: "owned" };
     expect(() => lab.remove("node", "r1")).toThrow();
     expect(() => lab.moveNode("r1", { x: 1, y: 1 })).toThrow();
-    expect(() =>
-      lab.resizeNode("r1", { x: 1, y: 1, width: 200, height: 140 }),
-    ).toThrow();
-    expect(() => lab.resetNodeSize("r1")).toThrow();
+    expect(() => lab.autoAlign("grid")).toThrow();
+    expect(() => lab.addAnnotation({ x: 0, y: 0 })).toThrow();
+    expect(() => lab.setLinkOptimization(false)).toThrow();
     expect(lab.canDeploy).toBe(false);
-  });
-  it("preserves resizing and resetting when committing an older inspector draft", async () => {
-    const { lab, editor } = setup();
-    editor.select({ type: "node", id: "r1" });
-    editor.draft!.name = "RESIZED";
-    editor.touchDraft();
-    lab.resizeNode("r1", { x: 400, y: 300, width: 220, height: 160 });
-    editor.commitDraft();
-    await nextTick();
-    expect(lab.getNode("r1")).toMatchObject({
-      name: "RESIZED",
-      x: 400,
-      y: 300,
-      width: 220,
-      height: 160,
-    });
-    expect(editor.unsaved).toBe(true);
-    editor.draft!.name = "RESET";
-    editor.touchDraft();
-    lab.resetNodeSize("r1");
-    editor.commitDraft();
-    expect(lab.getNode("r1")).toMatchObject({ name: "RESET", x: 400, y: 300 });
-    expect(lab.getNode("r1")).not.toHaveProperty("width");
-    expect(lab.getNode("r1")).not.toHaveProperty("height");
   });
   it("clears transient selection and pending cable when changing documents", () => {
     const { lab, editor } = setup();

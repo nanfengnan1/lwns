@@ -1,10 +1,10 @@
 import type {
+  Annotation,
   Device,
   DeviceKind,
   Endpoint,
   Link,
   Phase,
-  Point,
   Topology,
 } from "../types/lab";
 
@@ -56,6 +56,44 @@ function identifier(value: unknown): string {
 
 export function projectName(value: unknown): string {
   return string(value, "项目名称（1–80 个字符）", 80);
+}
+
+export function parseAnnotation(value: unknown): Annotation {
+  const raw = record(value);
+  for (const key of ["x", "y"] as const) {
+    if (
+      typeof raw[key] !== "number" ||
+      !Number.isFinite(raw[key]) ||
+      Math.abs(raw[key]) > 100000
+    )
+      throw Error("注释坐标无效");
+  }
+  const fontSize = raw.fontSize ?? 16;
+  const color = raw.color ?? "#66521c",
+    background = raw.background ?? "#fff7d6";
+  if (
+    typeof fontSize !== "number" ||
+    !Number.isInteger(fontSize) ||
+    fontSize < 12 ||
+    fontSize > 28
+  )
+    throw Error("注释字号必须为 12–28 的整数");
+  if (
+    typeof color !== "string" ||
+    !/^#[0-9a-fA-F]{6}$/.test(color) ||
+    typeof background !== "string" ||
+    (background !== "none" && !/^#[0-9a-fA-F]{6}$/.test(background))
+  )
+    throw Error("注释颜色无效");
+  return {
+    id: identifier(raw.id),
+    x: raw.x as number,
+    y: raw.y as number,
+    text: string(raw.text, "注释内容（1–1000 个字符）", 1000),
+    fontSize,
+    color,
+    background,
+  };
 }
 
 // Imported JSON is untrusted at runtime, even in a TypeScript application.
@@ -190,12 +228,31 @@ export function parseTopology(value: unknown): Topology {
     if (a.node === b.node) throw Error("不支持设备自身环回连接");
     return { id, a, b };
   });
+  if (raw.optimizeLinks !== undefined && typeof raw.optimizeLinks !== "boolean")
+    throw Error("连线优化选项必须为布尔值");
+  if (
+    raw.annotations !== undefined &&
+    (!Array.isArray(raw.annotations) || raw.annotations.length > 100)
+  )
+    throw Error("最多支持 100 条注释");
+  const annotations = (raw.annotations as unknown[] | undefined)?.map(
+    parseAnnotation,
+  );
+  if (
+    annotations &&
+    new Set(annotations.map((item) => item.id)).size !== annotations.length
+  )
+    throw Error("注释 ID 重复");
   return {
     version: 1,
     id: identifier(raw.id),
     name: string(raw.name, "实验名称", 80),
     nodes,
     links,
+    ...(annotations === undefined ? {} : { annotations }),
+    ...(raw.optimizeLinks === undefined
+      ? {}
+      : { optimizeLinks: raw.optimizeLinks as boolean }),
   };
 }
 
@@ -245,62 +302,4 @@ export function uniqueId(prefix: string): string {
       b.toString(16).padStart(2, "0"),
     ).join("")
   );
-}
-export type ResizeHandle = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
-export interface NodeBounds extends Point {
-  width: number;
-  height: number;
-}
-export const nodeWidth = (node: Device) => node.width ?? 128;
-export const nodeMinHeight = (node: Device) =>
-  Math.max(72, Math.ceil(node.ports.length / 2) * 13 + 20);
-export const nodeHeight = (node: Device) =>
-  Math.max(node.height ?? 100, nodeMinHeight(node));
-export function resizeNodeBounds(
-  node: Device,
-  handle: ResizeHandle,
-  delta: Point,
-): NodeBounds {
-  const width = nodeWidth(node),
-    height = nodeHeight(node);
-  const horizontal = handle.includes("e") ? 1 : handle.includes("w") ? -1 : 0;
-  const vertical = handle.includes("s") ? 1 : handle.includes("n") ? -1 : 0;
-  // Keep the opposite edge fixed, including when a minimum/maximum is reached.
-  const dx = Math.max(
-    -2 * (100000 + node.x),
-    Math.min(2 * (100000 - node.x), delta.x),
-  );
-  const dy = Math.max(
-    -2 * (100000 + node.y),
-    Math.min(2 * (100000 - node.y), delta.y),
-  );
-  const nextWidth = Math.max(96, Math.min(640, width + horizontal * dx));
-  const nextHeight = Math.max(
-    nodeMinHeight(node),
-    Math.min(640, height + vertical * dy),
-  );
-  return {
-    x: node.x + (horizontal * (nextWidth - width)) / 2,
-    y: node.y + (vertical * (nextHeight - height)) / 2,
-    width: nextWidth,
-    height: nextHeight,
-  };
-}
-export function portPoint(
-  node: Device,
-  name: string,
-): Point & { side: number } {
-  const index = node.ports.findIndex((p) => p.name === name),
-    rows = Math.ceil(node.ports.length / 2);
-  return {
-    x: node.x + ((index % 2 ? 1 : -1) * nodeWidth(node)) / 2,
-    y:
-      node.y +
-      (rows === 1
-        ? 0
-        : -nodeHeight(node) / 2 +
-          15 +
-          (Math.floor(index / 2) * (nodeHeight(node) - 30)) / (rows - 1)),
-    side: index % 2 ? 1 : -1,
-  };
 }

@@ -5,13 +5,13 @@ import {
   assertConnection,
   clone,
   connection,
-  nodeMinHeight,
   parseTopology,
   projectName,
+  parseAnnotation,
   uniqueId,
 } from "../domain/topology";
-import type { NodeBounds } from "../domain/topology";
 import type {
+  Annotation,
   Bootstrap,
   Device,
   ConfigSaveResult,
@@ -25,6 +25,7 @@ import type {
   Runtime,
   Topology,
 } from "../types/lab";
+import { alignDevices, type AlignMode } from "../domain/canvas";
 
 export const useLabStore = defineStore("lab", () => {
   const topology = ref<Topology>({
@@ -305,28 +306,65 @@ export const useLabStore = defineStore("lab", () => {
     topology.value.links.push({ id: uniqueId("l"), a: { ...a }, b: { ...b } });
     dirty.value = true;
   }
-  function resizeNode(id: string, bounds: NodeBounds) {
+  function autoAlign(mode: AlignMode) {
     assertEditable();
-    const node = getNode(id);
-    if (!node) return;
-    moveNode(id, bounds);
-    node.width = Math.max(96, Math.min(640, bounds.width));
-    node.height = Math.max(nodeMinHeight(node), Math.min(640, bounds.height));
+    if (!["layers", "horizontal", "vertical", "grid"].includes(mode))
+      throw Error("未知对齐方式");
+    const positions = alignDevices(topology.value, mode);
+    for (const node of topology.value.nodes)
+      Object.assign(node, positions[node.id]);
+    if (topology.value.nodes.length) dirty.value = true;
   }
-  function resetNodeSize(id: string) {
+  function setLinkOptimization(enabled: boolean) {
     assertEditable();
-    const node = getNode(id);
-    if (!node) return;
-    delete node.width;
-    delete node.height;
+    topology.value.optimizeLinks = enabled;
     dirty.value = true;
   }
-  function remove(type: "node" | "link", id: string) {
+  function addAnnotation(point: Point) {
+    assertEditable();
+    if ((topology.value.annotations?.length || 0) >= 100)
+      throw Error("最多支持 100 条注释");
+    const note = parseAnnotation({
+      id: uniqueId("note-"),
+      ...point,
+      text: "网段：192.168.1.0/24",
+      color: "#66521c",
+      background: "#fff7d6",
+      fontSize: 16,
+    });
+    (topology.value.annotations ??= []).push(note);
+    dirty.value = true;
+    return note;
+  }
+  function updateAnnotation(value: Annotation) {
+    assertEditable();
+    const note = parseAnnotation(value);
+    const index =
+      topology.value.annotations?.findIndex((item) => item.id === note.id) ??
+      -1;
+    if (index < 0) throw Error("注释不存在");
+    topology.value.annotations![index] = note;
+    dirty.value = true;
+  }
+  function moveAnnotation(id: string, point: Point) {
+    const note = topology.value.annotations?.find((item) => item.id === id);
+    if (note)
+      updateAnnotation({
+        ...note,
+        x: Math.max(-100000, Math.min(100000, point.x)),
+        y: Math.max(-100000, Math.min(100000, point.y)),
+      });
+  }
+  function remove(type: "node" | "link" | "annotation", id: string) {
     assertEditable();
     if (type === "node") {
       topology.value.nodes = topology.value.nodes.filter((n) => n.id !== id);
       topology.value.links = topology.value.links.filter(
         (link) => link.a.node !== id && link.b.node !== id,
+      );
+    } else if (type === "annotation") {
+      topology.value.annotations = topology.value.annotations?.filter(
+        (note) => note.id !== id,
       );
     } else
       topology.value.links = topology.value.links.filter(
@@ -460,8 +498,11 @@ export const useLabStore = defineStore("lab", () => {
     addNode,
     updateNode,
     moveNode,
-    resizeNode,
-    resetNodeSize,
+    autoAlign,
+    setLinkOptimization,
+    addAnnotation,
+    updateAnnotation,
+    moveAnnotation,
     connect,
     remove,
     save,

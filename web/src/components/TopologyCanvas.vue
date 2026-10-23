@@ -10,54 +10,41 @@ import {
 import { useLabStore } from "../stores/lab";
 import { useEditorStore } from "../stores/editor";
 import { useUiStore } from "../stores/ui";
+import { phases } from "../domain/topology";
 import {
-  nodeHeight,
-  nodeWidth,
-  phases,
-  portPoint,
-  resizeNodeBounds,
-} from "../domain/topology";
-import type { ResizeHandle } from "../domain/topology";
-import type { Device, Point } from "../types/lab";
+  annotationBox,
+  nodeBox,
+  portAnchors,
+  routeLink,
+} from "../domain/canvas";
+import type { Point } from "../types/lab";
 import TopologyNode from "./TopologyNode.vue";
+import TopologyAnnotation from "./TopologyAnnotation.vue";
+import { useLayoutStore } from "../stores/layout";
 
 const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore();
 const canvas = ref<SVGSVGElement>();
+const layout = useLayoutStore();
 const transform = computed(
   () =>
     `translate(${editor.view.x} ${editor.view.y}) scale(${editor.view.scale})`,
 );
+const anchors = computed(() => portAnchors(lab.topology));
 const edges = computed(() =>
-  lab.topology.links.flatMap((link) => {
-    const a = lab.getNode(link.a.node),
-      b = lab.getNode(link.b.node);
-    if (!a || !b) return [];
-    const p = portPoint(a, link.a.port),
-      q = portPoint(b, link.b.port),
-      offset = Math.max(45, Math.abs(p.x - q.x) * 0.45);
-    return [
-      {
-        id: link.id,
-        d: `M ${p.x} ${p.y} C ${p.x + offset * p.side} ${p.y}, ${q.x + offset * q.side} ${q.y}, ${q.x} ${q.y}`,
-        x: (p.x + q.x) / 2,
-        y: (p.y + q.y) / 2 - 9,
-      },
-    ];
-  }),
+  lab.topology.links.map((link) =>
+    routeLink(lab.topology, link, anchors.value),
+  ),
 );
 type Drag = { pointerId: number; start: Point } & (
   | { type: "pan"; x: number; y: number }
-  | { type: "node"; id: string; x: number; y: number }
-  | { type: "resize"; node: Device; handle: ResizeHandle }
+  | { type: "node" | "annotation"; id: string; x: number; y: number }
 );
 let drag: Drag | null = null;
-const activeResize = ref<ResizeHandle | null>(null);
 function finishDrag() {
   const pointerId = drag?.pointerId;
   drag = null;
-  activeResize.value = null;
   if (pointerId !== undefined && canvas.value?.hasPointerCapture(pointerId))
     canvas.value.releasePointerCapture(pointerId);
 }
@@ -72,16 +59,19 @@ function screenPoint(x: number, y: number): Point {
 function fit() {
   if (!canvas.value) return;
   finishDrag();
-  const rect = canvas.value.getBoundingClientRect(),
-    nodes = lab.topology.nodes;
-  if (!nodes.length) {
+  const rect = canvas.value.getBoundingClientRect();
+  const boxes = [
+    ...lab.topology.nodes.map((node) => nodeBox(node)),
+    ...(lab.topology.annotations || []).map(annotationBox),
+  ];
+  if (!boxes.length) {
     Object.assign(editor.view, { x: 0, y: 0, scale: 1 });
     return;
   }
-  const minX = Math.min(...nodes.map((n) => n.x - nodeWidth(n) / 2)) - 46,
-    maxX = Math.max(...nodes.map((n) => n.x + nodeWidth(n) / 2)) + 46;
-  const minY = Math.min(...nodes.map((n) => n.y - nodeHeight(n) / 2)) - 50,
-    maxY = Math.max(...nodes.map((n) => n.y + nodeHeight(n) / 2)) + 40;
+  const minX = Math.min(...boxes.map((box) => box.left)) - 46,
+    maxX = Math.max(...boxes.map((box) => box.right)) + 46;
+  const minY = Math.min(...boxes.map((box) => box.top)) - 50,
+    maxY = Math.max(...boxes.map((box) => box.bottom)) + 40;
   const scale = Math.min(
     1.3,
     Math.max(
@@ -114,6 +104,11 @@ function zoom(factor: number, clientX?: number, clientY?: number) {
 function pointerDown(event: PointerEvent) {
   if (drag || (event.button !== 0 && event.button !== 1)) return;
   const target = event.target as Element;
+  if (editor.mode === "annotation" && event.button === 0 && !lab.locked) {
+    editor.addAnnotation(screenPoint(event.clientX, event.clientY));
+    if (layout.sides.right.collapsed) layout.toggle("right");
+    return;
+  }
   const port = target.closest<SVGElement>("[data-port]");
   if (port && event.button === 0) {
     if (
@@ -123,31 +118,34 @@ function pointerDown(event: PointerEvent) {
     return;
   }
   const element = target.closest<SVGElement>(".topology-node"),
-    edge = target.closest<SVGElement>(".edge");
-  if (element && event.button === 0) {
+    edge = target.closest<SVGElement>(".edge"),
+    note = target.closest<SVGElement>(".topology-annotation");
+  if (note && event.button === 0) {
+    const id = note.dataset.annotation!;
+    editor.select({ type: "annotation", id });
+    if (layout.sides.right.collapsed) layout.toggle("right");
+    if (!lab.locked)
+      drag = {
+        type: "annotation",
+        id,
+        pointerId: event.pointerId,
+        start: screenPoint(event.clientX, event.clientY),
+        x: editor.annotation!.x,
+        y: editor.annotation!.y,
+      };
+  } else if (element && event.button === 0) {
     const id = element.dataset.node!;
     editor.select({ type: "node", id });
     const node = lab.getNode(id)!;
     if (!lab.locked && editor.mode !== "connect") {
-      const handle = target.closest<SVGElement>("[data-resize]")?.dataset
-        .resize as ResizeHandle | undefined;
-      drag = handle
-        ? {
-            type: "resize",
-            node: { ...node },
-            handle,
-            pointerId: event.pointerId,
-            start: screenPoint(event.clientX, event.clientY),
-          }
-        : {
-            type: "node",
-            id,
-            pointerId: event.pointerId,
-            start: screenPoint(event.clientX, event.clientY),
-            x: node.x,
-            y: node.y,
-          };
-      activeResize.value = handle ?? null;
+      drag = {
+        type: "node",
+        id,
+        pointerId: event.pointerId,
+        start: screenPoint(event.clientX, event.clientY),
+        x: node.x,
+        y: node.y,
+      };
     }
   } else if (edge && event.button === 0)
     editor.select({ type: "link", id: edge.dataset.link! });
@@ -174,19 +172,11 @@ function pointerMove(event: PointerEvent) {
       return;
     }
     const point = screenPoint(event.clientX, event.clientY);
-    if (drag.type === "resize") {
-      lab.resizeNode(
-        drag.node.id,
-        resizeNodeBounds(drag.node, drag.handle, {
-          x: Math.round(point.x - drag.start.x),
-          y: Math.round(point.y - drag.start.y),
-        }),
-      );
-    } else
-      lab.moveNode(drag.id, {
-        x: Math.round((drag.x + point.x - drag.start.x) / 6) * 6,
-        y: Math.round((drag.y + point.y - drag.start.y) / 6) * 6,
-      });
+    const move = drag.type === "node" ? lab.moveNode : lab.moveAnnotation;
+    move(drag.id, {
+      x: Math.round((drag.x + point.x - drag.start.x) / 6) * 6,
+      y: Math.round((drag.y + point.y - drag.start.y) / 6) * 6,
+    });
   }
 }
 function dragOver(event: DragEvent) {
@@ -289,11 +279,10 @@ onBeforeUnmount(() => {
       ref="canvas"
       :class="{
         'connect-mode': editor.mode === 'connect',
-        'resizing-device': !!activeResize,
+        'annotation-mode': editor.mode === 'annotation',
       }"
-      :style="activeResize ? { cursor: `${activeResize}-resize` } : undefined"
       role="img"
-      aria-label="网络拓扑画布，拖动设备调整位置，拖动选中设备的手柄调整大小，点击端口连接网线"
+      aria-label="网络拓扑画布，拖动圆形设备或注释调整位置，点击端口连接网线"
       tabindex="0"
       @pointerdown.prevent="ui.run(() => pointerDown($event))"
       @pointermove="pointerMove"
@@ -326,6 +315,13 @@ onBeforeUnmount(() => {
       </defs>
       <rect width="100%" height="100%" fill="url(#grid)" />
       <g id="viewport" :transform="transform">
+        <g id="annotations">
+          <TopologyAnnotation
+            v-for="note in lab.topology.annotations || []"
+            :key="note.id"
+            :note="note"
+          />
+        </g>
         <g id="edges">
           <g
             v-for="edge in edges"
@@ -349,11 +345,19 @@ onBeforeUnmount(() => {
             v-for="node in lab.topology.nodes"
             :key="node.id"
             :node="node"
+            :anchors="anchors[node.id]"
           />
         </g>
       </g>
     </svg>
-    <div id="empty-state" :hidden="!!lab.topology.nodes.length">
+    <div
+      id="empty-state"
+      :hidden="
+        !!lab.topology.nodes.length ||
+        !!lab.topology.annotations?.length ||
+        editor.mode === 'annotation'
+      "
+    >
       <div>⌘</div>
       <h2>从一台设备开始</h2>
       <p>将左侧设备拖入画布，点击两个端口完成连线。</p>
@@ -369,7 +373,8 @@ onBeforeUnmount(() => {
       <span id="canvas-hint">{{ editor.hint }}</span
       ><span id="counts"
         >{{ lab.topology.nodes.length }} 台设备 /
-        {{ lab.topology.links.length }} 条链路</span
+        {{ lab.topology.links.length }} 条链路 /
+        {{ lab.topology.annotations?.length || 0 }} 条注释</span
       >
     </div>
   </div>

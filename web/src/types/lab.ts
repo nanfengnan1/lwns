@@ -29,12 +29,21 @@ export interface Link {
   a: Endpoint;
   b: Endpoint;
 }
+export interface Annotation extends Point {
+  id: string;
+  text: string;
+  color: string;
+  background: string;
+  fontSize: number;
+}
 export interface Topology {
   version: 1;
   id: string;
   name: string;
   nodes: Device[];
   links: Link[];
+  annotations?: Annotation[];
+  optimizeLinks?: boolean;
 }
 export type Phase =
   "idle" | "running" | "deploying" | "destroying" | "error" | "degraded";
@@ -105,4 +114,7 @@ export interface ConfigSaveResult {
   }[];
   runtime: Runtime;
 }
-export type Selection = { type: "node" | "link"; id: string } | null;
+export type Selection = {
+  type: "node" | "link" | "annotation";
+  id: string;
+} | null;
