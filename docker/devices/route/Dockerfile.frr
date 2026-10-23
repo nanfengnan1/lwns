@@ -5,6 +5,7 @@ FROM alpine:3.22 as alpine-builder
 RUN apk add \
                 --update-cache \
                 dnsmasq \
+                vsftpd \
                 iproute2 \
                 abuild \
                 alpine-conf \
