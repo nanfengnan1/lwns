@@ -1,0 +1,84 @@
+<script setup lang="ts">
+import { useLabStore } from "../stores/lab";
+import { useEditorStore } from "../stores/editor";
+import { useUiStore } from "../stores/ui";
+const lab = useLabStore(),
+  editor = useEditorStore(),
+  ui = useUiStore();
+async function save() {
+  editor.commitDraft();
+  await lab.save();
+  ui.notify("拓扑已保存");
+}
+async function deploy() {
+  editor.commitDraft();
+  await lab.startJob("deploy");
+  editor.pending = null;
+  ui.showPanel("logs");
+}
+async function destroy() {
+  if (
+    !confirm(
+      "清理当前实验创建的容器和 veth？拓扑文件会保留；未写入拓扑的容器内配置会丢失。",
+    )
+  )
+    return;
+  await lab.startJob("destroy");
+  ui.showPanel("logs");
+}
+</script>
+
+<template>
+  <div class="lab-toolbar">
+    <div class="lab-title">
+      <span class="document-icon">▤</span>
+      <input
+        id="lab-name"
+        :value="lab.topology.name"
+        aria-label="实验名称"
+        maxlength="80"
+        :disabled="lab.locked"
+        @change="
+          ui.run(() =>
+            lab.rename(($event.target as HTMLInputElement).value.trim()),
+          )
+        "
+      />
+      <span id="save-state">{{
+        lab.operation === "save"
+          ? "保存中…"
+          : editor.unsaved
+            ? "有未保存修改"
+            : lab.saved
+              ? "已保存"
+              : "未保存"
+      }}</span>
+    </div>
+    <div class="toolbar-actions">
+      <button id="save" :disabled="lab.locked" @click="ui.run(save)">
+        保存
+      </button>
+      <button
+        id="destroy"
+        class="danger-subtle"
+        :disabled="!lab.canDestroy"
+        @click="ui.run(destroy)"
+      >
+        清理设备
+      </button>
+      <button
+        id="deploy"
+        class="primary"
+        :disabled="!lab.canDeploy"
+        :title="
+          lab.environment.ready
+            ? '创建设备并连接网线'
+            : lab.environment.errors.join('；')
+        "
+        @click="ui.run(deploy)"
+      >
+        <span>▶</span> 部署实验
+      </button>
+    </div>
+  </div>
+</template>

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CONTAINER_IMG="quay.io/frrouting/frr:10.0.0"
+CONTAINER_IMG="alpine/frr:latest"
 CONTAINER_FILE=".frr_containers.tmp"
 
 function run_as_root() {

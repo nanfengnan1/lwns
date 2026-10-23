@@ -9,6 +9,7 @@
    layout
    build-images
    scripts
+   workbench
    testing
    build-docs
    contributing

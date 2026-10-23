@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "id": "first-lab",
+  "name": "双网段路由实验",
+  "nodes": [
+    {"id": "r1", "name": "R1", "kind": "router", "image": "alpine/frr:latest", "x": 500, "y": 150, "ports": [{"name": "eth0", "address": "10.10.1.1/24"}, {"name": "eth1", "address": "10.10.2.1/24"}, {"name": "eth2", "address": ""}, {"name": "eth3", "address": ""}]},
+    {"id": "sw1", "name": "SW1", "kind": "switch", "image": "alpine/vpcs:latest", "x": 290, "y": 310, "ports": [{"name": "eth0", "address": ""}, {"name": "eth1", "address": ""}, {"name": "eth2", "address": ""}, {"name": "eth3", "address": ""}]},
+    {"id": "sw2", "name": "SW2", "kind": "switch", "image": "alpine/vpcs:latest", "x": 710, "y": 310, "ports": [{"name": "eth0", "address": ""}, {"name": "eth1", "address": ""}, {"name": "eth2", "address": ""}, {"name": "eth3", "address": ""}]},
+    {"id": "pc1", "name": "PC1", "kind": "host", "image": "alpine/vpcs:latest", "x": 290, "y": 485, "gateway": "10.10.1.1", "ports": [{"name": "eth0", "address": "10.10.1.10/24"}]},
+    {"id": "pc2", "name": "PC2", "kind": "host", "image": "alpine/vpcs:latest", "x": 710, "y": 485, "gateway": "10.10.2.1", "ports": [{"name": "eth0", "address": "10.10.2.10/24"}]}
+  ],
+  "links": [
+    {"id": "l1", "a": {"node": "r1", "port": "eth0"}, "b": {"node": "sw1", "port": "eth0"}},
+    {"id": "l2", "a": {"node": "r1", "port": "eth1"}, "b": {"node": "sw2", "port": "eth0"}},
+    {"id": "l3", "a": {"node": "sw1", "port": "eth1"}, "b": {"node": "pc1", "port": "eth0"}},
+    {"id": "l4", "a": {"node": "sw2", "port": "eth1"}, "b": {"node": "pc2", "port": "eth0"}}
+  ]
+}

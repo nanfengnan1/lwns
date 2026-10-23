@@ -32,7 +32,7 @@
   docker image ls
 
 应以加载输出为准核对镜像标签。当前 ``script/frr_init.sh`` 中的
-``CONTAINER_IMG`` 为 ``quay.io/frrouting/frr:10.0.0``；VPCS 工具默认使用
+``CONTAINER_IMG`` 为 ``alpine/frr:latest``；VPCS 工具默认使用
 ``alpine/vpcs:latest``。归档文件名不保证内部标签与上述默认值相同。
 
 VPCS 镜像也可从项目中的 Dockerfile 构建，见开发指南“镜像构建”章节。

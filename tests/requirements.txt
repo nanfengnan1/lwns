@@ -1,0 +1,2 @@
+-r ../script/python/requirements.txt
+httpx==0.28.1

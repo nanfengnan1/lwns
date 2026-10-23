@@ -10,6 +10,7 @@
    architecture
    deployment
    quickstart
+   workbench
    topology
    vpcs
    network
