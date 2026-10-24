@@ -285,7 +285,7 @@ export function alignDevices(
       adjacency.get(link.a.node)!.add(link.b.node);
       adjacency.get(link.b.node)!.add(link.a.node);
     }
-    const ranks = { router: 0, switch: 1, host: 2 };
+    const ranks = { router: 0, firewall: 1, switch: 2, host: 3 };
     const roots = [...nodes].sort(
       (a, b) =>
         ranks[a.kind] - ranks[b.kind] ||

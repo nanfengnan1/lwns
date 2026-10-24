@@ -12,11 +12,13 @@ export const titles: Record<DeviceKind, string> = {
   router: "FRR 路由器",
   switch: "以太网交换机",
   host: "VPCS 终端",
+  firewall: "防火墙",
 };
 export const colors: Record<DeviceKind, string> = {
   router: "#6484dd",
   switch: "#43a48f",
   host: "#9b7bc5",
+  firewall: "#d48a48",
 };
 export const phases: Record<Phase, string> = {
   idle: "设计中",
@@ -120,7 +122,7 @@ export function parseTopology(value: unknown): Topology {
       names.has(name)
     )
       throw Error("设备 ID 或名称重复或无效");
-    if (!["router", "switch", "host"].includes(String(node.kind)))
+    if (!["router", "switch", "host", "firewall"].includes(String(node.kind)))
       throw Error("设备类型无效");
     if (
       typeof node.x !== "number" ||

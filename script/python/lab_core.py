@@ -65,7 +65,7 @@ def validate_topology(raw):
         if nid in by_id or name in names:
             raise LabError("设备 ID 或名称重复: " + name)
         kind = raw_node.get("kind")
-        if kind not in ("router", "switch", "host"):
+        if kind not in ("router", "switch", "host", "firewall"):
             raise LabError("未知设备类型")
         image = string(raw_node.get("image"), "镜像", 255)
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./:@-]*", image):

@@ -29,6 +29,9 @@ CATALOG = [
     {"id": "linux-host", "version": 1, "adapter": "linux", "kind": "host", "title": "VPCS 终端",
      "image": "alpine/vpcs:latest", "ports": 1, "prefix": "PC", "console": "sh", "console_command": ["sh", "-i"],
      "capabilities": {"save_config": False, "startup_config": False}},
+    {"id": "linux-firewall", "version": 1, "adapter": "linux", "kind": "firewall", "title": "Linux 防火墙",
+     "image": "alpine/vpcs:latest", "ports": 4, "prefix": "FW", "console": "sh", "console_command": ["sh", "-i"],
+     "capabilities": {"save_config": False, "startup_config": False}},
 ]
 DEFAULT_TEMPLATES = {item["kind"]: item["id"] for item in CATALOG}
 

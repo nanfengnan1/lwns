@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import uvicorn
 from test_images_docker import ImageDockerFixture
+from lab_devices import CATALOG
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -20,7 +21,7 @@ if __name__ == "__main__":
             catalog = fixture.images.catalog
             def large_catalog():
                 items = catalog()
-                return items + [{**items[0], "id": f"fixture-{i}", "template_id": "frr", "title": f"测试路由器 {i:03}", "image": f"fixture/router-{i}:latest"} for i in range(200)]
+                return items + [{**CATALOG[0], "id": f"fixture-{i}", "template_id": "frr", "title": f"测试路由器 {i:03}", "image": f"fixture/router-{i}:latest"} for i in range(200)]
             fixture.images.catalog = large_catalog
         args.metadata.write_text(json.dumps(metadata), encoding="utf-8")
         print(json.dumps(metadata), flush=True)

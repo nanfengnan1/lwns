@@ -27,6 +27,7 @@ export const useImagesStore = defineStore("images", () => {
   );
   let xhr: XMLHttpRequest | undefined;
   let revision = 0;
+  let catalogKey = "";
   const busy = computed(
     () => data.value.busy || submitting.value || uploading.value,
   );
@@ -46,9 +47,20 @@ export const useImagesStore = defineStore("images", () => {
       data.value = result;
       if (!activeJob.value && result.jobs[0])
         activeJob.value = result.jobs[0].id;
-      if (sync || (wasBusy && !data.value.busy)) {
+      const nextKey = JSON.stringify(
+        result.images.map((item) => [
+          item.id,
+          item.reference,
+          item.template,
+          item.title,
+          item.present,
+        ]),
+      );
+      if (sync || nextKey !== catalogKey || (wasBusy && !data.value.busy)) {
         await lab.refreshCatalog();
         await lab.refreshEnvironment();
+        // Keep the old key on failure so the next poll retries the catalog refresh.
+        if (current === revision) catalogKey = nextKey;
       }
     } finally {
       loading.value = false;

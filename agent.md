@@ -71,7 +71,7 @@ Linux Docker 宿主机
 - 项目图标为北极熊头像，唯一资源为 [polar-bear.svg](web/src/assets/polar-bear.svg)，用于导航栏、登录对话框和 favicon。
 - 公共布局和样式集中在 [workbench.css](web/src/styles/workbench.css)。当前页面最小宽度为 1000px，尚未设计移动端布局。
 - 用户可见的按钮、状态和提示以中文为主。设备名称、命令、接口和镜像名保留原始内容。
-- 设备库默认宽 240px，采用紧凑卡片；搜索名称/镜像，按路由/交换/主机筛选，每批显示 60 项，“显示更多”追加。仅列表滚动，底部入口固定。搜索覆盖全部目录；导入后刷新目录，不改动当前拓扑草稿。
+- 设备库默认宽 240px，改为路由器、交换机、PC、防火墙四个可展开/收起的分类条目，镜像生成的设备卡片放在对应条目下面；移除“全部”筛选及独立平铺列表。每类分批显示 60 项，分类显示数量与空提示，底部入口固定。搜索只匹配名称/镜像地址，覆盖所有分类并自动展开结果，清除后恢复原展开状态；库变化不修改画布草稿。
 - 镜像管理为独立对话框，左侧清单/搜索，右侧来源表单或设备库设置，底部任务日志。关闭窗口后已提交任务继续执行；窗口内键盘不触发画布快捷键。
 
 侧边栏约定（已实现）：
@@ -147,7 +147,7 @@ Topology
   optimizeLinks?   # 缺省 true；仅影响视觉连线
 ```
 
-- `kind` 为 `router`、`switch`、`host`；`command` 为启动参数数组，`config` 为 FRR 启动配置文本。
+- `kind` 为 `router`、`switch`、`host`、`firewall`；PC 继续使用 `host`，保持旧拓扑兼容。`command` 为启动参数数组，`config` 为 FRR 启动配置文本。
 - 旧 `width` / `height` 继续校验并保留，宽 96～640、高 72～640；圆形几何由端口数决定，不再读取矩形尺寸。节点名称截短显示，完整值保留。
 - 可选 `annotations` 最多 100 条，独立且唯一的合法 ID；内容 1～1000 字符，坐标有限且绝对值不超过 100000，字号 12～28 的整数；颜色为六位十六进制，背景额外支持 `none`。前后端均校验，非法导入/保存不覆盖原记录；旧文件缺字段时仍可使用。
 - CIDR、默认网关、镜像、端口和连线约束同时在前后端校验，后端是部署约束的最终校验方。
@@ -165,7 +165,7 @@ Topology
 ### 5.1 设备模板与适配器
 
 - 内置模板位于 `lab_devices.py` 的 `CATALOG`，包含 `id`、`version`、`adapter`、`kind`、镜像、端口默认值、控制台显示名与命令数组，以及 `save_config` / `startup_config` 能力。
-- 默认模板为 `frr`、`linux-bridge`、`linux-host`；拓扑可选 `template`，旧版本 1 JSON 仍然兼容。镜像与模板分开配置，不能通过拓扑指定宿主机路径或任意执行器。
+- 模板为 `frr`、`linux-bridge`、`linux-host`、`linux-firewall`；拓扑可选 `template`，旧版本 1 JSON 仍然兼容。防火墙使用通用 Linux 适配器，默认 4 个端口、FW 命名前缀和 sh 终端；镜像需自带所需工具，不自动配置防火墙规则或启用规则持久化。镜像与模板分开配置，不能通过拓扑指定宿主机路径或任意执行器。
 - `ADAPTERS` 注册适配器；接口为 `prepare`、`command`、`started`、`linked`、`config_status`、`save_config`。核心管理器保留公共容器、veth 和归属处理。
 - 前端按模板 ID 添加设备，根据模板能力显示保存入口，终端程序由后端模板决定。新增同类设备优先扩展模板和适配器；新增画布种类再扩展 `kind` 和图标。
 - 本阶段保留 JSON 项目文件，尚未迁移 YAML 或生成 Compose。
@@ -204,8 +204,9 @@ Topology
 - 大文件通过登记上传、二进制 PUT、提交任务三步处理，流式写盘，默认 8 GiB，可用 `--max-image-upload-gib` 调整；JSON 仍为 1 MiB，Dockerfile 为 512 KiB。构建上下文限制 16 GiB / 100000 项，拒绝路径越界、链接和特殊文件；选中的 Dockerfile 覆盖上下文根目录同名文件。
 - 任务返回 202，每 2 秒轮询；记录 queued/running/success/error 和有界日志，Docker 子进程超时 60 分钟。关闭窗口不取消已提交任务，上传可取消。完成/失败回收临时文件；服务重启将未完成任务标为失败并清理 UUID 工作目录。历史任务文件暂不自动轮转，API 返回最近 30 项。
 - 一次只执行一个镜像任务，启动时拒绝与正在执行的部署/清理任务并发；镜像任务期间拒绝新部署，允许清理已有设备。镜像管理只要求可访问本机 Linux Docker daemon；设计模式不能导入/删除，设备部署仍要求 root/ip/nsenter。
-- 删除先检查已保存实验及所有现存容器，拒绝删除引用中的镜像；使用非强制 `docker image rm`，成功后才删管理记录，失败保留并刷新。共享层和其他标签可能保留。内置三种模板继续存在，自定义镜像卡片随记录删除消失。
-- 兼容现有设备的镜像可绑定 `frr` / `linux-host` / `linux-bridge`，已加载后自动生成设备卡片；仅管理镜像时不生成卡片。动态卡片的 `id` 与基础 `template_id` 分开，节点写入基础模板 ID，保持拓扑版本 1 与适配器匹配。
+- 删除先检查已保存实验及所有现存容器，拒绝删除引用中的镜像；使用非强制 `docker image rm`，成功后才删管理记录，失败保留并刷新。共享层和其他标签可能保留。设备库完全从管理记录生成，`CATALOG` 只定义适配能力，不再无条件添加固定设备卡片；默认镜像和自定义镜像删除后均移除对应条目，重启不补回。
+- 镜像管理的设备类型为路由器（`frr`）、交换机（`linux-bridge`）、PC（`linux-host`）、防火墙（`linux-firewall`）；一个镜像记录绑定一个类型，修改后卡片移动到对应分类。加载且绑定后生成卡片，“仅管理镜像”取消卡片。默认清单只绑定 FRR 与 PC，不再隐式生成交换机卡片；需要在镜像管理中设置交换机类型。动态卡片的 `id` 与基础 `template_id` 分开，前端按基础模板 ID 解析能力，节点写入基础模板 ID，保持拓扑版本 1 与适配器匹配。
+- 真实模式隐藏未加载镜像；设计模式可显示仍在清单中的未加载绑定条目并标明“未加载 · 仅用于设计”，已删除记录在两种模式下均不会生成卡片。镜像清单元数据变化触发目录刷新，失败下次轮询重试，目录请求序号阻止迟到响应恢复已删条目；现有画布设备和配置保留。
 - 导入镜像不会自动实现新的厂商 CLI、VPP 接入或配置保存；这些能力仍需模板/适配器，未来手动端口方案仍见第 11 节（未实现）。
 
 ## 6. Web 交互式终端
@@ -240,7 +241,7 @@ Topology
 | --- | --- |
 | `GET /api/bootstrap` | 设备目录、环境、实验列表、示例 |
 | `GET /api/environment` | Docker 与宿主机环境检查、本机镜像 |
-| `GET /api/catalog` | 基础模板和已加载且绑定模板的镜像卡片 |
+| `GET /api/catalog` | 管理清单派生的设备卡片；真实模式仅返回已加载且绑定类型的条目 |
 | `GET /api/images` / `POST /api/images/refresh` | 镜像与任务快照 / 主动核对 Docker 清单 |
 | `POST /api/images/jobs` | 提交 pull/url/archive/build 后台任务 |
 | `PUT /api/images/{id}` / `DELETE /api/images/{id}` | 更新名称/模板；提交镜像删除任务 |
@@ -362,6 +363,7 @@ sudo env ROUTE_OVS_CONFIG_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -
 - `web/tests/canvas.test.ts`：旧尺寸兼容、32 端口、最近方向、平行连线、障碍绕行、循环/不连通图的布局、注释边界与草稿保护；`tests/test_lab.py` 验证注释字段校验及保存/重启恢复、失败不覆盖原文件。原设备手动拉伸测试已替换为圆形与布局测试。
 - `tests/check_canvas_navigation.cjs`：真实 Chromium 验证两根原生滚动条、滚轮与 Ctrl/Shift 修饰键、鼠标缩放锚点、部署后移动/对齐/保存及刷新恢复、增删改锁定；使用 `tests/serve_canvas_fixture.py` 的隔离 FakeHost 部署，不创建真实容器。`web/tests/workbench.test.ts` 与 `tests/test_lab.py` 覆盖布局保存白名单、运行状态保留、失败草稿及忙碌保护；`canvas.test.ts` 覆盖不同缩放下的滚动边界。
 - `web/tests/layout.test.ts` / `web/tests/project-name.test.ts`：侧边栏边界、窗口变窄、存储恢复/损坏/禁用、命名校验、保存失败、运行中改名保留终端和属性草稿。
+- `tests/check_library_groups.cjs` + `tests/serve_library_fixture.py`：200 条模拟镜像下的分类折叠、搜索、分批显示、固定底栏、默认镜像删除同步、防火墙导入、修改类型/解绑和刷新恢复；不执行真实 Docker。`test_images.py` / `images.test.ts` 覆盖默认记录删除后重启不补回、删除失败保留、能力解析、目录刷新失败重试与旧响应拒绝。
 - `tests/test_lab.py` 新增改名持久化、认证/Origin/参数校验、忙碌拒绝及运行中只修改名称的用例；`tests/check_sidebar_projects.cjs` 在 Chromium 验证实际拖动、收起、键盘、刷新、取消和中文项目命名。
 - [check_terminal.cjs](tests/check_terminal.cjs)：验证真实浏览器输入、FRR 配置、路由器 Shell、多标签、ping/Ctrl+C、尺寸同步、放大、重连和关闭。
 - [serve_terminal_fixture.py](tests/serve_terminal_fixture.py)：为浏览器测试创建独立 Docker 设备，退出时清理；测试用的环境替换不能复制到生产入口。
@@ -611,3 +613,4 @@ OSPF实验.rovproject              # 建议扩展名，内部为 ZIP；尚未确
 - [x] **画布注释**：支持多行网段说明、字号/颜色/背景、拖动和删除，随 JSON 保存、导入导出与刷新恢复。
 - [x] **画布滚动与 Ctrl 缩放**：横纵滚动条、滚轮平移、Shift 横移及 Ctrl＋滚轮围绕鼠标缩放；滚动视口不改变拓扑数据。
 - [x] **部署后调整布局**：允许移动设备和已有注释、自动对齐及连线优化，专用布局接口保存并保留设备配置和部署；增删对象、连线及属性修改继续锁定。
+- [x] **设备库分组与镜像删除同步**：路由器、交换机、PC、防火墙四类可收起条目，设备显示在所属分类下，移除“全部”平铺入口；管理记录是卡片来源，删除/解绑/改名/改类型同步到侧边栏，失败重试且拒绝旧响应回写。

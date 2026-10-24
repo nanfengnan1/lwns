@@ -1,31 +1,42 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useLabStore } from "../stores/lab";
 import { useEditorStore } from "../stores/editor";
 import { useUiStore } from "../stores/ui";
 import { parseTopology } from "../domain/topology";
 import DeviceIcon from "./DeviceIcon.vue";
 import DeleteLabButton from "./DeleteLabButton.vue";
-import { filterDevices } from "../domain/library";
+import { deviceCategories, filterDevices } from "../domain/library";
+import type { DeviceKind } from "../types/lab";
 
 const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore();
 const fileInput = ref<HTMLInputElement>();
-const search = ref(""),
-  category = ref("all"),
-  visibleCount = ref(60);
-const categories = [
-  { id: "all", title: "全部" },
-  { id: "router", title: "路由" },
-  { id: "switch", title: "交换" },
-  { id: "host", title: "主机" },
-];
-const filtered = computed(() =>
-  filterDevices(lab.catalog, search.value, category.value),
+const search = ref("");
+const expanded = reactive<Record<DeviceKind, boolean>>({
+  router: true,
+  switch: true,
+  host: true,
+  firewall: true,
+});
+const visibleCount = reactive<Record<DeviceKind, number>>({
+  router: 60,
+  switch: 60,
+  host: 60,
+  firewall: 60,
+});
+const groups = computed(() =>
+  deviceCategories.map((category) => ({
+    ...category,
+    items: filterDevices(lab.catalog, search.value, category.id),
+  })),
 );
-watch([search, category], () => {
-  visibleCount.value = 60;
+const matches = computed(() =>
+  groups.value.reduce((count, group) => count + group.items.length, 0),
+);
+watch(search, () => {
+  for (const category of deviceCategories) visibleCount[category.id] = 60;
 });
 function drag(event: DragEvent, kind: string) {
   if (event.dataTransfer) {
@@ -106,7 +117,7 @@ async function importTopology(event: Event) {
     </div>
     <div class="library-heading">
       <h2>设备库</h2>
-      <span>{{ filtered.length }} / {{ lab.catalog.length }}</span>
+      <span>{{ matches }} / {{ lab.catalog.length }}</span>
     </div>
     <div class="library-search">
       <span aria-hidden="true">⌕</span>
@@ -118,60 +129,75 @@ async function importTopology(event: Event) {
         aria-label="搜索设备或镜像"
       />
     </div>
-    <div class="library-categories" aria-label="设备分类">
-      <button
-        v-for="item in categories"
-        :key="item.id"
-        :data-category="item.id"
-        :aria-pressed="category === item.id"
-        :class="{ active: category === item.id }"
-        @click="category = item.id"
-      >
-        {{ item.title }}
-      </button>
-    </div>
     <div
       id="device-library"
       class="device-library-scroll"
       tabindex="0"
       aria-label="设备列表，可拖入画布"
     >
-      <button
-        v-for="item in filtered.slice(0, visibleCount)"
-        :key="item.id || item.kind"
-        class="device-card"
-        :class="item.kind"
-        :data-kind="item.kind"
-        :data-template="item.id || item.kind"
-        :title="item.title + '\n' + item.image + '\n点击添加，或拖入画布'"
-        :draggable="!lab.locked"
-        :disabled="lab.locked"
-        @dragstart="drag($event, item.id || item.kind)"
-        @click="ui.run(() => editor.addNode(item.id || item.kind))"
+      <section
+        v-for="group in groups"
+        :key="group.id"
+        class="device-category"
+        :class="group.id"
+        :data-device-group="group.id"
       >
-        <span class="device-icon"><DeviceIcon :kind="item.kind" /></span>
-        <span class="device-card-label"
-          ><b>{{ item.title }}</b
-          ><small>{{ item.image }}</small></span
-        ><span class="drag-dots">⠿</span>
-      </button>
-      <div v-if="!filtered.length" class="library-empty">
-        没有匹配的设备<br /><button
-          @click="
-            search = '';
-            category = 'all';
-          "
+        <button
+          class="device-group-heading"
+          :data-category="group.id"
+          :aria-expanded="!!search.trim() || expanded[group.id]"
+          :aria-controls="`device-group-${group.id}`"
+          @click="expanded[group.id] = !expanded[group.id]"
         >
-          清除筛选
+          <span class="group-chevron" aria-hidden="true">{{
+            search.trim() || expanded[group.id] ? "▾" : "▸"
+          }}</span>
+          <DeviceIcon :kind="group.id" />
+          <b>{{ group.title }}</b
+          ><span class="group-count">{{ group.items.length }}</span>
         </button>
+        <div
+          v-if="search.trim() || expanded[group.id]"
+          :id="`device-group-${group.id}`"
+          class="device-group-items"
+        >
+          <button
+            v-for="item in group.items.slice(0, visibleCount[group.id])"
+            :key="item.id || item.kind"
+            class="device-card"
+            :class="item.kind"
+            :data-kind="item.kind"
+            :data-template="item.id || item.kind"
+            :title="item.title + '\n' + item.image + '\n点击添加，或拖入画布'"
+            :draggable="!lab.locked"
+            :disabled="lab.locked"
+            @dragstart="drag($event, item.id || item.kind)"
+            @click="ui.run(() => editor.addNode(item.id || item.kind))"
+          >
+            <span class="device-icon"><DeviceIcon :kind="item.kind" /></span>
+            <span class="device-card-label"
+              ><b>{{ item.title }}</b
+              ><small>{{ item.image }}</small
+              ><small v-if="item.present === false" class="device-unavailable"
+                >未加载 · 仅用于设计</small
+              ></span
+            ><span class="drag-dots">⠿</span>
+          </button>
+          <p v-if="!group.items.length" class="device-group-empty">
+            {{ search.trim() ? "无匹配设备" : "暂无设备，在镜像管理中添加" }}
+          </p>
+          <button
+            v-if="group.items.length > visibleCount[group.id]"
+            class="library-more"
+            @click="visibleCount[group.id] += 60"
+          >
+            显示更多（剩余 {{ group.items.length - visibleCount[group.id] }}）
+          </button>
+        </div>
+      </section>
+      <div v-if="search.trim() && !matches" class="library-empty">
+        <button @click="search = ''">清除搜索</button>
       </div>
-      <button
-        v-if="filtered.length > visibleCount"
-        class="library-more"
-        @click="visibleCount += 60"
-      >
-        显示更多（剩余 {{ filtered.length - visibleCount }}）
-      </button>
     </div>
     <div class="library-note">点击添加或拖入画布 · veth 连接端口</div>
     <div class="library-bottom">

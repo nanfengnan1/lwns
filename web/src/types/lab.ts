@@ -1,4 +1,4 @@
-export type DeviceKind = "router" | "switch" | "host";
+export type DeviceKind = "router" | "switch" | "host" | "firewall";
 export interface Port {
   name: string;
   address: string;
@@ -72,6 +72,7 @@ export interface Environment {
   images: string[];
 }
 export interface DeviceTemplate {
+  present?: boolean;
   id?: string;
   template_id?: string;
   source?: string;

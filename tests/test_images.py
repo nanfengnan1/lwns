@@ -106,6 +106,56 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(set(job["images"]), set(self.host.imports))
         self.assertFalse(self.images.upload_path(upload).exists())
 
+    def test_default_image_card_follows_metadata_unbinding_and_deletion(self):
+        self.images.sync()
+        entry = next(item for item in self.images.snapshot()["images"] if item["reference"] == "alpine/frr:latest")
+        self.images.update(entry["id"], {"title": "我的路由器", "template": "frr"})
+        cards = [item for item in self.images.catalog() if item["image"] == entry["reference"]]
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0]["title"], "我的路由器")
+        self.assertEqual(cards[0]["template_id"], "frr")
+        self.images.update(entry["id"], {"title": "仅镜像", "template": ""})
+        self.assertNotIn(entry["reference"], [item["image"] for item in self.images.catalog()])
+        self.images.update(entry["id"], {"title": "我的路由器", "template": "frr"})
+        self.host.fail_image = True
+        self.assertEqual(self.job({"mode": "delete", "id": entry["id"]})["state"], "error")
+        self.assertIn(entry["reference"], [item["image"] for item in self.images.catalog()])
+        self.host.fail_image = False
+        self.assertEqual(self.job({"mode": "delete", "id": entry["id"]})["state"], "success")
+        restarted = ImageService(self.manager, command=self.host.command)
+        self.assertNotIn(entry["reference"], [item["image"] for item in restarted.catalog()])
+        with TestClient(create_app(self.manager, "images-token", images=restarted)) as client:
+            headers = {"Authorization": "Bearer images-token"}
+            for path in ("/api/catalog", "/api/bootstrap"):
+                body = client.get(path, headers=headers).json()
+                cards = body["catalog"] if isinstance(body, dict) else body
+                self.assertNotIn(entry["reference"], [item["image"] for item in cards])
+
+    def test_preview_shows_only_registered_design_cards_and_real_catalog_requires_loaded_image(self):
+        self.assertEqual(self.images.catalog(), [])
+        self.manager.preview = True
+        self.assertEqual(len(self.images.catalog()), 2)
+        self.assertTrue(all(not item["present"] for item in self.images.catalog()))
+        self.images.registry["images"] = []
+        self.images.persist()
+        self.assertEqual(ImageService(self.manager).catalog(), [])
+
+    def test_firewall_card_uses_linux_adapter_and_topology_round_trips(self):
+        job = self.job({"mode": "pull", "reference": "test/firewall:one", "template": "linux-firewall", "title": "测试防火墙"})
+        self.assertEqual(job["state"], "success")
+        card = next(item for item in self.images.catalog() if item["kind"] == "firewall")
+        lab = example()
+        lab["nodes"] = [{"id": "fw1", "name": "FW1", "kind": card["kind"], "template": card["template_id"],
+                         "image": card["image"], "x": 0, "y": 0, "ports": [{"name": "eth0", "address": ""}],
+                         "gateway": "", "command": [], "config": ""}]
+        lab["links"] = []
+        record = self.manager.save(lab)
+        self.manager.deploy(record)
+        self.assertEqual(self.manager.read(lab["id"])["topology"], lab)
+        self.assertEqual(self.manager.terminal_target(lab["id"], "fw1")["argv"], ["sh", "-i"])
+        self.assertFalse(card["capabilities"]["save_config"])
+        self.manager.destroy(record)
+
     def test_build_uses_uploaded_context_and_selected_dockerfile(self):
         output = io.BytesIO()
         with zipfile.ZipFile(output, "w") as archive:

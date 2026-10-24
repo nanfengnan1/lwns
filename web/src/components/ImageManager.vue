@@ -10,6 +10,7 @@ import {
 import { useImagesStore } from "../stores/images";
 import { useUiStore } from "../stores/ui";
 import type { ImageEntry } from "../types/images";
+import { deviceCategories } from "../domain/library";
 
 const images = useImagesStore(),
   ui = useUiStore();
@@ -29,9 +30,10 @@ const form = reactive({
 const edit = reactive({ title: "", template: "" });
 const templates = [
   { id: "", title: "仅管理镜像" },
-  { id: "frr", title: "FRR 路由器" },
-  { id: "linux-host", title: "Linux / VPCS 主机" },
-  { id: "linux-bridge", title: "Linux bridge 交换机" },
+  ...deviceCategories.map((item) => ({
+    id: item.template,
+    title: item.description,
+  })),
 ];
 const sourceNames: Record<string, string> = {
   default: "默认清单",
@@ -148,7 +150,7 @@ async function remove(item: ImageEntry) {
   <dialog
     id="image-manager"
     ref="dialog"
-    @close="ui.imagesOpen = false"
+    @close="!dialog?.open && (ui.imagesOpen = false)"
     @cancel="ui.imagesOpen = false"
   >
     <div class="image-manager-heading">
@@ -263,7 +265,7 @@ async function remove(item: ImageEntry) {
             ><input id="edit-image-title" v-model="edit.title" maxlength="80"
           /></label>
           <label class="field"
-            ><span>设备模板</span
+            ><span>设备类型</span
             ><select id="edit-image-template" v-model="edit.template">
               <option v-for="item in templates" :key="item.id" :value="item.id">
                 {{ item.title }}
@@ -272,7 +274,8 @@ async function remove(item: ImageEntry) {
           >
           <p class="image-help">
             选择兼容的模板后，已加载镜像会出现在左侧设备库。FRR 镜像需兼容
-            /usr/lib/frr/docker-start；主机和交换机模板需要 Linux 网络工具。
+            /usr/lib/frr/docker-start；PC 和交换机需要 Linux 网络工具。
+            防火墙使用 Linux Shell，镜像需自带防火墙工具，规则由终端配置。
           </p>
           <button
             id="save-image-settings"

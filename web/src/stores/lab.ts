@@ -89,6 +89,7 @@ export const useLabStore = defineStore("lab", () => {
   );
   let refreshing = false;
   let runtimeRevision = 0;
+  let catalogRevision = 0;
 
   function assertEditable() {
     if (locked.value) throw Error("请等待操作完成，并清理设备后再编辑拓扑");
@@ -100,14 +101,17 @@ export const useLabStore = defineStore("lab", () => {
     return topology.value.nodes.find((node) => node.id === id);
   }
   function getTemplate(node: Device) {
-    return catalog.value.find((item) =>
-      node.template ? item.id === node.template : item.kind === node.kind,
+    const matches = catalog.value.filter((item) =>
+      node.template
+        ? (item.template_id || item.id) === node.template
+        : item.kind === node.kind,
     );
+    return matches.find((item) => item.image === node.image) || matches[0];
   }
   function supportsConfig(node: Device) {
     return (
       getTemplate(node)?.capabilities?.save_config ??
-      (!node.template && node.kind === "router")
+      (node.template === "frr" || (!node.template && node.kind === "router"))
     );
   }
   function canSaveConfig(nodeId?: string) {
@@ -263,7 +267,9 @@ export const useLabStore = defineStore("lab", () => {
     );
     if (!template) throw Error("未知设备类型");
     const kind = template.kind;
-    const prefix = kind === "router" ? "r" : kind === "switch" ? "sw" : "pc";
+    const prefix = { router: "r", switch: "sw", host: "pc", firewall: "fw" }[
+      kind
+    ];
     let i = 1;
     while (getNode(prefix + i)) i++;
     let number = 1;
@@ -469,7 +475,9 @@ export const useLabStore = defineStore("lab", () => {
     await refresh();
   }
   async function refreshCatalog() {
-    catalog.value = await api<DeviceTemplate[]>("/api/catalog");
+    const revision = ++catalogRevision;
+    const result = await api<DeviceTemplate[]>("/api/catalog");
+    if (revision === catalogRevision) catalog.value = result;
   }
   async function deleteLab() {
     assertEditable();

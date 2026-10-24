@@ -229,15 +229,16 @@ class ImageService:
                                   "registry_path": str(self.path), "max_upload_bytes": self.max_upload})
 
     def catalog(self):
-        result = copy.deepcopy(CATALOG)
-        known = {(item["id"], item["image"]) for item in CATALOG}
+        # Adapter definitions are not library entries. Removing a managed image
+        # must also remove its card, including images used by built-in templates.
+        result = []
         with self.lock:
             for entry in self.registry["images"]:
                 base = next((item for item in CATALOG if item["id"] == entry["template"]), None)
-                if not base or not entry["present"] or (base["id"], entry["reference"]) in known:
+                if not base or (not entry["present"] and not self.manager.preview):
                     continue
                 result.append({**copy.deepcopy(base), "id": "img-" + entry["id"][:24], "template_id": base["id"],
-                               "title": entry["title"], "image": entry["reference"], "source": "image"})
+                               "title": entry["title"], "image": entry["reference"], "source": "image", "present": entry["present"]})
         return result
 
     def metadata(self, payload):

@@ -1,0 +1,85 @@
+/* Node 22+, Chromium CDP, serve_library_fixture.py; simulated images only. */
+const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
+const [debugURL, appURL, output] = process.argv.slice(2);
+if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUTPUT_DIR');
+(async()=>{
+  fs.mkdirSync(output,{recursive:true});
+  const target=await(await fetch(debugURL+'/json/new?about:blank',{method:'PUT'})).json();
+  const ws=new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise(r=>ws.addEventListener('open',r,{once:true}));
+  let id=0;const pending=new Map(),errors=[];
+  const send=(method,params={})=>new Promise((resolve,reject)=>{
+    const key=++id,timer=setTimeout(()=>{pending.delete(key);reject(Error('Timeout '+method));},15000);
+    pending.set(key,{resolve,reject,timer});ws.send(JSON.stringify({id:key,method,params}));
+  });
+  ws.addEventListener('message',event=>{
+    const m=JSON.parse(event.data),p=pending.get(m.id);
+    if(p){clearTimeout(p.timer);pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}
+    if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.exception?.description||m.params.exceptionDetails.text);
+    if(m.method==='Page.javascriptDialogOpening')void send('Page.handleJavaScriptDialog',{accept:true});
+  });
+  const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result.value;};
+  const wait=async expression=>{for(let i=0;i<150;i++){if(await evaluate(expression))return;await new Promise(r=>setTimeout(r,100));}throw Error('Condition not met: '+expression+'; '+await evaluate('document.querySelector("#toast")?.textContent'));};
+  const click=async selector=>{const p=await evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`);for(const type of ['mousePressed','mouseReleased'])await send('Input.dispatchMouseEvent',{type,...p,button:'left',clickCount:1});};
+  const input=(selector,value)=>evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.value=${JSON.stringify(value)};e.dispatchEvent(new Event(e.tagName==='SELECT'?'change':'input',{bubbles:true}))})()`);
+  const shot=async name=>{const r=await send('Page.captureScreenshot');fs.writeFileSync(path.join(output,name),Buffer.from(r.data,'base64'));};
+  const jobDone=()=>wait('document.querySelector("#start-image-job") && !document.querySelector("#start-image-job").closest("fieldset").disabled');
+  const openImages=async()=>{await click('#manage-images');await wait('document.querySelector("#image-manager").open');await jobDone();};
+  try{
+    await send('Page.enable');await send('Runtime.enable');
+    await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+    await send('Page.navigate',{url:appURL});
+    await wait('document.querySelectorAll("[data-device-group=router] .device-card").length===60');
+    assert.deepEqual(await evaluate('Array.from(document.querySelectorAll("[data-category]")).map(e=>e.dataset.category)'),['router','switch','host','firewall']);
+    assert.equal(await evaluate('!!document.querySelector(".library-categories,[data-category=all]")'),false);
+    const footer=await evaluate('document.querySelector("#manage-images").getBoundingClientRect().top');
+    await click('[data-device-group=router] .library-more');
+    await wait('document.querySelectorAll("[data-device-group=router] .device-card").length===120');
+    assert.equal(await evaluate('document.querySelector("#manage-images").getBoundingClientRect().top'),footer);
+    await click('[data-category=router]');
+    assert.equal(await evaluate('document.querySelectorAll("[data-device-group=router] .device-card").length'),0);
+    await input('#device-search','测试路由器 199');
+    await wait('document.querySelectorAll(".device-card").length===1');
+    assert.ok(await evaluate('!!document.querySelector("[data-device-group=router] .device-card")'));
+    await input('#device-search','');
+    assert.equal(await evaluate('document.querySelectorAll("[data-device-group=router] .device-card").length'),0,'clearing search restores collapsed group');
+    await click('[data-category=router]');
+    await openImages();
+    assert.deepEqual(await evaluate('Array.from(document.querySelector("#image-template").options).map(o=>o.value)'),['','frr','linux-bridge','linux-host','linux-firewall']);
+    await input('#image-search','alpine/frr:latest');
+    await click('.image-entry[data-image="alpine/frr:latest"] .image-delete');
+    await wait(`!document.querySelector('.image-entry[data-image="alpine/frr:latest"]')`);
+    await jobDone();await click('#close-images');
+    await input('#device-search','alpine/frr:latest');
+    await wait('document.querySelectorAll(".device-card").length===0');
+    await openImages();
+    await input('#image-search','');
+    await input('#image-address','fixture/firewall:latest');await input('#image-title','边界防火墙');await input('#image-template','linux-firewall');
+    await click('#start-image-job');
+    await wait(`!!document.querySelector('.image-entry[data-image="fixture/firewall:latest"]')`);
+    await jobDone();await click('#close-images');await input('#device-search','边界防火墙');
+    await wait('document.querySelectorAll("[data-device-group=firewall] .device-card").length===1');
+    await click('[data-device-group=firewall] .device-card');
+    await wait('!!document.querySelector(".topology-node[data-node=fw1]")');
+    await openImages();await input('#image-search','fixture/firewall:latest');
+    await click('.image-entry[data-image="fixture/firewall:latest"] .image-settings');
+    await input('#edit-image-template','linux-host');await input('#edit-image-title','测试 PC');await click('#save-image-settings');
+    await wait('!document.querySelector("#image-edit-form")');
+    await click('#close-images');await input('#device-search','测试 PC');
+    await wait('document.querySelectorAll("[data-device-group=host] .device-card").length===1');
+    assert.equal(await evaluate('document.querySelectorAll("[data-device-group=firewall] .device-card").length'),0);
+    await openImages();await click('.image-entry[data-image="fixture/firewall:latest"] .image-settings');
+    await input('#edit-image-template','');await click('#save-image-settings');await wait('!document.querySelector("#image-edit-form")');
+    await click('#close-images');await wait('document.querySelectorAll(".device-card").length===0');
+    assert.ok(await evaluate('!!document.querySelector(".topology-node[data-node=fw1]")'),'library changes preserve existing canvas devices');
+    await openImages();await click('.image-entry[data-image="fixture/firewall:latest"] .image-delete');
+    await wait(`!document.querySelector('.image-entry[data-image="fixture/firewall:latest"]')`);await jobDone();await click('#close-images');
+    await evaluate('window.__libraryBeforeReload=true');
+    await send('Page.reload');await wait('!window.__libraryBeforeReload && !!document.querySelector("[data-device-group=firewall]") && document.querySelectorAll("[data-device-group=router] .device-card").length===60');
+    await input('#device-search','alpine/frr:latest');await wait('document.querySelectorAll(".device-card").length===0');
+    await input('#device-search','');await click('[data-category=router]');
+    await shot('device-groups.png');
+    assert.deepEqual(errors,[]);
+    console.log(JSON.stringify({ok:true,checks:['four expandable groups; no all list','per-group pagination and fixed footer','search across collapsed groups','default image deletion removes sidebar card','firewall import and canvas device','type change moves card to PC','unbinding removes card','existing canvas preserved','deleted entries stay gone after reload'],screenshots:output},null,2));
+  }catch(error){await shot('failed.png');throw error;}finally{ws.close();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

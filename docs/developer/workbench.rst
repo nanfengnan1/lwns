@@ -213,7 +213,7 @@ FRR 持久化目录和备份布局见 :doc:`../user/workbench`。
 
 接口均沿用 Bearer 令牌和 Origin 校验：
 
-* ``GET /api/catalog``：基础模板与已加载且绑定模板的自定义镜像卡片。
+* ``GET /api/catalog``：从镜像管理清单生成设备卡片；真实模式仅包含已加载且绑定类型的镜像。
 * ``GET /api/images``、``POST /api/images/refresh``：缓存快照/主动核对 Docker。
 * ``POST /api/images/uploads``：登记文件名、大小与 archive/context 类型；
   ``PUT /api/images/uploads/{id}`` 使用原始二进制流上传；``DELETE`` 回收未使用上传。
@@ -228,10 +228,17 @@ JSON 仍限制 1 MiB；大文件使用 ``request.stream()`` 分块写盘，不�
 避免多镜像归档部分成功后 UI 与 Docker 状态不一致。
 
 前端 ``stores/images.ts`` 管理上传进度、任务和每 2 秒轮询，拒绝旧响应覆盖新任务；
-``ImageManager.vue`` 提供清单、导入表单、设置与日志。任务结束刷新设备目录和环境。
-``DeviceLibrary.vue`` 按名称/镜像搜索、kind 分类、每批 60 项显示，列表独立滚动。
+``ImageManager.vue`` 提供清单、导入表单、设置与日志。清单元数据变化或任务结束时刷新设备目录和环境；
+刷新失败保留旧同步标记，下次轮询重试。``refreshCatalog`` 使用请求序号拒绝过期响应。
+``DeviceLibrary.vue`` 提供 router/switch/host/firewall 四组可折叠条目，每组每批 60 项，
+搜索名称/镜像时自动展开结果，清除后恢复折叠状态；没有“全部”平铺入口。
+``domain/library.ts`` 统一分类和镜像类型选项。防火墙使用 ``linux-firewall`` 模板与既有 Linux 适配器，
+新增 kind、图标和 FW 命名前缀，不包含防火墙规则编排或持久化功能。
+``ImageService.catalog`` 不再预先加入 CATALOG 固定卡片；CATALOG 仅定义设备适配能力。
+已删、解绑及未加载条目不会出现在真实模式设备库；设计模式允许仍存在的未加载绑定记录，显式标注 present=false。
 动态卡片 ``id`` 为镜像记录派生 ID，``template_id`` 指向已注册模板；创建拓扑节点时
 写入基础 ``template_id``，保证后端适配器匹配和旧拓扑格式兼容。
+能力查找同样按基础模板 ID 解析，不能将动态卡片 ID 误当适配器 ID。
 镜像导入不等于新增厂商适配器，也不改变当前 FRR 配置保存范围。
 
 抓包服务与本地启动器
@@ -405,6 +412,14 @@ Docker 终端测试。浏览器终端测试可先运行 ``tests/serve_terminal_f
 
 验证长设备列表、搜索分类、固定底栏、归档和 URL 导入、Dockerfile 构建、设置、删除及刷新恢复。
 停止 fixture 后清理其专属镜像及临时文件，不操作现有实验。
+
+``tests/serve_library_fixture.py`` 使用 ImageHost 模拟 200 个镜像条目及镜像任务，不执行宿主机命令。
+``tests/check_library_groups.cjs`` 验证分类折叠、搜索、分批加载、默认镜像删除、防火墙导入、
+改类型、取消绑定以及刷新后不恢复已删条目。每次验证启动新的 fixture::
+
+  .venv/bin/python tests/serve_library_fixture.py --port 8107
+  node tests/check_library_groups.cjs http://127.0.0.1:9351 \
+    'http://127.0.0.1:8107/#token=library-check' /tmp/library-results
 
 抓包验证
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
