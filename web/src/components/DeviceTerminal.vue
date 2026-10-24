@@ -6,6 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 import { api } from "../api/client";
 import { useUiStore } from "../stores/ui";
 import type { TerminalTab } from "../stores/terminals";
+import type { TerminalControls } from "../types/terminal";
 
 const props = defineProps<{ tab: TerminalTab; active: boolean }>();
 const emit = defineEmits<{ state: [value: TerminalTab["state"]] }>();
@@ -181,7 +182,7 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(fitFrame);
   terminal?.dispose();
 });
-defineExpose({ connect, clear });
+defineExpose<TerminalControls>({ connect, clear });
 </script>
 
 <template>

@@ -39,16 +39,13 @@ const canStart = computed(
     !pending.value,
 );
 let timer: ReturnType<typeof setInterval> | undefined;
-watch(
-  () => ui.captureOpen,
-  (open) => {
-    if (open) {
-      dialog.value?.showModal();
-      void ui.run(() => captures.refresh(true));
-    } else dialog.value?.close();
-  },
-  { flush: "post" },
-);
+function syncDialog(open: boolean) {
+  if (open) {
+    dialog.value?.showModal();
+    void ui.run(() => captures.refresh(true));
+  } else dialog.value?.close();
+}
+watch(() => ui.captureOpen, syncDialog, { flush: "post" });
 watch(
   () => ui.captureLink,
   () => {
@@ -63,6 +60,7 @@ watch(
   },
 );
 onMounted(() => {
+  syncDialog(ui.captureOpen);
   timer = setInterval(() => {
     if ((ui.captureOpen || captures.active.length) && !ui.accessOpen)
       void ui.run(() => captures.refresh());

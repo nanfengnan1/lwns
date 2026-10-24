@@ -5,6 +5,52 @@ Vue 工作台开发
 Python 后端使用 FastAPI / Uvicorn，负责实验持久化、Docker 生命周期及 veth 操作。
 前后端通过 ``/api`` 通信，设备终端通过同端口 WebSocket 连接。
 
+按需加载与生产传输
+----------------------------------------
+
+``TerminalWorkspace`` 使用异步 ``DeviceTerminal``，只在存在终端标签时加载 xterm 和对应 CSS。
+终端仍通过 v-show 切换，不能改为隐藏时卸载，否则会中断会话。
+``App`` 的 ``useRetainedPanel`` 在首次打开时挂载 ImageManager/CaptureManager，之后保持挂载，
+使上传、任务轮询和表单状态不因关闭窗口而丢失。对话框 onMounted 同步当前打开状态，
+解决异步加载完成时 watch 已错过首次打开的问题。
+
+模块加载失败由 ``vite:preloadError`` 显示提示，不自动刷新未保存的画布。
+不调高 Vite 的 chunkSizeWarningLimit；新增重功能应在功能入口建立动态 import 边界。
+每次发布部署完整 dist，必要时保留上一版哈希文件，详见 :doc:`../user/workbench-https`。
+
+``lab_static.py`` 基于 Starlette StaticFiles 提供流式文件、HEAD/Range 和条件请求。
+gzip 仅作用于静态路由，API、WebSocket 和 PCAP 不压缩；Range 保持原始字节。
+哈希资源 immutable 一年，首页/非哈希资源 no-cache，错误及 API no-store；
+gzip 与 identity 共享弱 ETag，响应包含 Vary: Accept-Encoding。
+
+可选 Caddy 配置全部代理到回环后端，避免重复实现静态缓存规则。
+后端 ``--trusted-proxy`` 显式启用 Uvicorn 的可信代理头解析，默认关闭；
+Caddy 保留 Host/Origin，提供可信 X-Forwarded-Proto/For，API 和终端继续校验同源。
+Caddy 入口拒绝 PCAP stream 路径，数据通道继续通过 SSH。证书制作和部署步骤见用户指南。
+
+相关自动化检查
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``web/tests/lazy-panels.test.ts`` 验证首次挂载和关闭后保留状态；浏览器检查
+``check_terminal.cjs``、``check_managed_images.cjs``、``check_capture_ui.cjs`` 还断言
+首页不请求对应分包、首次打开成功，以及会话/草稿/后台抓包轮询继续保留。
+
+``tests/test_web_delivery.py`` 覆盖 gzip 协商、条件请求、哈希/非哈希缓存、HEAD/Range、
+404/503、路径和符号链接边界、可信/不可信代理、HTTPS Origin、WebSocket 及抓包来源限制。
+
+可选真实 Caddy 集成验证使用随机端口、临时 CA 和临时实验目录，不安装系统证书、不修改 Docker 镜像或设备。
+上传测试需要本机 Docker info 可访问；仅登记、传输并删除临时上传，不提交 docker load。
+在独立测试虚拟环境中执行::
+
+   python3 -m venv /tmp/route-ovs-caddy-venv
+   /tmp/route-ovs-caddy-venv/bin/pip install -r tests/requirements.txt 'httpx[http2]' aioquic
+   npm --prefix web run build
+   /tmp/route-ovs-caddy-venv/bin/python tests/check_caddy.py --caddy /实际路径/caddy --http3
+
+该检查启动真实后端与 Caddy，验证 HTTP/2、通过证书校验的 HTTP/3 请求、gzip/304、
+认证/跨站拒绝、流式上传、WSS 及公开 PCAP 路径拦截，最后停止进程并删除测试目录。
+aioquic 是测试客户端依赖，不是产品运行依赖；此检查不能代替特定浏览器的 QUIC 信任策略验证。
+
 本地开发
 ----------------------------------------
 

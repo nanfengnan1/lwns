@@ -51,6 +51,11 @@ Linux Docker 宿主机
 - 后端保持单进程运行。数据目录锁、部署任务、终端凭证和会话保存在同一实例中，不能直接改成多个 Uvicorn worker。
 - 生产模式由后端同时提供 `web/dist`、HTTP API 和 WebSocket，浏览器只访问一个端口，不需要启动 Vite。
 - 开发模式由 Vite 在 `5173` 提供前端，将 `/api` 的 HTTP 和 WebSocket 请求代理到 Python 后端。
+- 可选 `config/Caddyfile` 在同机提供 HTTPS / HTTP/2 / HTTP/3（保留 HTTP/1.1 回退），全部请求代理到回环后端；静态压缩和缓存继续由 Python 统一处理。后端用 `--trusted-proxy 127.0.0.1` 显式信任代理协议和客户端地址，保留 Host/Origin 校验。Caddy 拒绝公开 `/api/capture/stream`，PCAP 仍经 SSH 连接后端回环端口。
+- [README 网络架构](README.md#网络架构) 维护 Windows/Linux 客户端、可选 Caddy、后端、Docker/veth、配置目录和 SSH 抓包通道的字符图。[HTTP/3 启用指南](docs/user/workbench-https.rst) 提供 Ubuntu 安装、同机代理、客户端根证书信任，以及从 Caddy 当前证书提取 SPKI 后使用独立 Chrome 配置验证 h3 的操作。
+- README 首页和用户指南以“选择启动方式”为统一入口：HTTP/1.1 直连 `http://主机:8090`，HTTPS 经 Caddy 访问 `https://主机`。工作台文档分别列出共用准备、直连启动与代理后端命令；HTTPS 教程完整记录安装/配置/启动/证书，并区分 `protocols h1 h2` 与 `protocols h1 h2 h3`。快速开始按所选方式使用对应地址，避免将后端启动等同于启用 HTTPS。
+- 首页不静态导入 xterm 和两个管理面板：`DeviceTerminal.vue` 在首次创建标签时异步加载，`ImageManager.vue` / `CaptureManager.vue` 在首次打开时加载，之后保持挂载，保留会话、草稿和任务轮询。管理对话框挂载时同步打开状态，避免第一次点击无响应。旧分包失效时提示检查网络/导出草稿后刷新，不自动刷新页面。
+- 设备/注释拖动由对应图形捕获指针，空白平移由画布捕获，并在结束/切换时释放实际捕获者；避免部署后可拖动时把设备双击重定向到 SVG，确保双击终端入口可用。
 
 ## 3. 界面与视觉设计
 
@@ -273,6 +278,8 @@ Topology
 - 管理类 HTTP API 使用 Bearer 认证并校验 Origin；WebSocket 需要同源 Origin 和一次性凭证。抓包 claim/client-report/stream 使用各自短期单次凭证代替长期令牌，stream 额外限制回环来源，详见第 12 节。
 - Vite 同时代理 HTTP 和 WebSocket，仅改写来自当前开发页面的同源 Origin。
 - 静态服务只开放构建首页和 `assets` 资源，不开放源代码、实验文件或整个项目目录。
+- `lab_static.py` 使用 StaticFiles 流式读取及 ETag/Last-Modified，支持 HEAD/Range；哈希资源缓存一年且 immutable，首页及非哈希静态资源 no-cache，API/缺失资源继续 no-store。静态资源按需 gzip（至少 1 KiB、级别 6），使用弱 ETag 和 Vary，Range、API、WebSocket、PCAP 不经过压缩。
+- `--trusted-proxy` 只接受明确 IP/CIDR、可重复指定，默认关闭且不接受 `*`。Caddy 保持流式上传、按后端大小限制处理镜像，配置重载为长连接保留宽限期。
 - 用户输入经容器终端执行；宿主机命令使用参数数组，不拼接成宿主机 Shell 命令。
 
 ## 8. 关键代码位置
@@ -295,6 +302,8 @@ Topology
 | [topology.ts](web/src/domain/topology.ts) | 导入校验、连线约束、SVG 几何 |
 | [client.ts](web/src/api/client.ts) | 带认证的 HTTP 请求与错误处理 |
 | [lab_server.py](script/python/lab_server.py) | FastAPI 应用、认证、路由与启动入口 |
+| [lab_static.py](script/python/lab_static.py) | 静态文件传输、条件请求、缓存及 gzip |
+| [Caddyfile](config/Caddyfile) | 可选 HTTPS / HTTP/2 / HTTP/3 入口及抓包通道隔离 |
 | [lab_core.py](script/python/lab_core.py) | 实验存储、Docker/veth 生命周期和归属检查 |
 | [lab_devices.py](script/python/lab_devices.py) | 模板注册、生命周期适配器和 FRR 配置共享/保存/备份 |
 | [lab_images.py](script/python/lab_images.py) | 镜像清单持久化、核对、流式上传和后台任务 |
@@ -343,6 +352,8 @@ npm --prefix web run dev
 
 ## 10. 验证与后续修改约定
 
+加载优化及代理部署见 [HTTPS 与证书指南](docs/user/workbench-https.rst)：默认 Caddy 内部 CA 自动续期，也支持 mkcert 手动证书；每台客户端信任相同根证书，证书包含实际访问 IP/域名。Chrome/Chromium 对 QUIC 的自定义 CA 限制需要独立验证；HTTPS 成功或 Alt-Svc 并不能证明实际使用 h3。证书和私钥不提交，项目忽略 `.route-ovs-tls/`。
+
 根据改动运行相应检查：
 
 ```bash
@@ -368,6 +379,10 @@ sudo env ROUTE_OVS_CONFIG_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -
 - `tests/check_library_groups.cjs` + `tests/serve_library_fixture.py`：200 条模拟镜像下的分类折叠、搜索、分批显示、固定底栏、默认镜像删除同步、防火墙导入、修改类型/解绑和刷新恢复；不执行真实 Docker。`test_images.py` / `images.test.ts` 覆盖默认记录删除后重启不补回、删除失败保留、能力解析、目录刷新失败重试与旧响应拒绝。
 - `tests/test_lab.py` 新增改名持久化、认证/Origin/参数校验、忙碌拒绝及运行中只修改名称的用例；`tests/check_sidebar_projects.cjs` 在 Chromium 验证实际拖动、收起、键盘、刷新、取消和中文项目命名。
 - [check_terminal.cjs](tests/check_terminal.cjs)：验证真实浏览器输入、FRR 配置、路由器 Shell、多标签、ping/Ctrl+C、尺寸同步、放大、重连和关闭。
+- `web/tests/lazy-panels.test.ts` 验证管理面板按需挂载及保留；终端、镜像管理、抓包浏览器检查增加首页无对应分包、首次打开、关闭重开状态及隐藏时抓包轮询断言。
+- `tests/test_web_delivery.py` 覆盖 gzip/identity/q=0、缓存/304、HTML 更新、HEAD/Range、路径边界、可信代理与 HTTP/WS Origin。`tests/check_caddy.py --caddy <binary> --http3` 使用隔离端口/CA 验证真实 H2/H3、gzip/304、流式上传、WSS 和 PCAP 拦截；仅测试环境需额外 httpx[http2]/aioquic，运行产品不依赖它们，不安装系统信任。
+- 2026-10-24 加载与代理验证：生产构建无大分包警告，主 JS 约 158 kB（gzip 报告约 59 kB），终端约 335 kB 按需加载；78 项前端测试通过，107 项 Python 测试中 101 项通过/6 项显式集成用例跳过。另行通过真实 Docker 终端 Chromium 检查、镜像管理/抓包/画布浏览器检查、真实 Caddy HTTP/2 与 aioquic HTTP/3、流式上传及 WSS 校验；Sphinx 严格构建通过。自定义 CA 在浏览器中的 QUIC 协商仍按客户端策略验收。
+- 2026-10-24 内网部署验收：`10.8.126.103` 已使用 Caddy 和 `route-ovs-web.service` 开机启动，后端监听 `127.0.0.1:8090`，保留原实验数据；Windows 信任服务端实际 CA 后，普通 HTTPS 和 HTTP/2 验证通过。独立 Chrome 配置使用经 CA 校验的当前证书 SPKI，页面、静态资源和认证 API 实测协议均为 `h3`，环境接口报告可部署。内网 CA 的普通浏览器窗口仍可能使用 HTTP/2；令牌及客户端启动参数保存在受限本地目录，不提交版本库。
 - [serve_terminal_fixture.py](tests/serve_terminal_fixture.py)：为浏览器测试创建独立 Docker 设备，退出时清理；测试用的环境替换不能复制到生产入口。
 - Docker 终端测试不验证 veth 数据平面，真实拓扑仍需按照用户指南检查跨设备连通性和清理结果。
 - `test_configs.py` / `web/tests/configs.test.ts` 覆盖备份、恢复、旧容器导出、部分失败、归属和挂载校验、终端保留、草稿同步、过期响应。
@@ -617,3 +632,5 @@ OSPF实验.rovproject              # 建议扩展名，内部为 ZIP；尚未确
 - [x] **部署后调整布局**：允许移动设备和已有注释、自动对齐及连线优化，专用布局接口保存并保留设备配置和部署；增删对象、连线及属性修改继续锁定。
 - [x] **设备库分组与镜像删除同步**：路由器、交换机、PC、防火墙四类可收起条目，设备显示在所属分类下，移除“全部”平铺入口；管理记录是卡片来源，删除/解绑/改名/改类型同步到侧边栏，失败重试且拒绝旧响应回写。
 - [x] **镜像管理范围与界面优化**：只显示项目管理条目，停止全机自动纳入；已有镜像显式引用，移出清单与本地删除分开，后端执行时校验创建归属和标签 ID；增加筛选、数量概览、引用提示及可收起的任务日志，兼容旧清单迁移。
+- [x] **终端及管理面板分包、静态压缩与缓存**：首次使用动态加载，之后保留会话/表单/轮询；gzip、静态条件请求与哈希长期缓存，API 保持 no-store；不调高构建警告阈值。
+- [x] **可选 Caddy 与证书文档**：同机 HTTPS / HTTP/2 / HTTP/3 入口、明确可信代理、WSS/上传支持、PCAP 仍经 SSH；记录 Caddy 自动内网 CA、mkcert 制作与信任、证书续期、Chromium QUIC 限制及协议验证。

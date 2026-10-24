@@ -36,6 +36,9 @@ Debian/Ubuntu 上可按需要安装基础工具::
 :ref:`workbench-start`，抓包客户端安装见 :doc:`workbench-capture`。
 设备数量和镜像决定资源需求，目前没有统一的规模与性能保证。
 
+需要 HTTPS、HTTP/2 或 HTTP/3 时，可选择同机 Caddy 反向代理；配置、内网自动签发证书、
+mkcert 手动制作和客户端信任安装见 :doc:`workbench-https`。普通 HTTP 入口仍可独立使用。
+
 准备镜像
 ----------------------------------------
 

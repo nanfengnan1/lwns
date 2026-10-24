@@ -1,17 +1,21 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { useLabStore } from "../stores/lab";
 import { useEditorStore } from "../stores/editor";
 import { useUiStore } from "../stores/ui";
 import { useTerminalsStore } from "../stores/terminals";
-import DeviceTerminal from "./DeviceTerminal.vue";
+import type { TerminalControls } from "../types/terminal";
+
+const DeviceTerminal = defineAsyncComponent(
+  () => import("./DeviceTerminal.vue"),
+);
 
 const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore(),
   terminals = useTerminalsStore();
 const nodeId = ref("");
-const components = new Map<string, InstanceType<typeof DeviceTerminal>>();
+const components = new Map<string, TerminalControls>();
 const current = computed(() =>
   terminals.tabs.find((tab) => tab.id === terminals.active),
 );
@@ -133,10 +137,7 @@ watch(
       :ref="
         (component) => {
           if (component)
-            components.set(
-              tab.id,
-              component as InstanceType<typeof DeviceTerminal>,
-            );
+            components.set(tab.id, component as unknown as TerminalControls);
           else components.delete(tab.id);
         }
       "

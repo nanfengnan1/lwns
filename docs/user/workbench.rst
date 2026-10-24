@@ -8,6 +8,10 @@ Docker 图形组网工作台
 每根网线是一对 veth，两个端点分别位于对应容器的网络命名空间。
 “VPCS”卡片在当前工作台中对应 Linux 主机模板，终端使用 sh 和 Linux 命令。
 
+终端及镜像/抓包管理首次打开时按需加载，关闭面板保留状态。
+静态压缩、缓存和可选 Caddy HTTPS / HTTP/2 / HTTP/3 部署，以及内网证书制作见
+:doc:`workbench-https`。
+
 .. contents:: 本页导航
    :local:
    :depth: 2
@@ -65,6 +69,29 @@ Docker 图形组网工作台
 环境与启动
 ----------------------------------------
 
+先选择访问方式
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: 启动方式与访问入口
+   :header-rows: 1
+   :widths: 24 38 38
+
+   * - 访问方式
+     - 服务与监听地址
+     - 浏览器地址及步骤
+   * - HTTP/1.1 直接访问
+     - Python 后端监听 0.0.0.0:8090，无需证书
+     - ``http://宿主机IP:8090``；见 :ref:`workbench-start-http`
+   * - HTTPS / HTTP/2 / HTTP/3
+     - Python 后端监听 127.0.0.1:8090，同机 Caddy 监听 TCP/UDP 443
+     - ``https://宿主机IP``；见 :ref:`workbench-start-https`
+
+两种方式共用下方准备步骤、实验目录和设备镜像。HTTPS 的 HTTP/2/HTTP/3 由 Caddy 和浏览器协商，
+不是通过不同 Python 启动命令选择；仅启用 HTTP/2 的配置见 :ref:`workbench-http-versions`。
+
+共用准备步骤
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 以下命令在 **Linux Docker 宿主机的项目根目录** 执行。
 需要 Python 3.10 或更高版本、Docker CLI 与本机 Docker daemon、iproute2 和
 util-linux 的 ``nsenter``。真实部署需要宿主机 root 权限。
@@ -98,15 +125,24 @@ Windows 与 Linux 不要共用同一份 ``node_modules`` 或 Python 虚拟环境
 归档内的标签若不同，在右侧设备属性中选用实际标签。
 部署会预先检查所有镜像；缺少时先到“镜像管理”导入，再部署实验。
 
-安装依赖并启动后端::
+安装后端依赖（两种方式共用）::
 
   python3 -m venv .venv
   .venv/bin/python -m pip install -r script/python/requirements.txt
+
+若 Ubuntu 缺少 venv 模块，先安装 ``python3-venv``。
+
+.. _workbench-start-http:
+
+方式一：HTTP/1.1 直接启动
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+无需 Caddy 或证书。在 Linux Docker 宿主机的项目根目录执行::
+
   sudo .venv/bin/python script/python/lab_server.py --host 0.0.0.0 --port 8090
 
 升级已有服务时，先停止旧的后端进程，再用上述虚拟环境中的 Python 启动。
 停止后端保留已部署设备；新服务可读取原来的实验文件。
-若 Ubuntu 缺少 venv 模块，先安装 ``python3-venv``。
 
 在 Windows 或其他客户端浏览器访问 ``http://宿主机IP:8090``，输入后端终端显示的
 访问令牌。后端也会打印包含 ``#token=...`` 的地址；从其他机器访问时将其中的
@@ -117,6 +153,24 @@ Windows 与 Linux 不要共用同一份 ``node_modules`` 或 Python 虚拟环境
 可通过环境变量 ``ROUTE_OVS_TOKEN`` 设置固定令牌，否则每次启动随机生成。
 使用 sudo 时需确认该变量传入后端，例如使用 ``sudo --preserve-env=ROUTE_OVS_TOKEN``。
 登录失败时使用当前后端进程打印的令牌，不要沿用上次随机生成的值。
+
+若有防火墙，允许客户端访问 TCP 8090；无需开放 UDP 8090。
+打开浏览器 F12 → Network，在表头启用 Protocol 列后刷新，直接访问通常显示 ``http/1.1``。
+此时 gzip 和静态缓存已可用，不需要为了它们启用 HTTPS。
+
+方式二：HTTPS / HTTP/2 / HTTP/3 启动
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+完成共用准备后，使用下面的后端命令代替方式一；切换时先停止旧后端，保留相同数据目录::
+
+   sudo .venv/bin/python script/python/lab_server.py \
+     --host 127.0.0.1 --port 8090 --trusted-proxy 127.0.0.1
+
+仅启动后端还没有 HTTPS 服务。接着按 :ref:`workbench-start-https` 完成 Caddy 安装、
+站点配置、服务启动、端口放行和客户端证书信任，再访问 ``https://宿主机IP`` 并输入后端令牌。
+HTTP/2 使用 TCP 443，HTTP/3 使用 UDP 443，后端 8090 保持回环监听。
+默认支持 h1/h2/h3；实际协议及仅启用 HTTP/2 的设置见 :ref:`workbench-http-versions`。
+证书自签发、Windows/Linux 导入和 Chrome 的 HTTP/3 测试命令均在该教程中。
 
 仅编辑和预览
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

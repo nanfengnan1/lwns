@@ -7,8 +7,8 @@
 Web：完成第一次组网
 ----------------------------------------
 
-1. 按 :ref:`workbench-start` 构建前端、安装 Python 依赖，并在 Linux Docker 宿主机以 root 启动后端。
-2. 浏览器打开 ``http://宿主机IP:8090``，输入当前后端显示的访问令牌。
+1. 按 :ref:`workbench-start` 完成共用准备，并选择 :ref:`workbench-start-http` 或 :ref:`workbench-start-https` 启动。
+2. HTTP/1.1 方式打开 ``http://宿主机IP:8090``；HTTPS 方式完成 Caddy 和证书配置后打开 ``https://宿主机IP``，输入当前后端显示的访问令牌。
 3. 确认本机 Docker 已加载 ``alpine/frr:latest`` 和 ``alpine/vpcs:latest``；也可从左侧“镜像管理”导入。
 4. 点击左下角“双网段路由实验”，核对设备镜像，点击“保存”及“部署实验”，等待“运行中”。
 5. 双击 PC1，在 Web 终端执行 ``ping -c 3 10.10.2.10``，验证经过 R1 到 PC2 的通信。

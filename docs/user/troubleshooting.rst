@@ -174,5 +174,8 @@ Wireshark 没有窗口、等待 SSH 或找不到文件
 构建问题补充 Node.js/npm 版本；抓包问题补充 Wireshark 版本、会话状态和本地启动器日志。
 分享日志前去掉访问令牌、密码及其他连接凭证。
 
+HTTPS、HTTP/3 或更新后分包加载问题见 :doc:`workbench-https` 的排查顺序。
+HTTP/3 未协商成功时可以继续通过 HTTP/2 使用；首页缓存、静态压缩与分包独立生效。
+
 旧脚本问题另需记录执行目录、完整命令、错误输出、镜像标签与版本；根据所用功能补充
 ``docker ps``、``ip netns list``、``ovs-vsctl show``、容器接口信息、FRR 状态、SVG 和报文文件。

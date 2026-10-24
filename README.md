@@ -5,10 +5,111 @@
 用户文档：
 
 - [环境准备](docs/user/deployment.rst)与[快速开始](docs/user/quickstart.rst)
-- [Web 工作台使用指南](docs/user/workbench.rst)：启动、设备库、镜像管理、组网与终端
+- [Web 工作台使用指南](docs/user/workbench.rst)：启动方式选择、HTTP/1.1 直接启动、设备库、镜像管理、组网与终端
 - [Wireshark 抓包指南](docs/user/workbench-capture.rst)：安装、密码登录、会话状态与本机文件位置
 - [实验保存、备份与恢复](docs/user/workbench-data.rst)：拓扑、FRR 配置、迁移和当前限制
+- [HTTPS / HTTP/2 / HTTP/3 启动教程](docs/user/workbench-https.rst)：Caddy 安装配置、内网证书制作与信任、协议选择和验证、gzip/缓存
 - [故障排查](docs/user/troubleshooting.rst)
+
+## 选择启动方式
+
+首次使用先完成下文的前端构建和 Python 依赖安装，再选择一种访问方式：
+
+| 方式 | 需要启动的服务 | 浏览器地址示例 | 完整教程 |
+| --- | --- | --- | --- |
+| HTTP/1.1 直接访问 | Python 后端，监听 `0.0.0.0:8090` | `http://10.8.126.103:8090` | [工作台：环境与启动](docs/user/workbench.rst) |
+| HTTPS，支持 HTTP/2 和 HTTP/3 | Python 后端监听 `127.0.0.1:8090`，加同机 Caddy | `https://10.8.126.103` | [Caddy 安装、配置、证书与启动](docs/user/workbench-https.rst) |
+| HTTPS，仅启用 HTTP/2 和 HTTP/1.1 回退 | 同上，Caddy 设置 `protocols h1 h2` | `https://10.8.126.103` | [协议选择与验证](docs/user/workbench-https.rst) |
+
+HTTP/1.1 直接访问无需 Caddy 和证书。HTTPS 默认配置为 `protocols h1 h2 h3`，浏览器协商协议；
+HTTP/3 额外需要 UDP 443 可达及满足浏览器的证书信任要求，实际使用情况在 Network 的 Protocol 列确认。
+HTTPS 教程包含 Ubuntu 安装、后端启动、Caddy 服务、TCP/UDP 端口、Windows/Linux 证书信任及 Chrome 验证命令。
+切换方式时先停止旧后端，再使用同一实验数据目录启动；不要同时运行两个后端占用该目录。
+
+## 网络架构
+
+Caddy 是可选的 HTTPS 入口；直接启动后端时也可以通过 HTTP 8090 访问。
+启用 Caddy 后，推荐后端只监听回环地址；以下两条访问路径是可选部署方式。
+
+```text
+Windows / Linux 客户端
+┌──────────────────────────────────────────────┐
+│ 浏览器                                       │
+│ Vue 画布 + 设备库 + 管理面板 + xterm 终端      │
+└───────────────┬──────────────────┬───────────┘
+                │                  │
+        可选 HTTPS 入口       直接访问 HTTP
+                │                  │
+       TCP 443：HTTP/1.1、HTTP/2    │ TCP 8090
+       UDP 443：HTTP/3             │
+                │                  │
+================│==================│====================
+Linux Docker 宿主机（例如 10.8.126.103）
+                │                  │
+       ┌────────▼────────┐         │
+       │ Caddy（可选）   │         │
+       │ TLS 证书        │         │
+       │ HTTP/2、HTTP/3  │         │
+       │ WebSocket 代理 │         │
+       └────────┬────────┘         │
+                │                  │
+        HTTP / WebSocket           │
+        127.0.0.1:8090              │
+                │                  │
+       ┌────────▼──────────────────▼────────────┐
+       │ FastAPI / Uvicorn                      │
+       │                                        │
+       │ web/dist       前端资源、gzip、缓存    │
+       │ /api/*         实验、镜像、配置管理    │
+       │ /api/terminal  WebSocket 交互式终端    │
+       └───────┬────────────┬────────────┬───────┘
+               │            │            │
+          Docker CLI    ip / nsenter   文件读写
+               │            │            │
+       /var/run/            │     .route-ovs-labs/
+       docker.sock          │       ├─ 拓扑 JSON
+               │            │       ├─ 镜像管理清单
+       ┌───────▼──────┐     │       └─ 设备配置目录
+       │ Docker daemon│     │               │
+       │ 创建/清理容器│     │          RW 目录挂载
+       └───────┬──────┘     │               │
+               │      创建 veth、移入 netns  │
+               └────────────┬───────────────┘
+                            │
+                     实验设备与链路
+```
+
+设备间报文直接通过 veth 传输，不经过 Caddy 或 Web 后端。交换机是容器内的 Linux bridge，
+并非宿主机的 Docker 默认网桥。示例数据通道如下：
+
+```text
+PC1 容器 eth0
+      │ veth
+      ▼
+FRR 容器 eth0 ── 路由转发 ── eth1
+                              │ veth
+                              ▼
+交换机容器 eth0 ── br0 ── eth1
+                           │ veth
+                           ▼
+                       PC2 容器 eth0
+```
+
+Wireshark 抓包使用独立的 SSH 通道，PCAP 数据沿原通道返回客户端：
+
+```text
+本机 Wireshark / sshdump
+        │ SSH / TCP 22
+        ▼
+宿主机 sshd → remote_relay
+        │ HTTP：127.0.0.1:8090/api/capture/stream
+        ▼
+后端抓包服务 → 目标容器网络命名空间中的 tcpdump
+```
+
+HTTP/3 只作用于浏览器到 Caddy 的通信；终端继续使用 WebSocket/WSS，PCAP 数据继续走 SSH。
+Caddy 的公开入口拒绝 `/api/capture/stream`。配置文件见 [config/Caddyfile](config/Caddyfile)，
+安装、内网证书信任及浏览器实际协商 `h3` 的操作见 [HTTP/3 启用指南](docs/user/workbench-https.rst)。
 
 ## Docker 图形组网工作台
 
@@ -41,7 +142,7 @@ npm --prefix web run build
 切换运行平台后应在当前系统执行 `npm --prefix web ci --include=optional`，
 按锁文件重装该平台的依赖。建议两端使用独立检出目录；`dist/` 可以跨平台复制。
 
-在 **Linux Docker 宿主机**上，从项目根目录安装后端依赖并启动（Python 3.10+）：
+以下为 **HTTP/1.1 直接启动**。在 **Linux Docker 宿主机**上，从项目根目录安装后端依赖并启动（Python 3.10+）：
 
 ```bash
 docker load -i devices/route/frr.tar.xz
@@ -54,6 +155,16 @@ sudo .venv/bin/python script/python/lab_server.py --host 0.0.0.0 --port 8090
 路由器默认使用 `alpine/frr:latest`，交换机和主机默认使用 `alpine/vpcs:latest`。
 在浏览器访问 `http://宿主机IP:8090`，输入终端显示的访问令牌。镜像标签应以
 `docker image ls` 为准，可在设备属性中修改。默认仅监听 `127.0.0.1`；此工具面向可信实验网络。
+
+选择 HTTPS / HTTP/2 / HTTP/3 时，共用相同构建产物和 Python 依赖，将上述后端启动命令换为：
+
+```bash
+sudo .venv/bin/python script/python/lab_server.py \
+  --host 127.0.0.1 --port 8090 --trusted-proxy 127.0.0.1
+```
+
+然后按 [HTTPS 启动教程](docs/user/workbench-https.rst) 安装并启动 Caddy、设置实际站点地址和信任证书。
+**只执行这条 Python 命令不会启用 HTTPS 或 HTTP/3**；经 Caddy 访问时使用 `https://宿主机IP`，不是 `:8090`。
 
 也可启动后从左侧“镜像管理”导入镜像，支持仓库地址、HTTP(S) 归档 URL、本地
 未压缩 `.tar` 镜像归档，以及 Dockerfile 文件和可选构建上下文；Web 镜像导入不解压 `.gz` / `.xz`。选择兼容的设备模板后，

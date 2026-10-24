@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { defineAsyncComponent, onBeforeUnmount, onMounted, ref } from "vue";
+import { useRetainedPanel } from "./composables/useRetainedPanel";
 import { useLayoutStore } from "./stores/layout";
 import SidebarPanel from "./components/SidebarPanel.vue";
 import ProjectNameDialog from "./components/ProjectNameDialog.vue";
@@ -13,13 +14,19 @@ import TopologyCanvas from "./components/TopologyCanvas.vue";
 import DeviceInspector from "./components/DeviceInspector.vue";
 import WorkbenchPanels from "./components/WorkbenchPanels.vue";
 import WorkbenchDialogs from "./components/WorkbenchDialogs.vue";
-import ImageManager from "./components/ImageManager.vue";
-import CaptureManager from "./components/CaptureManager.vue";
 import polarBear from "./assets/polar-bear.svg";
 
 const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore();
+const ImageManager = defineAsyncComponent(
+  () => import("./components/ImageManager.vue"),
+);
+const CaptureManager = defineAsyncComponent(
+  () => import("./components/CaptureManager.vue"),
+);
+const imagesLoaded = useRetainedPanel(() => ui.imagesOpen);
+const capturesLoaded = useRetainedPanel(() => ui.captureOpen);
 let poll: ReturnType<typeof setInterval> | undefined;
 const layout = useLayoutStore();
 const workspace = ref<HTMLElement>();
@@ -53,6 +60,14 @@ function beforeUnload(event: BeforeUnloadEvent) {
     event.returnValue = "";
   }
 }
+function chunkLoadFailed() {
+  // Do not reload automatically: the canvas may contain unsaved work.
+  ui.report(
+    new Error(
+      "功能模块加载失败，请检查网络；若服务刚更新，请先导出未保存的拓扑，再刷新页面。",
+    ),
+  );
+}
 onMounted(async () => {
   layout.restore();
   layoutObserver = new ResizeObserver(() => {
@@ -72,6 +87,7 @@ onMounted(async () => {
   }
   document.addEventListener("keydown", keydown);
   window.addEventListener("beforeunload", beforeUnload);
+  window.addEventListener("vite:preloadError", chunkLoadFailed);
   poll = setInterval(() => {
     if (lab.saved && (lab.runtime?.deployment || lab.busy) && !ui.accessOpen)
       void ui.run(lab.refresh);
@@ -90,6 +106,7 @@ onBeforeUnmount(() => {
   clearInterval(poll);
   document.removeEventListener("keydown", keydown);
   window.removeEventListener("beforeunload", beforeUnload);
+  window.removeEventListener("vite:preloadError", chunkLoadFailed);
 });
 </script>
 
@@ -142,6 +159,6 @@ onBeforeUnmount(() => {
   </main>
   <WorkbenchDialogs />
   <ProjectNameDialog />
-  <ImageManager />
-  <CaptureManager />
+  <ImageManager v-if="imagesLoaded" />
+  <CaptureManager v-if="capturesLoaded" />
 </template>

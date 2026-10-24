@@ -90,11 +90,14 @@ type Drag = { pointerId: number; start: Point } & (
   | { type: "node" | "annotation"; id: string; x: number; y: number }
 );
 let drag: Drag | null = null;
+let captureOwner: Element | undefined;
 function finishDrag() {
   const pointerId = drag?.pointerId;
+  const owner = captureOwner;
   drag = null;
-  if (pointerId !== undefined && canvas.value?.hasPointerCapture(pointerId))
-    canvas.value.releasePointerCapture(pointerId);
+  captureOwner = undefined;
+  if (pointerId !== undefined && owner?.hasPointerCapture(pointerId))
+    owner.releasePointerCapture(pointerId);
 }
 let observer: ResizeObserver | undefined;
 function screenPoint(x: number, y: number): Point {
@@ -219,7 +222,12 @@ function pointerDown(event: PointerEvent) {
       y: editor.view.y,
     };
   }
-  if (drag) canvas.value?.setPointerCapture(event.pointerId);
+  if (drag) {
+    // Keep device double-clicks on the device while drag events still bubble
+    // to the canvas. Capturing on the SVG retargets clicks away from the node.
+    captureOwner = element || note || canvas.value;
+    captureOwner?.setPointerCapture(event.pointerId);
+  }
 }
 function pointerMove(event: PointerEvent) {
   if (!drag || event.pointerId !== drag.pointerId) return;

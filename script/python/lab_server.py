@@ -30,6 +30,7 @@ from lab_core import CATALOG, LabError, LabManager
 from lab_terminal import TerminalService
 from lab_images import ImageService, MAX_UPLOAD
 from lab_capture import CaptureService
+from lab_static import StaticGZipMiddleware, WorkbenchStatic, is_static_path
 
 ROOT = Path(__file__).resolve().parents[2]
 log = logging.getLogger(__name__)
@@ -75,6 +76,8 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
         await asyncio.to_thread(images.wait)
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+    app.add_middleware(StaticGZipMiddleware, minimum_size=1024, compresslevel=6)
+    static = WorkbenchStatic(web_dir, HEADERS)
     app.state.terminals = terminals
     app.state.images = images
     app.state.captures = captures
@@ -134,24 +137,6 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
 
     def dispatch(method, path, payload):
         # All filesystem and Docker operations run outside the ASGI event loop.
-        if method == "GET" and (path in ("/", "/index.html") or path.startswith("/assets/")):
-            relative = "index.html" if path in ("/", "/index.html") else path.lstrip("/")
-            if "\\" in relative:
-                return respond(404, {"error": "未找到"})
-            candidate = (web_dir / relative).resolve()
-            try:
-                candidate.relative_to(web_dir)
-            except ValueError:
-                return respond(404, {"error": "未找到"})
-            types = {".html": "text/html", ".js": "text/javascript", ".css": "text/css",
-                     ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",
-                     ".woff": "font/woff", ".woff2": "font/woff2"}
-            if relative == "index.html" and not candidate.is_file():
-                return respond(503, "前端尚未构建。请在项目根目录运行：\n"
-                                    "npm --prefix web ci\nnpm --prefix web run build\n")
-            if candidate.suffix not in types or not candidate.is_file():
-                return respond(404, {"error": "未找到"})
-            return respond(200, candidate.read_bytes(), types[candidate.suffix])
         if method == "GET" and path == "/api/bootstrap":
             images.snapshot(refresh=True)
             return respond(200, {"catalog": images.catalog(), "environment": manager.environment(),
@@ -229,11 +214,13 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
                 return respond(200, manager.configs(lab_id, segments[4] if len(segments) == 5 else None))
         return respond(404, {"error": "未知 API"})
 
-    @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+    @app.api_route("/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "DELETE"])
     async def http(request: Request, path: str):
         path = "/" + path
         payload = {}
         try:
+            if is_static_path(path) and request.method in ("GET", "HEAD"):
+                return await static.serve(request)
             if path.startswith("/api/"):
                 expected = "Bearer " + token
                 if not hmac.compare_digest(request.headers.get("authorization", "").encode(), expected.encode()):
@@ -316,6 +303,14 @@ def acquire_lock(directory):
     return stream
 
 
+def proxy_address(value):
+    try:
+        network = ipaddress.ip_network(value, strict=False)
+    except ValueError:
+        raise argparse.ArgumentTypeError("--trusted-proxy 需要明确的代理 IP/CIDR，不接受 *")
+    return str(network) if "/" in value else value
+
+
 def main():
     parser = argparse.ArgumentParser(description="route-ovs Docker / veth 工作台（Python 3.10+）")
     parser.add_argument("--host", default="127.0.0.1")
@@ -325,6 +320,8 @@ def main():
     parser.add_argument("--preview", action="store_true", help="仅编辑和保存拓扑")
     parser.add_argument("--docker-socket", default="/var/run/docker.sock")
     parser.add_argument("--max-image-upload-gib", type=int, default=MAX_UPLOAD // (1024 ** 3))
+    parser.add_argument("--trusted-proxy", action="append", type=proxy_address, default=[],
+                        help="可信反向代理的 IP/CIDR，可重复指定；默认不信任代理头")
     args = parser.parse_args()
     if args.max_image_upload_gib < 1:
         parser.error("--max-image-upload-gib 必须大于 0")
@@ -343,7 +340,8 @@ def main():
         # One process owns the deployment lock, jobs, tickets and terminal sessions.
         uvicorn.run(create_app(manager, token, args.web_dir, images=images, capture_port=args.port), host=args.host, port=args.port,
                     ws="websockets-sansio", ws_max_size=65536, ws_max_queue=16,
-                    timeout_graceful_shutdown=8, proxy_headers=False)
+                    timeout_graceful_shutdown=8, proxy_headers=bool(args.trusted_proxy),
+                    forwarded_allow_ips=args.trusted_proxy)
     finally:
         join_jobs()
         if "images" in locals():

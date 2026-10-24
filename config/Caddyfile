@@ -1,0 +1,36 @@
+# Optional HTTPS entry point. Run on the same Linux host as lab_server.py.
+# Set ROUTE_OVS_SITE to the actual LAN IP or hostname before starting Caddy.
+{
+	servers {
+		protocols h1 h2 h3
+	}
+	# Trust is installed explicitly on clients; do not alter this host's trust store.
+	skip_install_trust
+}
+
+{$ROUTE_OVS_SITE:localhost} {
+	# Internal CA: automatic certificate issuance and renewal.
+	# For mkcert: replace this with tls /absolute/server.pem /absolute/server-key.pem
+	# For a public domain with ACME: remove this line (see workbench-https.rst).
+	tls internal
+
+	# PCAP data remains reachable only via SSH to the backend's loopback port.
+	@capture_stream path /api/capture/stream /api/capture/stream/*
+	handle @capture_stream {
+		header Cache-Control no-store
+		respond "Capture data requires an SSH tunnel" 403
+	}
+	handle {
+		reverse_proxy {$ROUTE_OVS_UPSTREAM:127.0.0.1:8090} {
+			# Preserve Host/Origin. Caddy supplies trusted X-Forwarded-* headers.
+			# Keep uploads streaming: no request_buffers or short body timeout.
+			stream_close_delay 5m
+			transport http {
+				# Let the backend negotiate static gzip with the actual client.
+				compression off
+				# Uvicorn's default keep-alive timeout is 5 seconds.
+				keepalive 4s
+			}
+		}
+	}
+}

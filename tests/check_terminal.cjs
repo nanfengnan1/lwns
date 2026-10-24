@@ -5,11 +5,11 @@ const assert = require('node:assert/strict');
 const [debugURL, appURL, outputDirectory] = process.argv.slice(2);
 (async () => {
   fs.mkdirSync(outputDirectory, {recursive:true});
-  const targets = await (await fetch(debugURL+'/json')).json();
-  const ws = new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);
+  const target = await (await fetch(debugURL+'/json/new?about:blank', {method:'PUT'})).json();
+  const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise(resolve=>ws.addEventListener('open',resolve,{once:true}));
   let id=0;
-  const pending=new Map(), errors=[], channels=new Map();
+  const pending=new Map(), errors=[], channels=new Map(), requests=[];
   const send=(method,params={})=>new Promise((resolve,reject)=>{
     const key=++id, timer=setTimeout(()=>{pending.delete(key);reject(Error('Timeout '+method));},15000);
     pending.set(key,{resolve,reject,timer});ws.send(JSON.stringify({id:key,method,params}));
@@ -18,6 +18,7 @@ const [debugURL, appURL, outputDirectory] = process.argv.slice(2);
     const msg=JSON.parse(event.data), item=pending.get(msg.id);
     if(item){clearTimeout(item.timer);pending.delete(msg.id);msg.error?item.reject(Error(JSON.stringify(msg.error))):item.resolve(msg.result);}
     if(msg.method==='Runtime.exceptionThrown')errors.push(msg.params.exceptionDetails.exception?.description||msg.params.exceptionDetails.text);
+    if(msg.method==='Network.requestWillBeSent')requests.push(msg.params.request.url);
     if(msg.method==='Page.javascriptDialogOpening')send('Page.handleJavaScriptDialog',{accept:true}).catch(()=>{});
     if(msg.method==='Network.webSocketCreated' && new URL(msg.params.url).pathname==='/api/terminal')channels.set(msg.params.requestId,{output:'',sent:[],closed:false});
     const channel=channels.get(msg.params?.requestId);
@@ -58,11 +59,13 @@ const [debugURL, appURL, outputDirectory] = process.argv.slice(2);
     const freshURL=new URL(appURL);freshURL.searchParams.set('terminal_check',Date.now());
     await send('Page.navigate',{url:freshURL.toString()});
     await waitDOM('document.querySelectorAll(".topology-node").length===2');
+    assert.equal(requests.some(url=>/\/(DeviceTerminal|ImageManager|CaptureManager)-.*\.js/.test(url)),false,'optional features are absent from initial requests');
     await evaluate('document.querySelector("#panel-resize-handle").dispatchEvent(new MouseEvent("dblclick",{bubbles:true}))');
     await waitDOM('document.querySelector("#panel-body").getBoundingClientRect().height===174');
     await click('#fit');
     await click('.topology-node[data-node=r1] .node-body',2);
     await waitDOM('document.querySelector(".terminal-state")?.textContent==="已连接"');
+    assert.ok(requests.some(url=>/\/DeviceTerminal-.*\.js/.test(url)),'terminal loads on first use');
     const router=[...channels.values()].at(-1);
     await wait(()=>router.output.includes('R1#'));
     await command('configure terminal');

@@ -73,17 +73,15 @@ const inLibrary = computed(
 );
 const disabled = computed(() => images.busy || !images.data.available);
 let timer: ReturnType<typeof setInterval> | undefined;
-watch(
-  () => ui.imagesOpen,
-  (open) => {
-    if (open) {
-      dialog.value?.showModal();
-      void ui.run(() => images.refresh(true));
-    } else dialog.value?.close();
-  },
-  { flush: "post" },
-);
+function syncDialog(open: boolean) {
+  if (open) {
+    dialog.value?.showModal();
+    void ui.run(() => images.refresh(true));
+  } else dialog.value?.close();
+}
+watch(() => ui.imagesOpen, syncDialog, { flush: "post" });
 onMounted(() => {
+  syncDialog(ui.imagesOpen);
   timer = setInterval(() => {
     if ((ui.imagesOpen || images.data.busy) && !ui.accessOpen)
       void ui.run(() => images.refresh());

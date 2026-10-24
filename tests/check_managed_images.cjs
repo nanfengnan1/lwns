@@ -8,7 +8,7 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise(resolve => ws.addEventListener('open', resolve, {once: true}));
   let id = 0;
-  const pending = new Map(), errors = [];
+  const pending = new Map(), errors = [], requests = [];
   const send = (method, params = {}) => new Promise((resolve, reject) => {
     const key = ++id, timer = setTimeout(() => { pending.delete(key); reject(Error('Timeout ' + method)); }, 15000);
     pending.set(key, {resolve, reject, timer}); ws.send(JSON.stringify({id: key, method, params}));
@@ -17,6 +17,7 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     const msg = JSON.parse(event.data), item = pending.get(msg.id);
     if (item) { clearTimeout(item.timer); pending.delete(msg.id); msg.error ? item.reject(Error(JSON.stringify(msg.error))) : item.resolve(msg.result); }
     if (msg.method === 'Runtime.exceptionThrown') errors.push(msg.params.exceptionDetails.exception?.description || msg.params.exceptionDetails.text);
+    if (msg.method === 'Network.requestWillBeSent') requests.push(msg.params.request.url);
     if (msg.method === 'Page.javascriptDialogOpening') void send('Page.handleJavaScriptDialog', {accept: true});
   });
   const evaluate = async expression => {
@@ -39,10 +40,16 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
   const ready = () => wait('!!document.querySelector("#start-image-job") && !document.querySelector("#start-image-job").closest("fieldset").disabled');
   const row = ref => '.image-entry[data-image="' + ref + '"]';
   try {
-    await send('Page.enable'); await send('Runtime.enable');
+    await send('Page.enable'); await send('Runtime.enable'); await send('Network.enable');
     await send('Emulation.setDeviceMetricsOverride', {width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false});
     await send('Page.navigate', {url: appURL});
-    await wait('!!document.querySelector("#manage-images")'); await click('#manage-images'); await ready();
+    await wait('!!document.querySelector("#manage-images")');
+    assert.equal(requests.some(url=>/\/(DeviceTerminal|ImageManager|CaptureManager)-.*\.js/.test(url)),false);
+    assert.equal(await evaluate('!!document.querySelector("#image-manager")'),false);
+    await click('#manage-images'); await ready();
+    assert.equal(await evaluate('document.querySelector("#image-manager").open'),true,'first async mount opens the dialog');
+    assert.ok(requests.some(url=>/\/ImageManager-.*\.js/.test(url)));
+    await evaluate('window.retainedImageDialog=document.querySelector("#image-manager")');
     assert.equal((await api('/api/images')).images.some(item => item.reference === 'system/protected:latest'), false);
     await click('#refresh-images'); await ready();
     assert.equal((await api('/api/images')).images.some(item => item.reference === 'system/protected:latest'), false);
@@ -98,6 +105,8 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     assert.ok(await evaluate('(()=>{const e=document.querySelector("#image-manager");return e.scrollWidth<=e.clientWidth+1})()'), 'no modal horizontal overflow');
     await shot('managed-images-compact.png');
     await click('#close-images'); await click('#manage-images'); await ready();
+    assert.equal(await evaluate('document.querySelector("#image-manager") === window.retainedImageDialog'),true,'dialog survives close/reopen');
+    assert.equal(await evaluate('document.querySelector("[data-image-mode=archive]").classList.contains("active")'),true,'selected import mode is retained');
     assert.equal((await api('/api/images')).images.some(item => item.reference === 'system/protected:latest'), false);
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ok: true, checks: ['host images hidden on refresh', 'state filters and search', 'explicit local reference', 'backend rejects protected deletion', 'forget preserves local image', 'owned image settings and deletion', 'collapsible task logs', '1000px layout without overflow'], screenshots: output}, null, 2));
