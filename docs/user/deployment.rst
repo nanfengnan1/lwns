@@ -8,6 +8,8 @@
 Web 工作台在 Linux Docker 宿主机部署设备，Windows/Linux 客户端只需浏览器。
 各功能所需环境如下：
 
+下列 Python/Node.js 要求针对源码部署；:doc:`workbench-install` 的 Linux 目录包已包含 Web 后端运行环境和前端成品，宿主机网络工具及抓包依赖仍需准备。
+
 * Web 后端：Python 3.10+、项目后端依赖、Docker CLI 和同一主机上的 Docker daemon。
 * Web 部署：``ip``（iproute2）、util-linux 的 ``nsenter``，以宿主机 root 运行后端。
 * 前端构建：Node.js 22.12+ 的 22.x 或 24+，建议使用 Node.js 24 LTS；仅运行已构建前端时无需 Node.js。

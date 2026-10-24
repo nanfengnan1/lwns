@@ -14,6 +14,7 @@ import re
 import shlex
 import shutil
 import subprocess
+from lab_paths import host_environment
 import sys
 import tempfile
 import threading
@@ -211,7 +212,7 @@ def atomic_json(path, data):
 def execute(argv, timeout=30, input_text=None, check=True):
     try:
         result = subprocess.run(argv, input=input_text, capture_output=True, text=True,
-                                encoding="utf-8", errors="replace", timeout=timeout)
+                                encoding="utf-8", errors="replace", timeout=timeout, env=host_environment())
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise LabError("命令执行失败 {}: {}".format(argv[0], exc)) from exc
     if check and result.returncode:

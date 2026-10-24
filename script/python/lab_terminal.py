@@ -1,5 +1,6 @@
 """Bounded WebSocket / Linux PTY sessions for owned Docker devices."""
 import asyncio
+from lab_paths import host_environment
 from contextlib import suppress
 import errno
 import logging
@@ -150,7 +151,7 @@ class TerminalSession:
                                           "-e", "ROUTE_OVS_TERMINAL=" + self.marker,
                                           self.target["container"]] + program
             self.process = await asyncio.create_subprocess_exec(
-                *argv, stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
+                *argv, stdin=slave, stdout=slave, stderr=slave, start_new_session=True, env=host_environment())
         finally:
             os.close(slave)
         # Re-check after process creation as cleanup may have started concurrently.

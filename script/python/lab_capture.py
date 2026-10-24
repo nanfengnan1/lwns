@@ -6,6 +6,7 @@ import secrets
 import shutil
 import signal
 import subprocess
+from lab_paths import host_environment
 import threading
 import time
 import uuid
@@ -150,7 +151,7 @@ class CaptureService:
             if session.filter:
                 args.append(session.filter)
             return subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    pass_fds=(fd,), start_new_session=True)
+                                    pass_fds=(fd,), start_new_session=True, env=host_environment())
         finally:
             os.close(fd)
 

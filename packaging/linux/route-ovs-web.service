@@ -1,0 +1,19 @@
+# Managed by route-ovs directory installer v1
+[Unit]
+Description=Route OVS web workbench
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/route-ovs
+WorkingDirectory=/var/lib/route-ovs
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

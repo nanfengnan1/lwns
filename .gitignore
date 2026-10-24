@@ -10,3 +10,5 @@ clients/capture/dist/
 clients/capture/build/
 clients/capture/*.spec
 .route-ovs-tls/
+.venv-build/
+release/

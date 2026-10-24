@@ -31,8 +31,9 @@ from lab_terminal import TerminalService
 from lab_images import ImageService, MAX_UPLOAD
 from lab_capture import CaptureService
 from lab_static import StaticGZipMiddleware, WorkbenchStatic, is_static_path
+from lab_paths import default_data_dir, resource_root
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = resource_root()
 log = logging.getLogger(__name__)
 HEADERS = {
     "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
@@ -315,7 +316,7 @@ def main():
     parser = argparse.ArgumentParser(description="route-ovs Docker / veth 工作台（Python 3.10+）")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8090)
-    parser.add_argument("--data-dir", type=Path, default=ROOT / ".route-ovs-labs")
+    parser.add_argument("--data-dir", type=Path, default=default_data_dir())
     parser.add_argument("--web-dir", type=Path, default=ROOT / "web" / "dist")
     parser.add_argument("--preview", action="store_true", help="仅编辑和保存拓扑")
     parser.add_argument("--docker-socket", default="/var/run/docker.sock")

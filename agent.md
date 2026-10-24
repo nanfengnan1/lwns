@@ -49,6 +49,9 @@ Linux Docker 宿主机
 - 后端为 Python 3.10+、FastAPI、Uvicorn，依赖见 [requirements.txt](script/python/requirements.txt)。当前已经替换早期的标准库 HTTP 服务。
 - 文件和 Docker 等阻塞操作在线程中执行，避免阻塞 WebSocket 事件循环。
 - 后端保持单进程运行。数据目录锁、部署任务、终端凭证和会话保存在同一实例中，不能直接改成多个 Uvicorn worker。
+- Linux 发布使用 PyInstaller onedir 的 `.tar.gz` 目录包，不采用 deb/rpm。`packaging/linux/build.py` 构建前端并按固定清单收集后端资源；内置 Python 运行环境，宿主机仍需 Docker/ip/nsenter，SSH 抓包转发另需 python3。安装到 `/opt/route-ovs/releases/<BUILD_ID>`，`current` 选择版本，`/usr/local/bin/route-ovs` 读取 `/etc/route-ovs/route-ovs.env`，默认数据为 `/var/lib/route-ovs`。源码部署默认目录不变。
+- 目录包安装器校验包内文件、拒绝覆盖非本安装器管理的目录/同名服务，要求升级前停止服务；保留配置、Token、数据和旧版本。systemd 模式启用开机启动但由用户显式 start；支持 `--no-systemd` 和隔离验收用 `--root`。卸载保留配置、数据、Docker 镜像和设备。Caddy 单独配置，目录包不携带当前主机证书私钥/令牌或实验数据。操作见 [目录包用户教程](docs/user/workbench-install.rst)。
+- `lab_paths.py` 处理冻结程序资源目录及可写数据目录，`host_environment()` 恢复宿主机动态库搜索路径，供 Docker、PTY 终端和 tcpdump 子进程使用。目录包按 Linux CPU 架构分别构建，记录 glibc/Python/依赖版本；发行格式通用不代表任意发行版二进制兼容。
 - 生产模式由后端同时提供 `web/dist`、HTTP API 和 WebSocket，浏览器只访问一个端口，不需要启动 Vite。
 - 开发模式由 Vite 在 `5173` 提供前端，将 `/api` 的 HTTP 和 WebSocket 请求代理到 Python 后端。
 - 可选 `config/Caddyfile` 在同机提供 HTTPS / HTTP/2 / HTTP/3（保留 HTTP/1.1 回退），全部请求代理到回环后端；静态压缩和缓存继续由 Python 统一处理。后端用 `--trusted-proxy 127.0.0.1` 显式信任代理协议和客户端地址，保留 Host/Origin 校验。Caddy 拒绝公开 `/api/capture/stream`，PCAP 仍经 SSH 连接后端回环端口。
@@ -634,3 +637,6 @@ OSPF实验.rovproject              # 建议扩展名，内部为 ZIP；尚未确
 - [x] **镜像管理范围与界面优化**：只显示项目管理条目，停止全机自动纳入；已有镜像显式引用，移出清单与本地删除分开，后端执行时校验创建归属和标签 ID；增加筛选、数量概览、引用提示及可收起的任务日志，兼容旧清单迁移。
 - [x] **终端及管理面板分包、静态压缩与缓存**：首次使用动态加载，之后保留会话/表单/轮询；gzip、静态条件请求与哈希长期缓存，API 保持 no-store；不调高构建警告阈值。
 - [x] **可选 Caddy 与证书文档**：同机 HTTPS / HTTP/2 / HTTP/3 入口、明确可信代理、WSS/上传支持、PCAP 仍经 SSH；记录 Caddy 自动内网 CA、mkcert 制作与信任、证书续期、Chromium QUIC 限制及协议验证。
+- [x] **Linux 目录包与系统安装教程**：PyInstaller onedir、tar.gz 与 SHA256 校验，`/opt` 版本目录及启动链接、独立 `/etc` 配置与 `/var/lib` 数据、systemd/前台启动、升级回退和保留数据卸载；不使用 deb/rpm。提供运行路径单元测试与隔离目录包验收入口，当前目标为 Linux x86_64/glibc。
+
+目录包验收记录（2026-10-24）：Ubuntu 22.04 x86_64/glibc 2.35 构建并通过冻结程序静态 gzip、默认资源、认证 API、WebSocket 拒绝无效凭证、抓包客户端下载、校验失败拒绝安装、外部服务/路径保护、重复安装、升级保留配置与数据、每台主机独立 Token、卸载保留数据检查。Python 112 项测试中 106 项通过、6 项显式集成测试跳过；本次只在隔离系统根目录验收，未替换线上源码服务，也未宣称其他发行版、架构已验证。

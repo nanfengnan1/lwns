@@ -18,8 +18,9 @@ import zipfile
 
 from lab_core import atomic_json, stamp
 from lab_devices import CATALOG, LabError
+from lab_paths import host_environment, resource_root
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = resource_root()
 MAX_UPLOAD = 8 * 1024 ** 3
 MAX_CONTEXT = 16 * 1024 ** 3
 MAX_LOG = 65536
@@ -429,7 +430,7 @@ class ImageService:
         argv = self.manager.docker + args
         self.log(job_id, "$ docker " + " ".join(args[:4]) + "\n")
         proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                start_new_session=os.name != "nt")
+                                start_new_session=os.name != "nt", env=host_environment())
         timed_out = threading.Event()
 
         def timeout():

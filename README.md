@@ -5,6 +5,7 @@
 用户文档：
 
 - [环境准备](docs/user/deployment.rst)与[快速开始](docs/user/quickstart.rst)
+- [Linux 目录包打包与安装](docs/user/workbench-install.rst)：生成 `.tar.gz`，安装到 `/opt/route-ovs`，配置 systemd、升级、回退及卸载；不使用 deb/rpm
 - [Web 工作台使用指南](docs/user/workbench.rst)：启动方式选择、HTTP/1.1 直接启动、设备库、镜像管理、组网与终端
 - [Wireshark 抓包指南](docs/user/workbench-capture.rst)：安装、密码登录、会话状态与本机文件位置
 - [实验保存、备份与恢复](docs/user/workbench-data.rst)：拓扑、FRR 配置、迁移和当前限制
@@ -12,6 +13,8 @@
 - [故障排查](docs/user/troubleshooting.rst)
 
 ## 选择启动方式
+
+使用预构建目录包时，按[目录包安装教程](docs/user/workbench-install.rst)解压并运行安装脚本；无需在目标机构建前端或为 Web 后端安装 Python 依赖。以下构建命令用于源码部署。
 
 首次使用先完成下文的前端构建和 Python 依赖安装，再选择一种访问方式：
 

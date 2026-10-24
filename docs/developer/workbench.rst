@@ -368,6 +368,16 @@ Python 提供 ``web/dist/index.html`` 和 ``web/dist/assets/``；生产环境不
 HTTP 服务不会暴露 ``web/src``、锁文件或项目其他源代码。
 构建产物与 ``node_modules`` 被 Git 忽略；在新检出或发布流程中须先运行构建。
 
+Linux 目录包由 ``packaging/linux/build.py`` 构建，PyInstaller onedir 内包含前端、运行库和
+固定清单中的模板、示例与抓包客户端脚本。构建配置、系统目录安装、升级与卸载见
+:doc:`../user/workbench-install`。构建输出 ``release/`` 和构建虚拟环境 ``.venv-build/`` 不提交。
+
+``lab_paths.py`` 统一源码/冻结程序的资源路径；冻结程序默认数据目录为 ``/var/lib/route-ovs``，
+源码默认仍为 ``.route-ovs-labs``。所有 Docker、终端和抓包子进程使用 ``host_environment()``
+恢复宿主机动态库路径，避免 PyInstaller 的 LD_LIBRARY_PATH 影响系统命令。
+测试使用 ``test_packaging.py`` 以及 ``check_linux_package.py <归档路径>``；后者在临时根目录
+验收真实打包程序和安装脚本，不替换正在运行的系统服务。版本包采用 BUILD_ID 目录，配置和数据不随程序替换。
+
 设备终端与会话生命周期
 ----------------------------------------
 
