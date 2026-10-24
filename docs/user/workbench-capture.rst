@@ -5,6 +5,10 @@ Wireshark 抓包操作指南
 Linux Docker 宿主机运行抓包后端，设备容器本身不需要安装 SSH 服务或 tcpdump。
 此功能目前针对 Linux/veth 接口，不自动支持 VPP 内部或 DPDK 接口。
 
+第一次使用按“准备环境 → 安装本地启动器 → 配置 SSH → 开始抓包”的顺序操作。
+已经安装配置好的用户可直接阅读 :ref:`workbench-capture-run`，查文件位置见 :ref:`workbench-capture-files`。
+网页登录 Token 与 SSH 密码是两套凭据；密码登录不要求提供私钥。
+
 .. contents:: 本页导航
    :local:
    :depth: 2
@@ -23,7 +27,7 @@ Linux Docker 宿主机运行抓包后端，设备容器本身不需要安装 SSH
    * - Windows/Linux 客户端
      - 安装图形程序 Wireshark、tshark 和 SSH remote capture（sshdump）组件，以及本地启动器。
    * - 网络
-     - 客户端能访问工作台地址和宿主机 SSH 端口；默认分别为 8090 和 22。
+     - 客户端能访问实际工作台地址（开发 5173、发布 8090 或 HTTPS 443）和宿主机 SSH 端口（通常为 22）。
 
 SSH 用户可以是普通用户，不需要 sudo 或 Docker 权限；进入容器网络命名空间由后端处理。
 在客户端先用 ``ssh 用户名@宿主机IP`` 确认主机和账号能够登录；OpenSSH 登录成功后，
@@ -110,6 +114,8 @@ Linux 桌面
 启动器不会读取或转存 Profile 中的密码。密码、私钥内容和密钥口令不上传到 Web 后端；
 如果用户在 Wireshark 中选择保存密码，其存储行为由 Wireshark 管理。
 
+.. _workbench-capture-run:
+
 开始、查看和停止
 ----------------------------------------
 
@@ -133,6 +139,8 @@ Linux 桌面
 清理实验、关闭 SSH 通道或退出后端会结束相应会话。最多同时 8 个会话，单次最长 60 分钟。
 启动凭证和 SSH 流凭证各有 5 分钟有效期，过期后需重新准备会话。
 同一端点已有待连接会话时，先完成连接或停止旧会话，避免重复创建。
+
+.. _workbench-capture-files:
 
 保存文件在哪里
 ----------------------------------------

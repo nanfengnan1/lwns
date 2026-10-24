@@ -22,8 +22,8 @@ root_doc = 'index'
 extensions = ['sphinx_rtd_theme']
 html_theme = 'sphinx_rtd_theme'
 html_theme_options = {
-    'navigation_depth': 5,
-    'collapse_navigation': False,
+    'navigation_depth': 4,
+    'collapse_navigation': True,
 }
 exclude_patterns = [
     'html', 'pdf', '_build', 'versions', '_scripts', '.venv',
@@ -31,7 +31,7 @@ exclude_patterns = [
 ]
 html_static_path = ['_static']
 html_js_files = ['version-config.js', 'version-switch.js']
-html_css_files = ['version-switch.css']
+html_css_files = ['version-switch.css', 'reading.css']
 
 latex_engine = 'xelatex'
 latex_documents = [

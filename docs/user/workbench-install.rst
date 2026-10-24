@@ -2,12 +2,18 @@ Linux 目录包：打包与系统安装
 ========================================
 
 本项目支持制作 Linux 目录包，解压后使用安装脚本安装到系统目录，不依赖 deb/rpm。
+这是 :doc:`workbench-start` 中的 **发布部署：目录包**，不运行 npm run dev。
+需要修改前端并查看热更新时，使用 :ref:`workbench-deploy-dev` 的两个终端方式。
 目录包含可执行后端、Python 运行环境、已构建前端、默认镜像清单、示例和抓包客户端脚本。
 使用者无需安装 Node.js、npm，也无需为 Web 后端单独安装 Python 或 pip 依赖。
 
-仓库提供的是打包脚本，不代表已经建立公开下载站。发布者先按下文构建并分发
-``.tar.gz`` 与对应 ``.sha256``，使用者从“安装目录包”开始。
+源码仓库为 `nanfengnan1/route-ovs <https://github.com/nanfengnan1/route-ovs>`_，
+安装包下载入口为 `GitHub Releases <https://github.com/nanfengnan1/route-ovs/releases>`_。
+实际发布状态、应该下载的附件以及没有安装包时如何获取，先看 :ref:`workbench-get-package`。
+自行打包的用户先按 :ref:`workbench-get-source` 克隆源码，再阅读本页末尾的构建步骤。
 设备镜像独立导入或拉取，不包含在工作台程序包中。
+
+使用者先阅读“安装目录包”，按需继续修改配置、升级或卸载；需要制作发布包的维护者阅读本页最后的“发布者：构建目录包”。
 
 .. contents:: 本页操作
    :local:
@@ -27,51 +33,11 @@ Linux 目录包：打包与系统安装
 * 远程抓包另需宿主机 ``tcpdump``、SSH 服务和供 SSH 转发脚本使用的 ``python3``；
   客户端需要 Wireshark 和抓包启动器。内置 Python 运行环境仅供打包后的 Web 后端使用。
 
-发布者：构建目录包
-----------------------------------------
-
-在 Linux 源码根目录准备 Node.js（22.12+ 的 22.x 或 24+）和 Python 3.10+。
-以下构建环境与运行中的后端虚拟环境分开，避免升级线上依赖::
-
-   python3 -m venv .venv-build
-   .venv-build/bin/python -m pip install -r packaging/linux/requirements-build.txt
-   npm --prefix web ci --include=optional
-   .venv-build/bin/python packaging/linux/build.py --version 0.1.0
-
-脚本默认执行前端构建，再通过 PyInstaller ``onedir`` 打包后端。
-已有确认过的完整 ``web/dist`` 时可添加 ``--skip-web-build``。
-构建临时目录使用 Linux 本地临时空间，保留运行库符号链接；不要在 Windows 解压后再重新打包。
-
-默认产物（以 x86_64 为例）：
-
-.. code-block:: text
-
-   release/
-     route-ovs-0.1.0-linux-x86_64.tar.gz
-     route-ovs-0.1.0-linux-x86_64.tar.gz.sha256
-
-``--output /目标目录`` 可以修改输出位置；脚本拒绝覆盖同名发布文件。
-``--version`` 是发行版本；每次构建另外生成唯一 BUILD_ID，安装后保留各构建目录。
-归档包含 ``build-info.json``，记录架构、构建机 glibc、Python 和依赖版本，便于诊断兼容性。
-
-打包按固定资源清单收集，不包含 ``.route-ovs-labs``、宿主机令牌、证书私钥、设备镜像或
-``node_modules``。Caddy 只提供示例配置，二进制和证书由部署者单独准备。
-Windows 抓包 exe 也需单独在 Windows 构建；包内附带的是跨平台客户端脚本。
-
-发布前，在隔离目录执行目录包验收::
-
-   .venv-build/bin/python tests/check_linux_package.py \
-     release/route-ovs-0.1.0-linux-x86_64.tar.gz
-
-该检查不向真实系统目录安装、不调用宿主机 systemctl，不操作设备容器。
-它检查资源、认证接口、WebSocket、安装升级和卸载保留数据；实际部署与抓包还需按既有集成测试验收。
-构建工具行为参考 `PyInstaller 运行资源路径 <https://pyinstaller.org/en/stable/runtime-information.html>`_
-和 `外部程序环境说明 <https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html#launching-external-programs-from-the-frozen-application>`_。
-
 安装目录包
 ----------------------------------------
 
-将发布者提供的归档和校验文件放在同一目录，先核对，再解压::
+先从 :ref:`workbench-get-package` 所述来源取得归档和校验文件，放在 Linux 宿主机同一目录中。
+进入文件所在目录后，先核对，再解压（以下以 0.1.0/x86_64 文件名为例，实际版本以取得的包为准）::
 
    sha256sum -c route-ovs-0.1.0-linux-x86_64.tar.gz.sha256
    tar -xzf route-ovs-0.1.0-linux-x86_64.tar.gz
@@ -211,3 +177,45 @@ Docker、``ip`` 或 ``nsenter`` 未就绪时，网页可以显示环境诊断，
 
 确需迁移数据位置时，先保存设备配置并清理实验容器，再停止后端、复制数据、修改配置，
 启动后重新部署验证。不要同时运行源码后端和目录包后端管理同一批实验。
+
+发布者：构建目录包
+----------------------------------------
+
+先按 :ref:`workbench-get-source` 克隆源码并进入 ``route-ovs`` 目录。
+在 Linux 源码根目录准备 Node.js（22.12+ 的 22.x 或 24+）和 Python 3.10+。
+以下构建环境与运行中的后端虚拟环境分开，避免升级线上依赖::
+
+   python3 -m venv .venv-build
+   .venv-build/bin/python -m pip install -r packaging/linux/requirements-build.txt
+   npm --prefix web ci --include=optional
+   .venv-build/bin/python packaging/linux/build.py --version 0.1.0
+
+脚本默认执行前端构建，再通过 PyInstaller ``onedir`` 打包后端。
+已有确认过的完整 ``web/dist`` 时可添加 ``--skip-web-build``。
+构建临时目录使用 Linux 本地临时空间，保留运行库符号链接；不要在 Windows 解压后再重新打包。
+
+默认产物（以 x86_64 为例）：
+
+.. code-block:: text
+
+   release/
+     route-ovs-0.1.0-linux-x86_64.tar.gz
+     route-ovs-0.1.0-linux-x86_64.tar.gz.sha256
+
+``--output /目标目录`` 可以修改输出位置；脚本拒绝覆盖同名发布文件。
+``--version`` 是发行版本；每次构建另外生成唯一 BUILD_ID，安装后保留各构建目录。
+归档包含 ``build-info.json``，记录架构、构建机 glibc、Python 和依赖版本，便于诊断兼容性。
+
+打包按固定资源清单收集，不包含 ``.route-ovs-labs``、宿主机令牌、证书私钥、设备镜像或
+``node_modules``。Caddy 只提供示例配置，二进制和证书由部署者单独准备。
+Windows 抓包 exe 也需单独在 Windows 构建；包内附带的是跨平台客户端脚本。
+
+发布前，在隔离目录执行目录包验收::
+
+   .venv-build/bin/python tests/check_linux_package.py \
+     release/route-ovs-0.1.0-linux-x86_64.tar.gz
+
+该检查不向真实系统目录安装、不调用宿主机 systemctl，不操作设备容器。
+它检查资源、认证接口、WebSocket、安装升级和卸载保留数据；实际部署与抓包还需按既有集成测试验收。
+构建工具行为参考 `PyInstaller 运行资源路径 <https://pyinstaller.org/en/stable/runtime-information.html>`_
+和 `外部程序环境说明 <https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html#launching-external-programs-from-the-frozen-application>`_。

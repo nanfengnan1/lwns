@@ -2,29 +2,63 @@
 
 通过 Docker 图形组网工作台搭建和验证路由实验，也保留原有 OVS/FRR 命令行工具。
 
+## 获取代码或安装包
+
+源码仓库：[nanfengnan1/route-ovs](https://github.com/nanfengnan1/route-ovs)。在 Linux 宿主机准备存放源码的目录中执行：
+
+```bash
+git clone --branch main https://github.com/nanfengnan1/route-ovs.git
+cd route-ovs
+```
+
+后续源码命令都在这个项目根目录执行。也可在仓库网页选择 **Code → Download ZIP**，解压后进入 `route-ovs-main`。已有源码直接进入原目录即可。
+
+安装包请查看 [GitHub Releases](https://github.com/nanfengnan1/route-ovs/releases)，选择目标架构的程序目录包和 SHA256 文件。**截至 2026-10-24 核对时尚无公开 Release 安装包**，当前需由维护者提供，或克隆源码后自行构建。GitHub 的 Source code 归档不是可执行安装包；本地 `release/` 产物不会自动上传。详细获取与环境准备见[用户教程](docs/user/deployment.rst)。
+
+## 用户文档
+
 用户文档：
 
+- [用户指南导航](docs/user/index.rst)：按首次使用、工作台操作、维护排障、旧版脚本选择章节；已有地址和 Token 可直接开始示例
+
 - [环境准备](docs/user/deployment.rst)与[快速开始](docs/user/quickstart.rst)
+- [部署与启动：开发部署和发布部署](docs/user/workbench-start.rst)：开发使用两个终端、访问 5173；发布使用已构建页面、访问 8090；HTTPS 为可选入口
 - [Linux 目录包打包与安装](docs/user/workbench-install.rst)：生成 `.tar.gz`，安装到 `/opt/route-ovs`，配置 systemd、升级、回退及卸载；不使用 deb/rpm
-- [Web 工作台使用指南](docs/user/workbench.rst)：启动方式选择、HTTP/1.1 直接启动、设备库、镜像管理、组网与终端
+- [Web 工作台操作入口](docs/user/workbench.rst)：认识界面，查找所需操作
+- [镜像与设备库](docs/user/workbench-images.rst)、[项目与画布](docs/user/workbench-editor.rst)、[设备终端](docs/user/workbench-terminal.rst)
 - [Wireshark 抓包指南](docs/user/workbench-capture.rst)：安装、密码登录、会话状态与本机文件位置
 - [实验保存、备份与恢复](docs/user/workbench-data.rst)：拓扑、FRR 配置、迁移和当前限制
 - [HTTPS / HTTP/2 / HTTP/3 启动教程](docs/user/workbench-https.rst)：Caddy 安装配置、内网证书制作与信任、协议选择和验证、gzip/缓存
 - [故障排查](docs/user/troubleshooting.rst)
+- [旧版 FRR 脚本入口](docs/user/legacy-cli.rst)：与 Web 工作台分开管理的命令行实验
 
-## 选择启动方式
+## 开发部署与发布部署
 
-使用预构建目录包时，按[目录包安装教程](docs/user/workbench-install.rst)解压并运行安装脚本；无需在目标机构建前端或为 Web 后端安装 Python 依赖。以下构建命令用于源码部署。
+**原来的 `npm run dev` + Python 后端方式仍然有效。** 先选择开发或发布，再选择普通 HTTP 或可选 HTTPS；完整步骤集中在[部署与启动](docs/user/workbench-start.rst)。
 
-首次使用先完成下文的前端构建和 Python 依赖安装，再选择一种访问方式：
-
-| 方式 | 需要启动的服务 | 浏览器地址示例 | 完整教程 |
+| 部署方式 | 首次准备 | 每次运行 | 默认浏览器入口 |
 | --- | --- | --- | --- |
-| HTTP/1.1 直接访问 | Python 后端，监听 `0.0.0.0:8090` | `http://10.8.126.103:8090` | [工作台：环境与启动](docs/user/workbench.rst) |
-| HTTPS，支持 HTTP/2 和 HTTP/3 | Python 后端监听 `127.0.0.1:8090`，加同机 Caddy | `https://10.8.126.103` | [Caddy 安装、配置、证书与启动](docs/user/workbench-https.rst) |
-| HTTPS，仅启用 HTTP/2 和 HTTP/1.1 回退 | 同上，Caddy 设置 `protocols h1 h2` | `https://10.8.126.103` | [协议选择与验证](docs/user/workbench-https.rst) |
+| 开发部署 | 安装 npm 和 Python 依赖，无需 build | Vite + Python 后端，两个终端 | `http://宿主机IP:5173` |
+| 发布部署：源码构建 | 安装依赖并执行 build | 只运行 Python 后端 | `http://宿主机IP:8090` |
+| 发布部署：Linux 目录包 | 解压并安装到系统目录 | systemd 启动打包后的后端 | `http://宿主机IP:8090` |
 
-HTTP/1.1 直接访问无需 Caddy 和证书。HTTPS 默认配置为 `protocols h1 h2 h3`，浏览器协商协议；
+开发部署：依赖已安装时，在 Linux 项目根目录分别打开两个终端。
+
+```bash
+# 终端一：后端，默认监听 127.0.0.1:8090
+sudo .venv/bin/python script/python/lab_server.py --port 8090
+```
+
+```bash
+# 终端二：Vite，浏览器访问 http://宿主机IP:5173
+npm --prefix web run dev -- --host 0.0.0.0
+```
+
+同机 Vite 会代理 `/api` 和 WebSocket 到 8090，登录时输入后端的 Token。直接访问 8090 不会看到 Vite 的热更新。
+发布部署不运行 Vite；源码构建步骤见下文，下载目录包的用户按[目录包安装教程](docs/user/workbench-install.rst)操作。
+
+两种部署方式的普通 HTTP 均为 HTTP/1.1。发布部署需要 HTTPS 时，再按 [Caddy 教程](docs/user/workbench-https.rst)增加入口，访问 `https://宿主机IP`。
+HTTPS 默认配置为 `protocols h1 h2 h3`，浏览器协商协议；
 HTTP/3 额外需要 UDP 443 可达及满足浏览器的证书信任要求，实际使用情况在 Network 的 Protocol 列确认。
 HTTPS 教程包含 Ubuntu 安装、后端启动、Caddy 服务、TCP/UDP 端口、Windows/Linux 证书信任及 Chrome 验证命令。
 切换方式时先停止旧后端，再使用同一实验数据目录启动；不要同时运行两个后端占用该目录。
@@ -131,7 +165,8 @@ Web 工作台使用 **Vue 3 + TypeScript + Vite + Pinia + xterm.js**，Python �
 - 双击设备进入 `vtysh` / `sh`，支持多标签、实时输出、Ctrl+C、终端拖动和放大。
 - 点击已部署连线，选择端点/BPF，通过本机 Wireshark 的 sshdump 实时抓包；支持 Windows/Linux 本地启动器。
 
-首次使用先构建前端（Node.js 22.12+ 的 22.x，或 24+；建议使用 Node.js 24 LTS）：
+以下是**源码发布部署**的步骤；开发部署按上面的两个终端运行，无需预先 build。
+源码发布首次构建前端（Node.js 22.12+ 的 22.x，或 24+；建议使用 Node.js 24 LTS）：
 
 ```bash
 npm --prefix web ci --include=optional

@@ -1,9 +1,11 @@
 HTTPS、HTTP/2 与 HTTP/3 启动
 ========================================
 
-本页提供 Caddy 安装、后端启动、站点配置、证书制作/信任和协议验证的完整流程。
-首次使用先完成 :ref:`workbench-start` 的前端构建与 Python 依赖安装。
-只需普通 HTTP 的用户按 :ref:`workbench-start-http` 启动，无需安装 Caddy 或证书。
+本页为 **发布部署增加 HTTPS 入口**，提供 Caddy 安装、后端配置、证书信任和协议验证流程。
+先在 :doc:`workbench-start` 选择 :ref:`源码发布 <workbench-deploy-source>` 或
+:ref:`目录包发布 <workbench-deploy-package>`；两种形式使用相同的 Caddy 入口。
+这里不运行 Vite。需要原来的 npm run dev + Python 两终端方式时，见 :ref:`workbench-deploy-dev`。
+只需普通 HTTP 的发布部署直接访问 8090，无需安装 Caddy 或证书。
 
 HTTPS 的 HTTP/2 与 HTTP/3 共用同一套启动流程，协议在 Caddy 中选择、由浏览器协商。
 默认同时支持 HTTP/1.1、HTTP/2 和 HTTP/3；需要关闭 HTTP/3 时见 :ref:`workbench-http-versions`。
@@ -48,29 +50,57 @@ Ubuntu/Debian 首次安装可执行（使用官方 stable 软件源）::
 
 安装包会启动默认 Caddy 服务。下列步骤再将其配置为工作台入口。
 
-在项目根目录构建前端，然后启动后端::
+按你的发布形式选择以下一种后端配置，不能同时启动两个后端。
 
-   npm --prefix web run build
+**源码发布部署**：按 :ref:`workbench-deploy-source` 完成依赖安装和前端 build，
+在项目根目录启动后端::
+
    sudo .venv/bin/python script/python/lab_server.py \
      --host 127.0.0.1 --port 8090 --trusted-proxy 127.0.0.1
 
-已有后端时先结束旧进程，再使用同一数据目录重启；不要同时启动第二个占用该目录的实例。
-重启会断开当前网页终端连接，设备容器不会因此被清理。
 该 Python 命令以前台方式运行，需要保持终端运行；接下来的 Caddy 配置在另一个终端执行。
+
+**目录包发布部署**：后端运行环境和页面已经包含在包内。首次安装时可以在解压目录执行::
+
+   sudo bash install.sh --listen 127.0.0.1 --port 8090 --trusted-proxy 127.0.0.1
+   sudo systemctl start route-ovs-web
+
+已有目录包安装时，编辑 ``/etc/route-ovs/route-ovs.env`` 的以下三个值，保留 Token 和数据目录：
+
+.. code-block:: bash
+
+   ROUTE_OVS_HOST=127.0.0.1
+   ROUTE_OVS_PORT=8090
+   ROUTE_OVS_TRUSTED_PROXY=127.0.0.1
+
+修改后执行 ``sudo systemctl restart route-ovs-web``。不要另外启动源码 Python 后端。
+已有源码进程切换参数时先结束旧进程，再用相同数据目录启动。
+重启会断开当前网页终端连接，设备容器不会因此被清理。
 
 ``--trusted-proxy`` 可重复指定明确的 IP/CIDR，默认关闭，不能填写 ``*``。
 这里仅信任同机 Caddy 的回环连接；保留原始 Host/Origin，用可信代理传来的协议做同源校验，
-并识别真实客户端地址。后端仍使用启动时显示的令牌，不能配置多个 worker。
+并识别真实客户端地址。源码后端使用启动时显示的令牌，目录包从配置文件读取令牌；不能配置多个 worker。
 
-将 ``config/Caddyfile`` 的内容合入 ``/etc/caddy/Caddyfile``；已有站点时保留原站点配置。
+将源码的 ``config/Caddyfile`` 或目录包内的 ``Caddyfile.example`` 内容合入
+``/etc/caddy/Caddyfile``；已有站点时保留原站点配置。
 将站点行 ``{$ROUTE_OVS_SITE:localhost}`` 改为实际 IP，例如 ``10.8.126.103``。
 后端默认 ``127.0.0.1:8090``；使用其他端口时同步修改 ``ROUTE_OVS_UPSTREAM`` 占位符或默认值。
 这两个变量也可通过 Caddy 服务的环境配置设置；普通终端的 export 不会自动传入 systemd 服务。
 
-对于首次安装、尚无自定义站点的主机，可在项目根目录直接执行::
+对于首次安装、尚无自定义站点的主机，先备份默认配置::
 
    sudo cp -an /etc/caddy/Caddyfile /etc/caddy/Caddyfile.before-route-ovs
+
+源码发布：在项目根目录复制配置::
+
    sudo cp config/Caddyfile /etc/caddy/Caddyfile
+
+目录包发布：在解压目录复制配置（与上一条二选一）::
+
+   sudo cp Caddyfile.example /etc/caddy/Caddyfile
+
+然后将示例站点地址改为实际宿主机 IP::
+
    sudo sed -i 's/localhost/10.8.126.103/' /etc/caddy/Caddyfile
 
 保留 ``tls internal`` 即可自动制作内网证书。已有其他站点时改为合并站点配置，不要整文件覆盖。

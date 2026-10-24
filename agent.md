@@ -56,7 +56,11 @@ Linux Docker 宿主机
 - 开发模式由 Vite 在 `5173` 提供前端，将 `/api` 的 HTTP 和 WebSocket 请求代理到 Python 后端。
 - 可选 `config/Caddyfile` 在同机提供 HTTPS / HTTP/2 / HTTP/3（保留 HTTP/1.1 回退），全部请求代理到回环后端；静态压缩和缓存继续由 Python 统一处理。后端用 `--trusted-proxy 127.0.0.1` 显式信任代理协议和客户端地址，保留 Host/Origin 校验。Caddy 拒绝公开 `/api/capture/stream`，PCAP 仍经 SSH 连接后端回环端口。
 - [README 网络架构](README.md#网络架构) 维护 Windows/Linux 客户端、可选 Caddy、后端、Docker/veth、配置目录和 SSH 抓包通道的字符图。[HTTP/3 启用指南](docs/user/workbench-https.rst) 提供 Ubuntu 安装、同机代理、客户端根证书信任，以及从 Caddy 当前证书提取 SPKI 后使用独立 Chrome 配置验证 h3 的操作。
-- README 首页和用户指南以“选择启动方式”为统一入口：HTTP/1.1 直连 `http://主机:8090`，HTTPS 经 Caddy 访问 `https://主机`。工作台文档分别列出共用准备、直连启动与代理后端命令；HTTPS 教程完整记录安装/配置/启动/证书，并区分 `protocols h1 h2` 与 `protocols h1 h2 h3`。快速开始按所选方式使用对应地址，避免将后端启动等同于启用 HTTPS。
+- 部署文档统一入口为 [开发部署与发布部署](docs/user/workbench-start.rst)，先选用途再选协议：开发部署为 Vite + Python 两终端、访问 5173、无需预先 build；发布部署分源码构建与 Linux 目录包，后端提供成品页面、默认访问 8090。HTTPS/HTTP2/HTTP3 是发布部署的可选 Caddy 入口，不能把协议与部署方式混为一层选项。
+- 文档导航按“环境准备 → 部署与启动 → 快速组网 → 工作台操作”组织；目录包和 HTTPS 各自作为专项教程。保留 `workbench.html#workbench-start`、`#workbench-start-http` 旧锚点并指向新流程，README、快速开始和开发指南同步端口与命令。启动教程明确首次准备/每次启动/停止更新、Token 来源、同机代理与数据目录；区分 Vite 开发模式和后端 `--preview` 设计模式。
+- 用户指南首页按任务提供入口，侧栏分为首次使用与部署、工作台操作、维护与参考、旧版命令行工具与实验。首次实验只讲 Web 操作，并明确每一步的预期结果；旧版 FRR 入门移到 `legacy-cli.rst`，OVS/VPCS/DHCP/协议章节标明旧版范围。
+- 部署教程必须从获取代码开始：仓库为 `https://github.com/nanfengnan1/route-ovs`，推荐 HTTPS clone，说明 Code → Download ZIP、项目根目录和首次进入目录。目录安装包下载来源指向 Releases 并注明核对时的实际状态；截至 2026-10-24 无公开 Release。源码归档、程序目录包、Docker 镜像必须区分，本地 `release/` 不自动上传。维护者发布安装包后同步更新 README 与获取教程的状态和实际附件信息。
+- `workbench.rst` 保留界面总览和旧的显式锚点；镜像、画布、终端分别维护在 `workbench-images.rst`、`workbench-editor.rst`、`workbench-terminal.rst`，FRR 保存恢复统一放入 `workbench-data.rst`。宿主机/客户端/设备终端位置、源码与目录包数据路径须保持明确。安装文档先讲使用者安装，构建发布说明放最后。文档主题折叠非当前分支，长表格换行，命令代码块保留原格式。
 - 首页不静态导入 xterm 和两个管理面板：`DeviceTerminal.vue` 在首次创建标签时异步加载，`ImageManager.vue` / `CaptureManager.vue` 在首次打开时加载，之后保持挂载，保留会话、草稿和任务轮询。管理对话框挂载时同步打开状态，避免第一次点击无响应。旧分包失效时提示检查网络/导出草稿后刷新，不自动刷新页面。
 - 设备/注释拖动由对应图形捕获指针，空白平移由画布捕获，并在结束/切换时释放实际捕获者；避免部署后可拖动时把设备双击重定向到 SVG，确保双击终端入口可用。
 
@@ -320,30 +324,29 @@ Topology
 
 ## 9. 构建、启动与开发
 
-以下 Linux 命令均在项目根目录执行。完整前端开发环境建议使用 Node.js 24；具体版本约束以 `web/package.json` 和锁文件为准。
+以下 Linux 命令均在项目根目录执行。完整前端开发环境建议使用 Node.js 24；具体版本约束以 `web/package.json` 和锁文件为准。完整步骤统一在 [部署与启动](docs/user/workbench-start.rst)，开发部署不要求预先 build。
 
 ```bash
-# 安装并构建前端
+# 源码首次安装依赖
 npm --prefix web ci --include=optional
-npm --prefix web run build
 
 # 安装后端依赖
 python3 -m venv .venv
 .venv/bin/python -m pip install -r script/python/requirements.txt
 
-# Linux Docker 宿主机真实部署
+# 开发部署：终端一启动后端
+sudo .venv/bin/python script/python/lab_server.py --port 8090
+```
+
+另一个终端执行 `npm --prefix web run dev -- --host 0.0.0.0`，浏览器访问 `http://宿主机IP:5173`，输入后端的令牌。真实设备操作需要 Linux root、Docker CLI、本机 Docker daemon、`ip` 和 `nsenter`。
+
+```bash
+# 源码发布部署：首次或前端更新时 build，日常只运行后端
+npm --prefix web run build
 sudo .venv/bin/python script/python/lab_server.py --host 0.0.0.0 --port 8090
 ```
 
-浏览器访问 `http://宿主机IP:8090`，输入启动时显示的令牌。真实部署需要 Linux root、Docker CLI、本机 Docker daemon、`ip` 和 `nsenter`。镜像按用户指南准备，标签以本机 `docker image ls` 为准。
-
-```bash
-# 仅设计/预览；不能打开真实设备终端
-.venv/bin/python script/python/lab_server.py --preview --port 8090
-
-# 另一个终端启动 Vite 开发服务器
-npm --prefix web run dev
-```
+源码发布访问 `http://宿主机IP:8090`，不运行 Vite。目录包发布按安装教程由 systemd 启动。源码后端加 `--preview` 可仅设计拓扑；这与是否使用 Vite 无关。
 
 - 开发默认地址为 `http://127.0.0.1:5173`。通过 `web/.env.local` 的 `ROUTE_OVS_API_TARGET` 指定后端，默认 `http://127.0.0.1:8090`。
 - 前端构建输出为 `web/dist`，可以跨平台复制；仅运行生产后端不需要 Node.js。
