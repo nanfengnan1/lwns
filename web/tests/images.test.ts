@@ -124,9 +124,27 @@ it("retains inventory and clears submission state when delete is rejected", asyn
     "fetch",
     vi.fn().mockResolvedValue(response({ error: "镜像被容器使用" }, 400)),
   );
-  await expect(images.remove("used")).rejects.toThrow("镜像被容器使用");
+  await expect(images.remove("used", true)).rejects.toThrow("镜像被容器使用");
   expect(images.submitting).toBe(false);
   expect(images.data.busy).toBe(false);
+});
+
+it("only requests Docker deletion explicitly and otherwise forgets the record", async () => {
+  const images = useImagesStore();
+  const fetchMock = vi
+    .fn()
+    .mockImplementation(() => Promise.resolve(response(job)));
+  vi.stubGlobal("fetch", fetchMock);
+  await images.remove("borrowed");
+  expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/images/jobs");
+  expect(JSON.parse(fetchMock.mock.calls[0]?.[1].body)).toEqual({
+    mode: "forget",
+    id: "borrowed",
+  });
+  images.data.busy = false;
+  await images.remove("owned", true);
+  expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/images/owned");
+  expect(fetchMock.mock.calls[1]?.[1].method).toBe("DELETE");
 });
 
 it("supports the four sidebar groups and uses the firewall Linux template", () => {

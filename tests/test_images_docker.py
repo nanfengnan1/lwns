@@ -99,6 +99,57 @@ class ImageDockerFixture:
 
 @unittest.skipUnless(os.environ.get("ROUTE_OVS_IMAGE_DOCKER_TESTS") == "1", "opt-in real image lifecycle test")
 class ImageDockerTests(unittest.TestCase):
+    def test_existing_local_image_cannot_be_deleted_through_manager(self):
+        fixture = ImageDockerFixture()
+        self.addCleanup(fixture.cleanup)
+        fixture.prepare_archive()
+        ref = fixture.prefix + ":archive"
+        fixture.manager.dock("load", "--input", str(fixture.archive), timeout=120)
+        with TestClient(fixture.app) as client:
+            snapshot = client.post("/api/images/refresh", json={}, headers=fixture.headers).json()
+            self.assertNotIn(ref, [item["reference"] for item in snapshot["images"]])
+            fixture.submit(client, {"mode": "local", "reference": ref})
+            item = next(item for item in fixture.images.snapshot()["images"] if item["reference"] == ref)
+            self.assertFalse(item["can_delete"])
+            response = client.delete("/api/images/" + item["id"], headers=fixture.headers)
+            self.assertEqual(response.status_code, 202)
+            fixture.images.wait()
+            self.assertEqual(fixture.images.jobs[response.json()["id"]]["state"], "error")
+            fixture.submit(client, {"mode": "forget", "id": item["id"]})
+            self.assertTrue(json.loads(fixture.manager.dock("image", "inspect", ref)))
+            self.assertNotIn(ref, [item["reference"] for item in fixture.images.snapshot(refresh=True)["images"]])
+
+    def test_xz_upload_and_url_load_after_explicit_decompression(self):
+        fixture = ImageDockerFixture()
+        self.addCleanup(fixture.cleanup)
+        assets = fixture.prepare_archive()
+        expected = lzma.decompress(fixture.archive.read_bytes())
+        loaded_paths = []
+        original_command = fixture.images.command
+        def command(job_id, args):
+            if args[0] == "load":
+                path = Path(args[-1])
+                self.assertEqual(path.name, "image.tar")
+                self.assertEqual(path.read_bytes(), expected)
+                loaded_paths.append(path)
+            return original_command(job_id, args)
+        fixture.images.command = command
+        with TestClient(fixture.app) as client:
+            upload = fixture.upload(client, "image.xz", fixture.archive.read_bytes(), "archive")
+            payloads = [{"mode": "archive", "upload": upload}, {"mode": "url", "url": assets["url"]}]
+            ref = fixture.prefix + ":archive"
+            for payload in payloads:
+                with self.subTest(mode=payload["mode"]):
+                    job = fixture.submit(client, payload)
+                    self.assertIn("XZ 解压完成", job["logs"])
+                    self.assertIn(ref, job["images"])
+                    self.assertEqual(json.loads(fixture.manager.dock("image", "inspect", ref))[0]["Config"]["Labels"]
+                                     ["io.route-ovs.image-test"], fixture.prefix)
+                    self.assertFalse(loaded_paths[-1].parent.exists())
+                    fixture.delete(client, ref)
+        self.assertEqual(len(loaded_paths), 2)
+        self.assertFalse(fixture.images.upload_path(upload).exists())
+
     def test_build_archive_url_pull_delete_and_persistence(self):
         fixture = ImageDockerFixture()
         self.addCleanup(fixture.cleanup)

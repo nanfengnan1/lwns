@@ -217,18 +217,37 @@ FRR 持久化目录和备份布局见 :doc:`../user/workbench`。
 * ``GET /api/images``、``POST /api/images/refresh``：缓存快照/主动核对 Docker。
 * ``POST /api/images/uploads``：登记文件名、大小与 archive/context 类型；
   ``PUT /api/images/uploads/{id}`` 使用原始二进制流上传；``DELETE`` 回收未使用上传。
-* ``POST /api/images/jobs``：pull/url/archive/build 任务，返回 202；删除由
+* ``POST /api/images/jobs``：pull/url/archive/build/local/forget 任务，返回 202；删除由
   ``DELETE /api/images/{id}`` 创建后台任务，成功后才移除管理记录。
 * ``PUT /api/images/{id}``：修改显示名称和绑定模板。
 
 JSON 仍限制 1 MiB；大文件使用 ``request.stream()`` 分块写盘，不读入完整内存。
 执行使用参数数组，不经过宿主机 shell。构建上下文拒绝路径逃逸、链接、特殊文件和解压超限。
+归档导入与 URL 下载共用 ``prepare_load_archive``，按六字节 XZ 文件头检测压缩格式，
+不依赖上传名称或 URL 后缀。Python ``lzma`` 以 1 MiB 块解压到任务目录的 ``image.tar``，
+完整读至 EOF 后才调用 ``docker load --input``；每 16 MiB 输出进度。
+解压输出限制 16 GiB、解压阶段限制 60 分钟，每次写入前保留至少 64 MiB 临时磁盘余量。
+损坏、截断、空输出或空间不足时不调用 load；任务 finally 回收上传及解压文件。
+非 XZ 文件直接传给 Docker，不自行展开 tar 或限定 Docker/OCI 清单格式；
+Docker 返回缺少 manifest.json 时保留原错误并补充归档来源说明，不回退为 docker import。
 任务开始与部署互斥；镜像任务执行中拒绝新部署，允许清理已有实验。
 删除前核对保存实验及 Docker 全部容器，使用非强制删除；失败后重新核对实际镜像，
 避免多镜像归档部分成功后 UI 与 Docker 状态不一致。
 
+管理范围由持久化清单明确限定，``sync`` 只更新记录状态，不将 Docker 全机库存追加到清单。
+``snapshot``、``catalog`` 与按 ID 操作均校验受支持的管理来源；导入只登记命令明确返回的引用，
+不认领同时出现的无关镜像、构建中间镜像或其他同 ID 标签。部分导入失败后未登记的镜像可显式引用。
+``mode=local`` 按完整引用登记本机已有镜像；``mode=forget`` 只移除记录，不检查或删除容器/实验。
+任务新建标签才记录 ``owned_image_id``；已拥有的标签可由项目任务更新，已有引用不会自动获得归属。
+API 提供 ``can_delete``，执行删除前重新同步并校验标签与归属 ID；外部替换/删除会撤销归属，
+纯镜像 ID/digest 不允许物理删除，避免误删共享标签。前端默认调用 forget，只有明确删除时调用 DELETE。
+旧版 ``discovered`` 条目无名称/模板定制则从清单剔除，有定制则迁移为受保护 local 引用；
+旧导入记录保留但不推断创建归属。迁移不执行 Docker 操作，清单版本仍为 1。
+
 前端 ``stores/images.ts`` 管理上传进度、任务和每 2 秒轮询，拒绝旧响应覆盖新任务；
 ``ImageManager.vue`` 提供清单、导入表单、设置与日志。清单元数据变化或任务结束时刷新设备目录和环境；
+列表包含状态筛选与数量概览，四种来源入口及引用保护提示；日志可折叠，执行任务时展开，
+用户向上滚动后不再强制跟随输出。移出/删除后清理已失效的设置选择。
 刷新失败保留旧同步标记，下次轮询重试。``refreshCatalog`` 使用请求序号拒绝过期响应。
 ``DeviceLibrary.vue`` 提供 router/switch/host/firewall 四组可折叠条目，每组每批 60 项，
 搜索名称/镜像时自动展开结果，清除后恢复折叠状态；没有“全部”平铺入口。
@@ -397,6 +416,14 @@ Docker 终端测试。浏览器终端测试可先运行 ``tests/serve_terminal_f
 需先启动指定调试端口的 Chromium。完成后停止 fixture 服务，会清理它创建的设备和文件。
 
 ``tests/test_images.py`` 覆盖清单持久化、导入/删除同步、引用保护、路径边界及上传 API。
+还覆盖全机镜像不自动纳入、旧清单迁移、已有镜像引用、移出清单保留本地镜像、
+新建标签的删除权限、外部替换撤销归属，以及绕过前端直接调用删除接口的保护。
+另覆盖 XZ 上传/URL 解压后的字节一致性、按内容识别、普通 tar/gzip 透传、损坏/截断/空输出、
+解压大小与磁盘限制，以及 Docker 拒绝归档时的错误提示和临时文件回收。
+仅验证真实 XZ 上传与 URL 加载（无需 registry 镜像）可执行::
+
+  PYTHONPATH=tests ROUTE_OVS_IMAGE_DOCKER_TESTS=1 .venv/bin/python -m unittest test_images_docker.ImageDockerTests.test_xz_upload_and_url_load_after_explicit_decompression -v
+
 真实镜像测试使用随机标签、临时文件和本机临时仓库，不推送到外部仓库；
 需要可访问 Docker，且本机已存在 ``registry:2``::
 
@@ -414,6 +441,11 @@ Docker 终端测试。浏览器终端测试可先运行 ``tests/serve_terminal_f
 停止 fixture 后清理其专属镜像及临时文件，不操作现有实验。
 
 ``tests/serve_library_fixture.py`` 使用 ImageHost 模拟 200 个镜像条目及镜像任务，不执行宿主机命令。
+``tests/check_managed_images.cjs`` 复用该 fixture，验证管理范围、显式引用、移出与删除、
+状态筛选、搜索、日志折叠及 1000px 窗口布局；第三个参数为截图输出目录::
+
+  node tests/check_managed_images.cjs http://127.0.0.1:9222 'http://127.0.0.1:8107/#token=library-check' /tmp/managed-images-check
+
 ``tests/check_library_groups.cjs`` 验证分类折叠、搜索、分批加载、默认镜像删除、防火墙导入、
 改类型、取消绑定以及刷新后不恢复已删条目。每次验证启动新的 fixture::
 

@@ -141,12 +141,17 @@ export const useImagesStore = defineStore("images", () => {
       submitting.value = false;
     }
   }
-  async function remove(id: string) {
+  async function remove(id: string, deleteLocal = false) {
     if (busy.value) throw Error("请等待当前镜像任务完成");
     revision++;
     submitting.value = true;
     try {
-      const result = await api<ImageJob>(`/api/images/${id}`, "DELETE");
+      const result = deleteLocal
+        ? await api<ImageJob>(`/api/images/${id}`, "DELETE")
+        : await api<ImageJob>("/api/images/jobs", "POST", {
+            mode: "forget",
+            id,
+          });
       activeJob.value = result.id;
       data.value.jobs.unshift(result);
       data.value.busy = true;

@@ -15,10 +15,11 @@ with tempfile.TemporaryDirectory(prefix="route-ovs-library-") as directory:
     for index in range(200):
         ref = f"fixture/router-{index:03}:latest"
         host.images[ref] = "sha256:" + f"{index+100:064x}"
-        images.registry["images"].append(images.new_entry(ref, {"template": "frr", "title": f"测试路由器 {index:03}"}))
+        images.registry["images"].append(images.new_entry(ref, {"template": "frr", "title": f"测试路由器 {index:03}"}, {"type": "local"}))
     ref = "fixture/switch:latest"
     host.images[ref] = "sha256:" + "f" * 64
-    images.registry["images"].append(images.new_entry(ref, {"template": "linux-bridge", "title": "测试交换机"}))
+    images.registry["images"].append(images.new_entry(ref, {"template": "linux-bridge", "title": "测试交换机"}, {"type": "local"}))
+    host.images["system/protected:latest"] = "sha256:" + "9" * 64
     images.sync()
     print(f"Library fixture PID {os.getpid()}: http://127.0.0.1:{args.port}/#token=library-check", flush=True)
     try:

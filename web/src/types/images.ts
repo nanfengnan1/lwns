@@ -9,6 +9,7 @@ export interface ImageEntry {
   present: boolean;
   image_id: string;
   size: string;
+  can_delete: boolean;
 }
 export interface ImageJob {
   id: string;

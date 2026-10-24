@@ -59,6 +59,8 @@ sudo .venv/bin/python script/python/lab_server.py --host 0.0.0.0 --port 8090
 `docker.tar.xz` 等镜像归档，以及 Dockerfile 文件和可选构建上下文。选择兼容的设备模板后，
 镜像会出现在设备库。初始默认清单在 `config/images.defaults.json`，实际管理清单自动保存到
 `.route-ovs-labs/images/registry.json`；导入和删除成功后同步，已被保存实验或容器引用的镜像拒绝删除。
+管理界面只显示项目管理的镜像，刷新不会纳入宿主机其他镜像；可通过“已有镜像”显式引用。
+“移出清单”保留本地镜像，“删除镜像”仅适用于能确认由本项目新建且归属未变化的标签。
 
 完成前端构建后，没有 Docker 或仅预览界面时：
 

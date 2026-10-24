@@ -1,6 +1,7 @@
 """Image inventory, import jobs, streaming uploads and deletion consistency."""
 import io
 import json
+import lzma
 from pathlib import Path
 import subprocess
 import tarfile
@@ -22,6 +23,7 @@ class ImageHost(FakeHost):
         self.images = {"alpine/frr:latest": "sha256:" + "a" * 64, "alpine/vpcs:latest": "sha256:" + "b" * 64}
         self.fail_image = False
         self.imports = ["test/router:one", "test/router:two"]
+        self.loaded_archives = []
 
     def __call__(self, argv, **kwargs):
         args = argv[3:]
@@ -42,6 +44,7 @@ class ImageHost(FakeHost):
             self.images[args[1]] = "sha256:" + "c" * 64
             return "Pulled\n"
         if args[0] == "load":
+            self.loaded_archives.append((Path(args[-1]), Path(args[-1]).read_bytes()))
             for index, ref in enumerate(self.imports):
                 self.images[ref] = "sha256:" + str(index + 1) * 64
             return "\n".join("Loaded image: " + ref for ref in self.imports)
@@ -72,21 +75,23 @@ class ImageTests(unittest.TestCase):
         self.images.wait()
         return self.images.jobs[job["id"]]
 
-    def upload(self, content, kind="archive"):
-        info = self.images.create_upload({"name": "archive.tar.xz", "size": len(content), "kind": kind})
+    def upload(self, content, kind="archive", name="archive.tar.xz"):
+        info = self.images.create_upload({"name": name, "size": len(content), "kind": kind})
         self.images.begin_upload(info["id"])
         (self.images.upload_path(info["id"]) / "data").write_bytes(content)
         self.images.finish_upload(info["id"], len(content))
         return info["id"]
 
-    def test_default_file_and_external_inventory_sync(self):
+    def test_default_file_and_external_inventory_is_not_managed(self):
         self.assertTrue(self.images.path.is_file())
         self.assertEqual(self.manager.list_labs(), [])
         self.host.images["external/device:latest"] = "sha256:" + "e" * 64
         self.images.sync()
-        entry = next(item for item in self.images.snapshot()["images"] if item["reference"] == "external/device:latest")
-        self.assertEqual(entry["source"]["type"], "discovered")
-        del self.host.images["external/device:latest"]
+        self.assertNotIn("external/device:latest", [item["reference"] for item in self.images.snapshot()["images"]])
+        self.assertNotIn("external/device:latest", self.images.path.read_text())
+        entry = next(item for item in self.images.snapshot()["images"] if item["reference"] == "alpine/frr:latest")
+        self.assertFalse(entry["can_delete"])
+        del self.host.images["alpine/frr:latest"]
         self.images.sync()
         self.assertFalse(self.images.entry(entry["id"])["present"])
 
@@ -106,6 +111,111 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(set(job["images"]), set(self.host.imports))
         self.assertFalse(self.images.upload_path(upload).exists())
 
+    def archive_bytes(self):
+        output = io.BytesIO()
+        with tarfile.open(fileobj=output, mode="w") as archive:
+            for name, content in (("manifest.json", b"[]"), ("layer.tar", b"layer" * 300000)):
+                item = tarfile.TarInfo(name)
+                item.size = len(content)
+                archive.addfile(item, io.BytesIO(content))
+        return output.getvalue()
+
+    def test_xz_upload_is_decompressed_before_load_regardless_of_name(self):
+        content = self.archive_bytes()
+        for name in ("image.tar.xz", "image.xz", "image.tar"):
+            with self.subTest(name=name):
+                upload = self.upload(lzma.compress(content), name=name)
+                job = self.job({"mode": "archive", "upload": upload})
+                self.assertEqual(job["state"], "success", job)
+                path, loaded = self.host.loaded_archives[-1]
+                self.assertEqual(loaded, content)
+                self.assertEqual(path.name, "image.tar")
+                self.assertIn("XZ 解压完成", job["logs"])
+                self.assertFalse(path.parent.exists())
+                self.assertFalse(self.images.upload_path(upload).exists())
+                self.assertFalse(self.manager.image_busy)
+
+    def test_plain_tar_and_gzip_are_passed_through_without_xz_decompression(self):
+        import gzip
+        content = self.archive_bytes()
+        self.images.max_upload = len(content)
+        for archive in (content, gzip.compress(content)):
+            with self.subTest(header=archive[:6]):
+                upload = self.upload(archive)
+                job = self.job({"mode": "archive", "upload": upload})
+                self.assertEqual(job["state"], "success", job)
+                self.assertEqual(self.host.loaded_archives[-1][1], archive)
+                self.assertNotIn("XZ 解压", job["logs"])
+
+    def test_xz_url_without_extension_is_decompressed_before_load(self):
+        content = self.archive_bytes()
+        with patch.object(self.images, "download", side_effect=lambda job, url, path: path.write_bytes(lzma.compress(content))):
+            job = self.job({"mode": "url", "url": "https://example.com/download?token=secret"})
+        self.assertEqual(job["state"], "success", job)
+        path, loaded = self.host.loaded_archives[-1]
+        self.assertEqual(loaded, content)
+        self.assertIn("XZ 解压完成", job["logs"])
+        self.assertFalse(path.parent.exists())
+        self.assertNotIn("secret", json.dumps(job))
+        self.assertNotIn("secret", self.images.path.read_text())
+
+    def test_invalid_xz_never_reaches_docker_and_cleans_temporary_files(self):
+        compressed = lzma.compress(self.archive_bytes())
+        corrupt = bytearray(compressed)
+        corrupt[-5] ^= 255
+        for content, message in ((compressed[:-12], "损坏或不完整"), (bytes(corrupt), "损坏或不完整"),
+                                 (lzma.compress(b""), "结果为空")):
+            with self.subTest(message=message, length=len(content)):
+                upload = self.upload(content)
+                job = self.job({"mode": "archive", "upload": upload})
+                self.assertEqual(job["state"], "error", job)
+                self.assertIn(message, job["error"])
+                self.assertEqual(self.host.loaded_archives, [])
+                self.assertFalse(any(args[0] == "load" for args, _ in self.host.calls))
+                self.assertFalse(self.images.upload_path(upload).exists())
+                self.assertFalse((self.images.jobs_dir / job["id"]).exists())
+                self.assertFalse(self.manager.image_busy)
+                self.assertFalse(any(item["reference"] in self.host.imports for item in self.images.snapshot()["images"]))
+
+    def test_xz_size_limit_stops_before_docker_load(self):
+        upload = self.upload(lzma.compress(self.archive_bytes()))
+        with patch("lab_images.MAX_LOAD_ARCHIVE", 1024):
+            job = self.job({"mode": "archive", "upload": upload})
+        self.assertEqual(job["state"], "error", job)
+        self.assertIn("解压后超过", job["error"])
+        self.assertEqual(self.host.loaded_archives, [])
+        self.assertFalse(self.images.upload_path(upload).exists())
+        self.assertFalse((self.images.jobs_dir / job["id"]).exists())
+
+    def test_xz_low_disk_space_stops_before_docker_load(self):
+        from types import SimpleNamespace
+        upload = self.upload(lzma.compress(self.archive_bytes()))
+        with patch("lab_images.shutil.disk_usage", return_value=SimpleNamespace(free=64 * 1024 ** 2)):
+            job = self.job({"mode": "archive", "upload": upload})
+        self.assertEqual(job["state"], "error", job)
+        self.assertIn("空间不足", job["error"])
+        self.assertEqual(self.host.loaded_archives, [])
+        self.assertFalse(self.images.upload_path(upload).exists())
+        self.assertFalse((self.images.jobs_dir / job["id"]).exists())
+
+    def test_xz_missing_manifest_reports_cause_and_cleans_decompressed_file(self):
+        upload = self.upload(lzma.compress(self.archive_bytes()))
+        received = []
+        def command(job_id, args):
+            received.append(Path(args[-1]))
+            self.assertTrue(received[-1].exists())
+            raise LabError("invalid archive: does not contain a manifest.json")
+        self.images.command = command
+        job = self.job({"mode": "archive", "upload": upload})
+        self.assertEqual(job["state"], "error", job)
+        self.assertIn("does not contain a manifest.json", job["error"])
+        self.assertIn("docker save", job["error"])
+        self.assertIn("XZ 解压完成", job["logs"])
+        self.assertEqual(received[0].name, "image.tar")
+        self.assertFalse(received[0].parent.exists())
+        self.assertFalse(self.images.upload_path(upload).exists())
+        self.assertFalse(self.manager.image_busy)
+
     def test_default_image_card_follows_metadata_unbinding_and_deletion(self):
         self.images.sync()
         entry = next(item for item in self.images.snapshot()["images"] if item["reference"] == "alpine/frr:latest")
@@ -121,7 +231,8 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(self.job({"mode": "delete", "id": entry["id"]})["state"], "error")
         self.assertIn(entry["reference"], [item["image"] for item in self.images.catalog()])
         self.host.fail_image = False
-        self.assertEqual(self.job({"mode": "delete", "id": entry["id"]})["state"], "success")
+        self.assertEqual(self.job({"mode": "forget", "id": entry["id"]})["state"], "success")
+        self.assertIn("alpine/frr:latest", self.host.images)
         restarted = ImageService(self.manager, command=self.host.command)
         self.assertNotIn(entry["reference"], [item["image"] for item in restarted.catalog()])
         with TestClient(create_app(self.manager, "images-token", images=restarted)) as client:
@@ -195,6 +306,8 @@ class ImageTests(unittest.TestCase):
         self.assertNotIn("test/delete:one", [item["reference"] for item in restarted.snapshot()["images"]])
 
     def test_saved_labs_and_external_containers_protect_images(self):
+        del self.host.images["alpine/frr:latest"]
+        self.job({"mode": "pull", "reference": "alpine/frr:latest"})
         self.images.sync()
         item = next(item for item in self.images.snapshot()["images"] if item["reference"] == "alpine/frr:latest")
         self.manager.save(example())
@@ -246,6 +359,116 @@ class ImageTests(unittest.TestCase):
             with self.assertRaises(LabError):
                 extract_context(archive, Path(self.temp.name) / "extract")
         self.assertFalse((Path(self.temp.name).parent / "outside").exists())
+
+    def test_local_adoption_and_forgetting_preserve_host_image_and_saved_lab(self):
+        job = self.job({"mode": "local", "reference": "alpine/frr:latest", "template": "frr"})
+        self.assertEqual(job["state"], "success", job)
+        entry = next(item for item in self.images.snapshot()["images"] if item["reference"] == "alpine/frr:latest")
+        self.assertFalse(entry["can_delete"])
+        self.assertEqual(entry["source"]["type"], "local")
+        self.manager.save(example())
+        saved_topology = self.manager.read("first-lab")["topology"]
+        self.assertEqual(self.job({"mode": "delete", "id": entry["id"]})["state"], "error")
+        self.assertEqual(self.job({"mode": "forget", "id": entry["id"]})["state"], "success")
+        self.assertIn("alpine/frr:latest", self.host.images)
+        self.assertEqual(self.manager.read("first-lab")["topology"], saved_topology)
+        self.assertFalse(any(args[:2] == ["image", "rm"] for args, _ in self.host.calls))
+        restarted = ImageService(self.manager, command=self.host.command)
+        restarted.sync()
+        self.assertNotIn("alpine/frr:latest", [item["reference"] for item in restarted.snapshot()["images"]])
+        self.assertNotIn("alpine/frr:latest", [item["image"] for item in restarted.catalog()])
+        self.assertEqual(self.job({"mode": "local", "reference": "nonexistent:latest"})["state"], "error")
+
+    def test_legacy_discovery_migrates_without_granting_delete_permission(self):
+        auto = self.images.new_entry("system/untouched:latest")
+        explicit = self.images.new_entry("user/router:latest", {"template": "frr", "title": "手工绑定"})
+        imported = self.images.new_entry("user/imported:latest", source={"type": "archive"})
+        imported.pop("owned_image_id")
+        for item in (auto, explicit, imported):
+            self.host.images[item["reference"]] = "sha256:" + "e" * 64
+        self.images.registry["images"].extend([auto, explicit, imported])
+        self.images.persist()
+        restarted = ImageService(self.manager, command=self.host.command)
+        restarted.sync()
+        entries = {item["reference"]: item for item in restarted.snapshot()["images"]}
+        self.assertNotIn(auto["reference"], entries)
+        self.assertEqual(entries[explicit["reference"]]["source"]["type"], "local")
+        self.assertFalse(entries[explicit["reference"]]["can_delete"])
+        self.assertFalse(entries[imported["reference"]]["can_delete"])
+        self.assertIn(auto["reference"], self.host.images)
+        self.assertNotIn(auto["reference"], restarted.path.read_text())
+
+    def test_preexisting_image_import_does_not_grant_delete_permission(self):
+        self.host.imports = ["system/existing:latest", "test/new:latest"]
+        self.host.images["system/existing:latest"] = "sha256:" + "1" * 64
+        upload = self.upload(b"archive")
+        self.assertEqual(self.job({"mode": "archive", "upload": upload})["state"], "success")
+        entries = {item["reference"]: item for item in self.images.snapshot()["images"]}
+        self.assertFalse(entries["system/existing:latest"]["can_delete"])
+        self.assertTrue(entries["test/new:latest"]["can_delete"])
+        self.assertEqual(self.job({"mode": "delete", "id": entries["system/existing:latest"]["id"]})["state"], "error")
+        self.assertEqual(self.job({"mode": "delete", "id": entries["test/new:latest"]["id"]})["state"], "success")
+        self.assertIn("system/existing:latest", self.host.images)
+
+    def test_unrelated_concurrent_images_and_aliases_are_not_registered(self):
+        def command(job_id, args):
+            result = self.host.command(job_id, args)
+            self.host.images["system/concurrent:latest"] = "sha256:" + "f" * 64
+            self.host.images["system/shared-alias:latest"] = self.host.images[self.host.imports[0]]
+            return result
+        self.images.command = command
+        job = self.job({"mode": "archive", "upload": self.upload(b"archive")})
+        self.assertEqual(job["state"], "success", job)
+        self.assertEqual(set(job["images"]), set(self.host.imports))
+        self.assertFalse(any(item["reference"].startswith("system/") for item in self.images.snapshot()["images"]))
+
+    def test_delete_rechecks_external_replacement_and_revokes_ownership(self):
+        self.job({"mode": "pull", "reference": "test/owned:latest"})
+        entry = next(item for item in self.images.snapshot()["images"] if item["reference"] == "test/owned:latest")
+        self.assertTrue(entry["can_delete"])
+        self.host.images[entry["reference"]] = "sha256:" + "f" * 64
+        job = self.job({"mode": "delete", "id": entry["id"]})
+        self.assertEqual(job["state"], "error")
+        self.assertIn("只能移出管理清单", job["error"])
+        self.assertFalse(self.images.snapshot()["images"][-1]["can_delete"])
+        self.assertEqual(self.host.images[entry["reference"]], "sha256:" + "f" * 64)
+        self.assertFalse(any(args[:2] == ["image", "rm"] for args, _ in self.host.calls))
+        # Returning the tag to its old ID must not silently restore ownership.
+        self.host.images[entry["reference"]] = entry["image_id"]
+        self.images.sync()
+        self.assertFalse(self.images.can_delete(self.images.entry(entry["id"])))
+
+    def test_owned_image_can_be_updated_and_forgotten_without_deletion(self):
+        ref = "test/owned:latest"
+        self.job({"mode": "pull", "reference": ref})
+        def command(job_id, args):
+            result = self.host.command(job_id, args)
+            self.host.images[ref] = "sha256:" + "e" * 64
+            return result
+        self.images.command = command
+        self.assertEqual(self.job({"mode": "pull", "reference": ref})["state"], "success")
+        entry = next(item for item in self.images.snapshot()["images"] if item["reference"] == ref)
+        self.assertTrue(entry["can_delete"])
+        self.assertEqual(self.job({"mode": "forget", "id": entry["id"]})["state"], "success")
+        self.assertIn(ref, self.host.images)
+        self.assertNotIn(ref, [item["reference"] for item in self.images.snapshot(refresh=True)["images"]])
+
+    def test_http_cannot_delete_hidden_or_protected_host_images(self):
+        hidden = self.images.new_entry("system/hidden:latest")
+        self.images.registry["images"].append(hidden)
+        self.host.images[hidden["reference"]] = "sha256:" + "f" * 64
+        with TestClient(create_app(self.manager, "images-token", images=self.images)) as client:
+            headers = {"Authorization": "Bearer images-token"}
+            data = client.post("/api/images/refresh", json={}, headers=headers).json()
+            self.assertNotIn(hidden["reference"], [item["reference"] for item in data["images"]])
+            self.assertEqual(client.delete("/api/images/" + hidden["id"], headers=headers).status_code, 400)
+            protected = data["images"][0]
+            result = client.delete("/api/images/" + protected["id"], headers=headers)
+            self.assertEqual(result.status_code, 202)
+            self.images.wait()
+            self.assertEqual(self.images.jobs[result.json()["id"]]["state"], "error")
+            self.assertIn(protected["reference"], self.host.images)
+        self.assertFalse(any(args[:2] == ["image", "rm"] for args, _ in self.host.calls))
 
     def test_http_upload_auth_size_failure_and_task(self):
         with TestClient(create_app(self.manager, "images-token", images=self.images)) as client:

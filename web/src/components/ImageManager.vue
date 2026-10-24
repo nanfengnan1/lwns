@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   computed,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   reactive,
@@ -16,7 +17,11 @@ const images = useImagesStore(),
   ui = useUiStore();
 const dialog = ref<HTMLDialogElement>();
 const query = ref(""),
-  mode = ref<"address" | "archive" | "build">("address");
+  mode = ref<"address" | "archive" | "build" | "local">("address");
+const status = ref<"all" | "present" | "missing">("all");
+const logOpen = ref(false),
+  logElement = ref<HTMLPreElement>();
+const followLogs = ref(true);
 const file = ref<File>(),
   context = ref<File>();
 const editing = ref<ImageEntry | null>(null);
@@ -37,7 +42,7 @@ const templates = [
 ];
 const sourceNames: Record<string, string> = {
   default: "默认清单",
-  discovered: "宿主机已有",
+  local: "已有镜像引用",
   archive: "归档导入",
   url: "URL 下载",
   pull: "仓库拉取",
@@ -50,14 +55,21 @@ const states = {
   error: "失败",
 };
 const filtered = computed(() =>
-  images.data.images.filter((item) =>
-    `${item.title} ${item.reference} ${item.image_id}`
-      .toLowerCase()
-      .includes(query.value.trim().toLowerCase()),
+  images.data.images.filter(
+    (item) =>
+      (status.value === "all" ||
+        item.present === (status.value === "present")) &&
+      `${item.title} ${item.reference} ${item.image_id}`
+        .toLowerCase()
+        .includes(query.value.trim().toLowerCase()),
   ),
 );
 const present = computed(
   () => images.data.images.filter((item) => item.present).length,
+);
+const inLibrary = computed(
+  () =>
+    images.data.images.filter((item) => item.present && item.template).length,
 );
 const disabled = computed(() => images.busy || !images.data.available);
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -81,6 +93,40 @@ onBeforeUnmount(() => {
   clearInterval(timer);
   images.cancelUpload();
 });
+watch(
+  () => images.data.busy,
+  (busy) => {
+    if (busy) logOpen.value = true;
+  },
+);
+watch(
+  () => images.job?.id,
+  () => {
+    followLogs.value = true;
+  },
+);
+watch(
+  () => images.job?.logs,
+  async () => {
+    if (!followLogs.value) return;
+    await nextTick();
+    if (logElement.value)
+      logElement.value.scrollTop = logElement.value.scrollHeight;
+  },
+);
+watch(
+  () => images.data.images,
+  (items) => {
+    if (editing.value && !items.some((item) => item.id === editing.value?.id))
+      editing.value = null;
+  },
+);
+function trackLogScroll() {
+  const element = logElement.value;
+  if (element)
+    followLogs.value =
+      element.scrollHeight - element.scrollTop - element.clientHeight < 32;
+}
 function size(value: number) {
   return value >= 1024 ** 3
     ? `${(value / 1024 ** 3).toFixed(1)} GiB`
@@ -97,7 +143,13 @@ async function readDockerfile(event: Event) {
 }
 async function submit() {
   const metadata = { title: form.title, template: form.template };
-  if (mode.value === "address") {
+  if (mode.value === "local") {
+    await images.start({
+      ...metadata,
+      mode: "local",
+      reference: form.address.trim(),
+    });
+  } else if (mode.value === "address") {
     const address = form.address.trim();
     if (!address) throw Error("请输入镜像地址");
     await images.start(
@@ -124,6 +176,7 @@ async function submit() {
       "context",
     );
   }
+  logOpen.value = true;
   ui.notify("镜像任务已开始，可在下方查看进度和结果");
 }
 function startEdit(item: ImageEntry) {
@@ -137,12 +190,13 @@ async function saveEdit() {
   editing.value = null;
   ui.notify("镜像设置已保存，设备库已更新");
 }
-async function remove(item: ImageEntry) {
-  const message = item.present
+async function remove(item: ImageEntry, deleteLocal = item.can_delete) {
+  const message = deleteLocal
     ? `删除本机镜像标签“${item.reference}”及其管理记录？若有其他标签，共享镜像层可能继续保留。被实验或容器使用的镜像不会删除。`
-    : `移除已不存在的镜像“${item.reference}”的管理记录？`;
+    : `将“${item.reference}”移出管理清单和设备库？本地 Docker 镜像与已有实验会保留。`;
   if (!window.confirm(message)) return;
-  await images.remove(item.id);
+  await images.remove(item.id, deleteLocal);
+  logOpen.value = true;
 }
 </script>
 
@@ -157,7 +211,7 @@ async function remove(item: ImageEntry) {
       <div>
         <span class="dialog-eyebrow">IMAGE LIBRARY</span>
         <h2>镜像管理</h2>
-        <p>导入镜像，选择设备模板，即可添加到画布。</p>
+        <p>管理实验用镜像，选择设备类型后添加到设备库。</p>
       </div>
       <div class="image-heading-actions">
         <button
@@ -177,15 +231,20 @@ async function remove(item: ImageEntry) {
         </button>
       </div>
     </div>
+    <div class="image-scope-note">
+      <span class="image-scope-dot"></span
+      >仅显示项目管理的镜像。刷新不会自动纳入宿主机其他镜像。
+    </div>
     <div v-if="images.data.error" class="image-environment-note" role="status">
       {{ images.data.error }}
     </div>
     <div class="image-manager-content">
       <section class="image-inventory" aria-label="镜像清单">
         <div class="image-list-heading">
-          <b
-            >本机镜像 <span>{{ present }}</span></b
-          ><input
+          <h3>
+            我的镜像 <span>{{ images.data.images.length }}</span>
+          </h3>
+          <input
             id="image-search"
             v-model="query"
             type="search"
@@ -193,11 +252,41 @@ async function remove(item: ImageEntry) {
             aria-label="搜索镜像"
           />
         </div>
+        <div class="image-overview">
+          <span
+            ><strong>{{ present }}</strong> 已加载</span
+          >
+          <span
+            ><strong>{{ images.data.images.length - present }}</strong>
+            待加载</span
+          >
+          <span
+            ><strong>{{ inLibrary }}</strong> 设备库可用</span
+          >
+        </div>
+        <div class="image-filters" aria-label="镜像状态筛选">
+          <button
+            v-for="filter in [
+              { id: 'all', title: '全部' },
+              { id: 'present', title: '已加载' },
+              { id: 'missing', title: '待加载' },
+            ]"
+            :key="filter.id"
+            :data-image-filter="filter.id"
+            :aria-pressed="status === filter.id"
+            :class="{ active: status === filter.id }"
+            @click="status = filter.id as typeof status"
+          >
+            {{ filter.title }}
+          </button>
+          <span>{{ filtered.length }} 个结果</span>
+        </div>
         <div class="image-list-scroll">
           <div
             v-for="item in filtered"
             :key="item.id"
             class="image-entry"
+            :class="{ selected: editing?.id === item.id }"
             :data-image="item.reference"
           >
             <div class="image-entry-top">
@@ -216,6 +305,12 @@ async function remove(item: ImageEntry) {
                 templates.find((t) => t.id === item.template)?.title ||
                 "仅管理镜像"
               }}</span>
+              <span
+                v-if="item.present && !item.can_delete"
+                class="image-protected"
+                title="该镜像的本地文件受到保护，只能移出项目管理清单"
+                >仅引用 · 保留本地</span
+              >
             </div>
             <div class="image-entry-footer">
               <code :title="item.image_id">{{
@@ -225,26 +320,35 @@ async function remove(item: ImageEntry) {
               }}</code>
               <div>
                 <button
+                  v-if="item.can_delete"
+                  class="image-forget"
+                  :disabled="disabled"
+                  @click="ui.run(() => remove(item, false))"
+                >
+                  移出清单
+                </button>
+                <button
                   class="image-settings"
                   :disabled="images.busy"
                   @click="startEdit(item)"
                 >
                   设置</button
                 ><button
-                  class="image-delete delete-button"
+                  class="image-delete"
+                  :class="{ 'delete-button': item.can_delete }"
                   :disabled="disabled"
                   @click="ui.run(() => remove(item))"
                 >
-                  {{ item.present ? "删除" : "移除记录" }}
+                  {{ item.can_delete ? "删除镜像" : "移出清单" }}
                 </button>
               </div>
             </div>
           </div>
           <div v-if="!filtered.length" class="image-empty">
             {{
-              query
+              query || status !== "all"
                 ? "没有匹配的镜像"
-                : "暂无镜像，从右侧添加或刷新宿主机清单。"
+                : "还没有管理的镜像，从右侧导入或添加已有镜像。"
             }}
           </div>
         </div>
@@ -288,12 +392,14 @@ async function remove(item: ImageEntry) {
         </form>
         <form v-else id="image-import-form" @submit.prevent="ui.run(submit)">
           <h3>添加镜像</h3>
+          <p class="image-help">选择来源，再设置名称与设备类型。</p>
           <div class="image-import-tabs" aria-label="镜像来源">
             <button
               v-for="tab in [
-                { id: 'address', title: '镜像地址' },
-                { id: 'archive', title: '镜像归档' },
+                { id: 'address', title: '仓库 / URL' },
+                { id: 'archive', title: '上传归档' },
                 { id: 'build', title: 'Dockerfile' },
+                { id: 'local', title: '已有镜像' },
               ]"
               :key="tab.id"
               type="button"
@@ -307,7 +413,20 @@ async function remove(item: ImageEntry) {
             </button>
           </div>
           <fieldset :disabled="disabled">
-            <template v-if="mode === 'address'">
+            <template v-if="mode === 'local'">
+              <label class="field"
+                ><span>本机镜像名称与标签</span
+                ><input
+                  id="local-image-reference"
+                  v-model="form.address"
+                  placeholder="my-router:latest"
+                  required
+              /></label>
+              <p class="image-help">
+                填写宿主机已有镜像的完整名称与标签，将其加入管理清单。保留本地镜像，只允许移出清单。
+              </p>
+            </template>
+            <template v-else-if="mode === 'address'">
               <label class="field"
                 ><span>仓库镜像地址或归档 URL</span
                 ><input
@@ -332,8 +451,8 @@ async function remove(item: ImageEntry) {
                   @change="file = selected($event)"
               /></label>
               <p class="image-help">
-                上传 docker save 生成的 .tar、.tar.xz
-                等归档，自动恢复归档中的镜像和标签。
+                上传 docker save 生成的 .tar、.tar.xz 或 .xz 等归档。XZ
+                会先自动解压，再加载镜像和标签。
               </p>
               <p v-if="file" class="image-file-info">
                 {{ file.name }} · {{ size(file.size) }}
@@ -410,9 +529,11 @@ async function remove(item: ImageEntry) {
               {{
                 images.submitting
                   ? "提交中…"
-                  : mode === "build"
-                    ? "构建镜像"
-                    : "导入镜像"
+                  : mode === "local"
+                    ? "加入管理清单"
+                    : mode === "build"
+                      ? "构建镜像"
+                      : "导入镜像"
               }}
             </button>
           </fieldset>
@@ -432,7 +553,11 @@ async function remove(item: ImageEntry) {
         </form>
       </section>
     </div>
-    <section class="image-jobs" aria-label="镜像任务日志">
+    <section
+      class="image-jobs"
+      :class="{ collapsed: !logOpen }"
+      aria-label="镜像任务日志"
+    >
       <div class="image-job-heading">
         <h3>任务日志</h3>
         <select
@@ -454,26 +579,43 @@ async function remove(item: ImageEntry) {
           :class="images.job.state"
           >{{ states[images.job.state] }}</span
         >
+        <button
+          id="toggle-image-log"
+          :aria-expanded="logOpen"
+          aria-controls="image-job-log"
+          @click="logOpen = !logOpen"
+        >
+          {{ logOpen ? "收起日志" : "展开日志" }}
+        </button>
       </div>
-      <pre id="image-job-log" role="log">{{
-        images.job?.logs || "导入、构建和删除任务的执行结果将在这里显示。"
-      }}</pre>
+      <pre
+        v-show="logOpen"
+        id="image-job-log"
+        ref="logElement"
+        role="log"
+        @scroll="trackLogScroll"
+        >{{
+          images.job?.logs || "导入、构建和删除任务的执行结果将在这里显示。"
+        }}</pre>
     </section>
     <div class="image-manager-footer">
-      <span>管理清单</span
-      ><code :title="images.data.registry_path">{{
-        images.data.registry_path || "连接后端后显示"
-      }}</code>
+      <span>移出清单保留本地镜像；删除镜像仅适用于本项目创建的标签。</span>
+      <details>
+        <summary>清单位置</summary>
+        <code :title="images.data.registry_path">{{
+          images.data.registry_path || "连接后端后显示"
+        }}</code>
+      </details>
     </div>
   </dialog>
 </template>
 
 <style scoped>
 #image-manager {
-  width: min(1080px, calc(100vw - 48px));
+  width: min(1200px, calc(100vw - 40px));
   max-width: none;
-  height: min(880px, calc(100vh - 48px));
-  max-height: calc(100vh - 48px);
+  height: min(900px, calc(100vh - 40px));
+  max-height: calc(100vh - 40px);
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -488,7 +630,7 @@ async function remove(item: ImageEntry) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 22px 24px 18px;
+  padding: 18px 24px 14px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -498,13 +640,31 @@ async function remove(item: ImageEntry) {
 }
 .image-manager-heading p,
 .image-help {
-  font-size: 11px;
-  color: #8090a6;
+  font-size: 12px;
+  color: #61718a;
   line-height: 1.7;
 }
 .image-heading-actions {
   display: flex;
   gap: 10px;
+  flex-shrink: 0;
+}
+.image-scope-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  background: #f0f6fc;
+  color: #496580;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.image-scope-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3983c3;
+  flex-shrink: 0;
 }
 .image-heading-actions .square {
   font-size: 20px;
@@ -518,7 +678,7 @@ async function remove(item: ImageEntry) {
 }
 .image-manager-content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 350px;
+  grid-template-columns: minmax(0, 1fr) 380px;
   min-height: 180px;
   flex: 1;
   overflow: hidden;
@@ -527,6 +687,7 @@ async function remove(item: ImageEntry) {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   padding: 18px 22px 12px;
 }
 .image-list-heading {
@@ -536,28 +697,82 @@ async function remove(item: ImageEntry) {
   justify-content: space-between;
   margin-bottom: 14px;
 }
-.image-list-heading b {
+.image-list-heading h3 {
   white-space: nowrap;
   font-size: 12px;
 }
-.image-list-heading b span {
+.image-list-heading h3 span {
   color: #7c8ca7;
   margin-left: 5px;
+  background: #edf2f8;
+  border-radius: 5px;
+  padding: 2px 6px;
 }
 .image-list-heading input {
   width: 230px;
+  min-width: 0;
+  max-width: 65%;
+  font-size: 12px;
+}
+.image-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.image-overview > span {
+  padding: 10px 12px;
+  background: #f6f8fc;
+  border: 1px solid #e7edf5;
+  border-radius: 8px;
+  color: #65748b;
   font-size: 11px;
+}
+.image-overview strong {
+  color: #263e60;
+  font-size: 20px;
+  margin-right: 5px;
+  font-weight: 600;
+}
+.image-filters {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+.image-filters button {
+  border: 0;
+  font-size: 11px;
+  padding: 5px 9px;
+  background: transparent;
+  color: #637690;
+}
+.image-filters button.active {
+  background: #eaf2fc;
+  color: #276bb3;
+}
+.image-filters > span {
+  margin-left: auto;
+  font-size: 11px;
+  color: #77869b;
 }
 .image-list-scroll {
   overflow: auto;
   min-height: 0;
   padding-right: 5px;
+  scrollbar-gutter: stable;
+  flex: 1;
 }
 .image-entry {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 13px 14px 9px;
   margin-bottom: 10px;
+  background: white;
+}
+.image-entry.selected {
+  border-color: #78a7dc;
+  box-shadow: 0 0 0 2px #e9f1fb;
 }
 .image-entry-top {
   display: flex;
@@ -570,6 +785,7 @@ async function remove(item: ImageEntry) {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 .image-status {
   white-space: nowrap;
@@ -595,8 +811,14 @@ async function remove(item: ImageEntry) {
   display: flex;
   flex-wrap: wrap;
   gap: 5px 12px;
-  color: #8b98ad;
-  font-size: 10px;
+  color: #687b94;
+  font-size: 11px;
+}
+.image-protected {
+  color: #536e91;
+  background: #f0f4fa;
+  padding: 1px 5px;
+  border-radius: 4px;
 }
 .image-entry-footer {
   display: flex;
@@ -604,9 +826,10 @@ async function remove(item: ImageEntry) {
   align-items: center;
   gap: 10px;
   margin-top: 9px;
+  flex-wrap: wrap;
 }
 .image-entry-footer code {
-  color: #a1acbb;
+  color: #7c8ba0;
   font-size: 10px;
 }
 .image-entry-footer button {
@@ -619,14 +842,16 @@ async function remove(item: ImageEntry) {
   background: #fafbfe;
   overflow-y: auto;
   padding: 18px 20px;
+  min-width: 0;
 }
 h3 {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   margin: 0;
 }
 .image-import-tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   padding: 3px;
   background: #eaf0f7;
   border-radius: 7px;
@@ -655,7 +880,14 @@ fieldset {
   margin: 14px 0;
 }
 .field span {
-  font-size: 11px;
+  font-size: 12px;
+}
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .field input[type="file"] {
   padding: 6px;
@@ -706,6 +938,12 @@ fieldset {
   padding: 12px 22px 14px;
   flex-shrink: 0;
 }
+.image-jobs.collapsed {
+  padding-bottom: 9px;
+}
+.image-jobs.collapsed .image-job-heading {
+  margin-bottom: 0;
+}
 .image-job-heading {
   display: flex;
   align-items: center;
@@ -716,6 +954,17 @@ fieldset {
   flex: 1;
   padding: 5px 8px;
   font-size: 10px;
+  min-width: 0;
+}
+.image-job-heading h3,
+.image-job-state,
+#toggle-image-log {
+  flex-shrink: 0;
+}
+#toggle-image-log {
+  margin-left: auto;
+  padding: 4px 8px;
+  font-size: 11px;
 }
 .image-job-state {
   font-size: 10px;
@@ -731,7 +980,7 @@ fieldset {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   overflow: auto;
-  height: 112px;
+  height: clamp(100px, 16vh, 160px);
   background: #18243a;
   color: #c4d3e9;
   border-radius: 6px;
@@ -745,14 +994,31 @@ fieldset {
   display: flex;
   gap: 10px;
   color: #96a2b5;
-  font-size: 10px;
+  font-size: 11px;
   padding: 10px 22px;
   border-top: 1px solid var(--border);
   background: #fafbfe;
   flex-shrink: 0;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
 }
 .image-manager-footer span {
-  white-space: nowrap;
+  color: #687c96;
+}
+.image-manager-footer details {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 11px;
+}
+.image-manager-footer summary {
+  cursor: pointer;
+  color: #587ba5;
+}
+.image-manager-footer details[open] code {
+  display: block;
+  max-width: 100%;
+  padding-top: 6px;
 }
 .image-manager-footer code {
   overflow: hidden;
@@ -764,5 +1030,19 @@ fieldset {
   text-align: center;
   color: #94a1b6;
   font-size: 12px;
+}
+@media (max-width: 1100px) {
+  .image-manager-content {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+  .image-inventory {
+    padding: 16px;
+  }
+  .image-import {
+    padding: 16px;
+  }
+  .image-overview > span {
+    padding: 8px;
+  }
 }
 </style>

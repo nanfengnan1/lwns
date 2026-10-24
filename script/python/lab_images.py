@@ -1,6 +1,8 @@
 """Local Docker image inventory, streamed uploads and background import jobs."""
 import copy
+import errno
 import json
+import lzma
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -22,8 +24,10 @@ from lab_devices import CATALOG, LabError
 ROOT = Path(__file__).resolve().parents[2]
 MAX_UPLOAD = 8 * 1024 ** 3
 MAX_CONTEXT = 16 * 1024 ** 3
+MAX_LOAD_ARCHIVE = 16 * 1024 ** 3
 MAX_LOG = 65536
 ID = re.compile(r"^[a-f0-9]{32}$")
+MANAGED_SOURCES = {"default", "archive", "url", "pull", "build", "local"}
 
 
 def reference(value, tag_required=False):
@@ -138,6 +142,7 @@ class ImageService:
             defaults = json.loads((ROOT / "config" / "images.defaults.json").read_text(encoding="utf-8"))
             atomic_json(self.path, {"version": 1, "images": [self.new_entry(item["reference"], item, {"type": "default"}) for item in defaults["images"]]})
         self.registry = self.read_registry()
+        self.persist()
         for path in self.jobs_dir.glob("*.json"):
             try:
                 job = json.loads(path.read_text(encoding="utf-8"))
@@ -162,6 +167,7 @@ class ImageService:
         metadata = metadata or {}
         return {"id": uuid.uuid4().hex, "reference": ref, "title": metadata.get("title") or ref,
                 "template": metadata.get("template", ""), "source": source or {"type": "discovered"},
+                "owned_image_id": "",
                 "created_at": stamp(), "updated_at": stamp(), "present": False, "image_id": "", "size": ""}
 
     def read_registry(self):
@@ -173,6 +179,13 @@ class ImageService:
                 if not ID.fullmatch(item["id"]):
                     raise ValueError()
                 reference(item["reference"])
+                # Legacy discovery is not ownership. Keep deliberate library settings
+                # as references, but discard automatically discovered host images.
+                if item.get("source", {}).get("type") == "discovered" and (
+                        item.get("template") or item.get("title", item["reference"]) != item["reference"]):
+                    item["source"] = {"type": "local"}
+                item.setdefault("owned_image_id", "")
+            value["images"] = [item for item in value["images"] if self.is_managed(item)]
             return value
         except (ValueError, KeyError, TypeError) as exc:
             raise LabError("镜像清单损坏，请保留并检查 " + str(self.path)) from exc
@@ -205,17 +218,25 @@ class ImageService:
         self.authorize()
         actual = self.inventory()
         with self.lock:
-            existing = {item["reference"]: item for item in self.registry["images"]}
-            for item in existing.values():
-                item["present"] = item["reference"] in actual
-            for ref, state in actual.items():
-                if ref not in existing:
-                    existing[ref] = self.new_entry(ref)
-                    self.registry["images"].append(existing[ref])
-                existing[ref].update(state)
+            for item in self.registry["images"]:
+                state = actual.get(item["reference"])
+                if item.get("owned_image_id") and (not state or state["image_id"] != item["owned_image_id"]):
+                    item["owned_image_id"] = ""
+                item.update(state or {"present": False, "image_id": "", "size": ""})
             self.persist()
             self.available, self.inventory_error = True, ""
         return actual
+
+    @staticmethod
+    def is_managed(item):
+        return item.get("source", {}).get("type") in MANAGED_SOURCES
+
+    @staticmethod
+    def can_delete(item):
+        ref = item["reference"]
+        return bool(item.get("present") and item.get("owned_image_id")
+                    and item["owned_image_id"] == item.get("image_id")
+                    and not ref.startswith("sha256:") and "@" not in ref)
 
     def snapshot(self, refresh=False):
         if refresh:
@@ -224,7 +245,7 @@ class ImageService:
             except (LabError, OSError) as exc:
                 self.available, self.inventory_error = False, str(exc)
         with self.lock:
-            return copy.deepcopy({"images": self.registry["images"], "jobs": sorted(self.jobs.values(), key=lambda job: job["created_at"], reverse=True)[:30],
+            return copy.deepcopy({"images": [{**item, "can_delete": self.can_delete(item)} for item in self.registry["images"] if self.is_managed(item)], "jobs": sorted(self.jobs.values(), key=lambda job: job["created_at"], reverse=True)[:30],
                                   "busy": self.active is not None, "available": self.available, "error": self.inventory_error,
                                   "registry_path": str(self.path), "max_upload_bytes": self.max_upload})
 
@@ -234,6 +255,8 @@ class ImageService:
         result = []
         with self.lock:
             for entry in self.registry["images"]:
+                if not self.is_managed(entry):
+                    continue
                 base = next((item for item in CATALOG if item["id"] == entry["template"]), None)
                 if not base or (not entry["present"] and not self.manager.preview):
                     continue
@@ -261,7 +284,7 @@ class ImageService:
             return copy.deepcopy(item)
 
     def entry(self, item_id):
-        item = next((item for item in self.registry["images"] if item["id"] == item_id), None)
+        item = next((item for item in self.registry["images"] if item["id"] == item_id and self.is_managed(item)), None)
         if item is None:
             raise LabError("镜像记录不存在")
         return item
@@ -346,7 +369,7 @@ class ImageService:
         mode = payload.get("mode")
         metadata = self.metadata(payload)
         spec = {"mode": mode, "metadata": metadata}
-        if mode == "pull":
+        if mode in ("pull", "local"):
             spec["reference"] = reference(payload.get("reference"))
         elif mode == "url":
             spec["url"] = download_url(payload.get("url"))
@@ -360,14 +383,14 @@ class ImageService:
             spec["dockerfile"] = content
             if payload.get("upload"):
                 spec["upload"] = payload["upload"]
-        elif mode == "delete":
+        elif mode in ("delete", "forget"):
             spec["item_id"] = payload.get("id")
         else:
             raise LabError("未知镜像操作")
         with self.manager.lock, self.lock:
             if self.active or self.manager.busy:
                 raise LabError("已有镜像或部署任务执行中，请稍后重试")
-            if mode == "delete":
+            if mode in ("delete", "forget"):
                 spec["reference"] = self.entry(spec["item_id"])["reference"]
             if "upload" in spec:
                 info = self.upload_info(spec["upload"])
@@ -462,6 +485,42 @@ class ImageService:
             if item.get("Image") == image_id or item.get("Config", {}).get("Image") == ref:
                 raise LabError("镜像被容器使用，请先清理对应容器：" + item.get("Name", cid).lstrip("/"))
 
+    def prepare_load_archive(self, job_id, archive, work):
+        # Uploads and URL downloads have no extension; identify XZ by its header.
+        with archive.open("rb") as source:
+            if source.read(6) != b"\xfd7zXZ\x00":
+                return archive
+        target = work / "image.tar"
+        self.log(job_id, "检测到 XZ 压缩格式，正在解压镜像归档…\n")
+        total, previous, started = 0, 0, time.monotonic()
+        try:
+            with lzma.open(archive, "rb", format=lzma.FORMAT_XZ) as source, target.open("xb") as output:
+                while True:
+                    if time.monotonic() - started > 3600:
+                        raise LabError("XZ 解压超过 60 分钟，请检查归档或宿主机负载")
+                    chunk = source.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > MAX_LOAD_ARCHIVE:
+                        raise LabError("XZ 镜像归档解压后超过 16 GiB 上限")
+                    if shutil.disk_usage(work).free < len(chunk) + 64 * 1024 ** 2:
+                        raise LabError("宿主机临时目录空间不足，无法解压 XZ 镜像归档")
+                    output.write(chunk)
+                    if total - previous >= 16 * 1024 ** 2:
+                        self.log(job_id, f"已解压 {total // (1024 ** 2)} MiB\n")
+                        previous = total
+        except (lzma.LZMAError, EOFError) as exc:
+            raise LabError("XZ 归档损坏或不完整，请重新导出或上传镜像") from exc
+        except OSError as exc:
+            if exc.errno == errno.ENOSPC:
+                raise LabError("宿主机临时目录空间不足，无法解压 XZ 镜像归档") from exc
+            raise
+        if not total:
+            raise LabError("XZ 解压结果为空，请上传 Docker 镜像归档")
+        self.log(job_id, f"XZ 解压完成：{total / (1024 ** 2):.2f} MiB，开始加载 Docker 镜像。\n")
+        return target
+
     def work(self, job_id, spec):
         work = self.jobs_dir / job_id
         try:
@@ -469,18 +528,28 @@ class ImageService:
             with self.lock:
                 self.jobs[job_id]["state"] = "running"
             before = self.sync()
+            owned_before = {item["reference"]: item.get("owned_image_id", "") for item in self.registry["images"]}
             mode = spec["mode"]
             source = {"type": mode}
             refs = []
-            if mode == "delete":
+            if mode in ("delete", "forget"):
                 ref = spec["reference"]
-                self.ensure_unused(ref, before.get(ref, {}).get("image_id", ""))
-                if ref in before:
+                if mode == "delete":
+                    if not self.can_delete(self.entry(spec["item_id"])):
+                        raise LabError("该镜像不属于本项目可删除的标签，或标签已在外部变化；只能移出管理清单，保留本地镜像")
+                    self.ensure_unused(ref, before.get(ref, {}).get("image_id", ""))
                     self.command(job_id, ["image", "rm", ref])
+                else:
+                    self.log(job_id, "仅移出管理清单，保留本地 Docker 镜像及现有实验。\n")
                 with self.lock:
                     self.registry["images"] = [item for item in self.registry["images"] if item["id"] != spec["item_id"]]
                     self.persist()
                 self.sync()
+            elif mode == "local":
+                refs = [spec["reference"]]
+                if spec["reference"] not in before:
+                    raise LabError("本机不存在该镜像，请填写 docker image ls 中的完整仓库名称和标签")
+                self.log(job_id, "将已有镜像加入管理清单；保留本地镜像，仅建立引用。\n")
             elif mode == "pull":
                 self.command(job_id, ["pull", spec["reference"]])
                 refs = [spec["reference"]]
@@ -503,31 +572,45 @@ class ImageService:
                 else:
                     archive = self.upload_path(spec["upload"]) / "data"
                     source["filename"] = spec["filename"]
-                output = self.command(job_id, ["load", "--input", str(archive)])
+                archive = self.prepare_load_archive(job_id, archive, work)
+                try:
+                    output = self.command(job_id, ["load", "--input", str(archive)])
+                except LabError as exc:
+                    if "does not contain a manifest.json" in str(exc):
+                        raise LabError(str(exc) + "\n归档缺少 Docker 镜像清单；请使用 docker save 导出的镜像归档。"
+                                       "docker export、普通目录或再次打包的外层 tar 不能直接加载；XZ 解压不会补齐镜像清单。") from exc
+                    raise
                 refs = re.findall(r"(?m)^Loaded image(?: ID)?:\s*(\S+)", output)
-            if mode != "delete":
+            if mode not in ("delete", "forget"):
                 actual = self.sync()
-                changed = [ref for ref, item in actual.items() if before.get(ref, {}).get("image_id") != item["image_id"]]
-                wanted = set(refs) | set(changed)
-                # Resolve requested refs/digests even when Docker presents a canonical repository name.
-                resolved = set()
+                # Only register refs reported by this operation, never inventory diffs:
+                # another Docker client may create unrelated images while we run.
+                wanted = set()
                 for ref in refs:
                     if ref in actual:
-                        resolved.add(ref)
+                        wanted.add(ref)
                     else:
                         inspected = json.loads(self.manager.dock("image", "inspect", ref))[0]
-                        resolved.update(key for key, item in actual.items() if item["image_id"] == inspected["Id"])
-                wanted |= resolved
+                        def canonical(value):
+                            return value.removeprefix("docker.io/").removeprefix("library/")
+                        wanted.update(key for key, state in actual.items() if state["image_id"] == inspected["Id"]
+                                      and (canonical(key) == canonical(ref) or (ref.startswith("sha256:") and key not in before)))
                 with self.lock:
                     selected = []
-                    for item in self.registry["images"]:
-                        if item["reference"] in wanted and item["present"]:
-                            item.update(source=source, updated_at=stamp())
-                            if spec["metadata"]["title"]:
-                                item["title"] = spec["metadata"]["title"]
-                            if spec["metadata"]["template"]:
-                                item["template"] = spec["metadata"]["template"]
-                            selected.append(item["reference"])
+                    for ref in sorted(wanted):
+                        item = next((entry for entry in self.registry["images"] if entry["reference"] == ref), None)
+                        if item is None:
+                            item = self.new_entry(ref, source=source)
+                            self.registry["images"].append(item)
+                        prior_id = before.get(ref, {}).get("image_id", "")
+                        owned = mode != "local" and (not prior_id or (owned_before.get(ref) and owned_before[ref] == prior_id))
+                        item.update(actual[ref], source=source, updated_at=stamp(),
+                                    owned_image_id=actual[ref]["image_id"] if owned else "")
+                        if spec["metadata"]["title"]:
+                            item["title"] = spec["metadata"]["title"]
+                        if spec["metadata"]["template"]:
+                            item["template"] = spec["metadata"]["template"]
+                        selected.append(ref)
                     if not selected:
                         raise LabError("未找到已导入镜像，请刷新清单检查 Docker 实际结果")
                     self.persist()
