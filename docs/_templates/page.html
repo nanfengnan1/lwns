@@ -1,0 +1,18 @@
+{% extends "!page.html" %}
+
+{% block body %}
+  {% if display_toc and pagename not in ('index', 'user/index', 'developer/index', 'user/protocols/index') %}
+    <div class="route-doc-layout">
+      <div class="route-doc-article">{{ body }}</div>
+      <aside class="route-doc-outline" aria-label="本页目录">
+        <nav>
+          <p class="route-doc-outline-title">本页目录</p>
+          {{ toc }}
+          <a class="route-doc-top" href="#">回到顶部 ↑</a>
+        </nav>
+      </aside>
+    </div>
+  {% else %}
+    {{ body }}
+  {% endif %}
+{% endblock %}

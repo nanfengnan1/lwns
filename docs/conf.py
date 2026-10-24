@@ -22,7 +22,7 @@ root_doc = 'index'
 extensions = ['sphinx_rtd_theme']
 html_theme = 'sphinx_rtd_theme'
 html_theme_options = {
-    'navigation_depth': 4,
+    'navigation_depth': 3,
     'collapse_navigation': True,
 }
 exclude_patterns = [
@@ -30,7 +30,8 @@ exclude_patterns = [
     '**/__pycache__', 'Thumbs.db', '.DS_Store',
 ]
 html_static_path = ['_static']
-html_js_files = ['version-config.js', 'version-switch.js']
+templates_path = ['_templates']
+html_js_files = ['version-config.js', 'version-switch.js', 'reading.js']
 html_css_files = ['version-switch.css', 'reading.css']
 
 latex_engine = 'xelatex'

@@ -3,17 +3,27 @@
 部署与启动：开发部署和发布部署
 ========================================
 
-先选择 **开发部署** 或 **发布部署**，再选择访问协议。
-你原来使用的 ``npm --prefix web run dev -- --host 0.0.0.0`` 加
-``sudo .venv/bin/python script/python/lab_server.py --port 8090`` 仍然有效，属于开发部署。
-这时浏览器访问 **5173**；构建后由后端提供页面的发布部署访问 **8090**。
-两者默认都是普通 HTTP/1.1，启用 HTTPS / HTTP/2 / HTTP/3 是另一个配置步骤。
+.. container:: doc-lead
+
+   选择一种部署方式，启动工作台，并从浏览器登录。
+   开发部署使用 Vite + Python 两个进程；发布部署由后端直接提供已构建页面。
+
+.. container:: doc-meta
+
+   **操作位置**：Linux 宿主机，源码命令在项目根目录执行。
+
+   **准备条件**：已 :doc:`获取代码并准备环境 <deployment>`。
+
+   **完成结果**：浏览器可打开工作台，使用后端 Token 登录。
+
+开发入口为 **5173**，普通发布入口为 **8090**。两者使用 HTTP/1.1；
+HTTPS / HTTP/2 / HTTP/3 是发布部署的可选配置。
 
 .. contents:: 本页步骤
    :local:
    :depth: 2
 
-零、先取得代码或安装包
+获取代码或安装包
 ----------------------------------------
 
 **从源码启动**：源码位于 `GitHub 项目仓库 <https://github.com/nanfengnan1/route-ovs>`_。
@@ -81,16 +91,25 @@ Windows 与 Linux 不要共用 ``node_modules`` 或 ``.venv``；跨平台开发�
 每次启动
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-终端一：启动后端，保留这个终端::
+分别打开两个终端，进入同一项目根目录。启动后保留终端运行。
+
+.. code-block:: bash
+   :caption: 终端一 · Linux 宿主机 · 启动后端
 
    sudo .venv/bin/python script/python/lab_server.py --port 8090
 
-终端二：启动 Vite，保留这个终端::
+.. code-block:: bash
+   :caption: 终端二 · Linux 宿主机 · 启动 Vite
 
    npm --prefix web run dev -- --host 0.0.0.0
 
 浏览器访问 ``http://10.8.126.103:5173`` （换成实际宿主机 IP），输入 **后端终端显示的 Token**。
-这是原来的两条启动命令，启动方式没有取消。依赖已安装时，日常只需这两条命令。
+依赖已安装时，日常启动只需上述两条命令。
+
+.. tip::
+
+   **启动成功的标志**：5173 页面显示工作台，Token 登录成功，顶部环境状态可展开查看。
+   页面打不开或 API 连接失败时，按 :doc:`troubleshooting` 检查对应端口和进程。
 
 .. code-block:: text
 
@@ -153,7 +172,8 @@ Windows 与 Linux 不要共用 ``node_modules`` 或 ``.venv``；跨平台开发�
 每次启动
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-启动一个后端进程即可::
+.. code-block:: bash
+   :caption: Linux 宿主机 · 项目根目录 · 启动发布后端
 
    sudo .venv/bin/python script/python/lab_server.py --host 0.0.0.0 --port 8090
 
@@ -190,14 +210,23 @@ Python 改动需要重启后端，依赖文件变化时先更新虚拟环境。
 
    sudo grep '^ROUTE_OVS_TOKEN=' /etc/route-ovs/route-ovs.env
 
-日常管理::
+日常管理按需要选择一条命令，不要整表依次执行：
 
-   systemctl status route-ovs-web
-   sudo systemctl stop route-ovs-web
-   sudo systemctl start route-ovs-web
-   sudo systemctl restart route-ovs-web
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
 
-以上是分别用于查看、停止、启动、重启的命令，不需要每次全部执行。
+   * - 操作
+     - Linux 宿主机命令
+   * - 查看状态
+     - ``systemctl status route-ovs-web``
+   * - 停止服务
+     - ``sudo systemctl stop route-ovs-web``
+   * - 启动服务
+     - ``sudo systemctl start route-ovs-web``
+   * - 重启服务
+     - ``sudo systemctl restart route-ovs-web``
+
 程序位于 ``/opt/route-ovs``，配置位于 ``/etc/route-ovs``，默认数据位于 ``/var/lib/route-ovs``。
 已经安装时，监听地址等参数通过配置文件修改；再次运行安装器会保留已有配置。
 完整打包配置、兼容范围、非 systemd 启动、升级、回退、卸载及源码迁移步骤见 :doc:`workbench-install`。
@@ -278,3 +307,9 @@ Windows 本机后端不创建 Linux veth；需要真实实验时，浏览器连�
    .\.venv\Scripts\python.exe script/python/lab_server.py --preview --port 8090
 
 在同一台 Windows 的浏览器访问 ``http://127.0.0.1:8090``。
+
+.. container:: doc-next
+
+   **下一步**
+
+   启动成功后，按 :doc:`quickstart` 部署第一个实验；需要 HTTPS 时阅读 :doc:`workbench-https`。

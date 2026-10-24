@@ -17,20 +17,17 @@ cd route-ovs
 
 ## 用户文档
 
-用户文档：
+从[用户指南](docs/user/index.rst)按任务选择入口；构建后的 HTML 首页为 `docs/html/index.html`。
 
-- [用户指南导航](docs/user/index.rst)：按首次使用、工作台操作、维护排障、旧版脚本选择章节；已有地址和 Token 可直接开始示例
-
-- [环境准备](docs/user/deployment.rst)与[快速开始](docs/user/quickstart.rst)
-- [部署与启动：开发部署和发布部署](docs/user/workbench-start.rst)：开发使用两个终端、访问 5173；发布使用已构建页面、访问 8090；HTTPS 为可选入口
-- [Linux 目录包打包与安装](docs/user/workbench-install.rst)：生成 `.tar.gz`，安装到 `/opt/route-ovs`，配置 systemd、升级、回退及卸载；不使用 deb/rpm
-- [Web 工作台操作入口](docs/user/workbench.rst)：认识界面，查找所需操作
-- [镜像与设备库](docs/user/workbench-images.rst)、[项目与画布](docs/user/workbench-editor.rst)、[设备终端](docs/user/workbench-terminal.rst)
-- [Wireshark 抓包指南](docs/user/workbench-capture.rst)：安装、密码登录、会话状态与本机文件位置
-- [实验保存、备份与恢复](docs/user/workbench-data.rst)：拓扑、FRR 配置、迁移和当前限制
-- [HTTPS / HTTP/2 / HTTP/3 启动教程](docs/user/workbench-https.rst)：Caddy 安装配置、内网证书制作与信任、协议选择和验证、gzip/缓存
-- [故障排查](docs/user/troubleshooting.rst)
-- [旧版 FRR 脚本入口](docs/user/legacy-cli.rst)：与 Web 工作台分开管理的命令行实验
+| 你要做什么 | 阅读入口 |
+| --- | --- |
+| 首次安装 | [获取代码与环境准备](docs/user/deployment.rst) → [部署与启动](docs/user/workbench-start.rst) |
+| 已有地址，开始实验 | [第一次实验：让两台 PC 互通](docs/user/quickstart.rst) |
+| 导入设备并绘图 | [镜像与设备库](docs/user/workbench-images.rst) · [项目与画布](docs/user/workbench-editor.rst) |
+| 配置设备、保存和抓包 | [设备终端](docs/user/workbench-terminal.rst) · [配置保存与恢复](docs/user/workbench-data.rst) · [Wireshark 抓包](docs/user/workbench-capture.rst) |
+| 安装目录包或启用 HTTPS | [目录包安装](docs/user/workbench-install.rst) · [HTTPS / HTTP/2 / HTTP/3](docs/user/workbench-https.rst) |
+| 排查错误 | [故障排查](docs/user/troubleshooting.rst) |
+| 使用旧版脚本 | [旧版 FRR 命令行入口](docs/user/legacy-cli.rst) |
 
 ## 开发部署与发布部署
 

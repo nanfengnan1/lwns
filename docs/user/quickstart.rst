@@ -1,9 +1,17 @@
 第一次实验：让两台 PC 互通
 ========================================
 
-本页只使用 Web 工作台。目标是在浏览器中部署两台 PC、两台交换机和一台 FRR 路由器，
-从 PC1 ping 通 PC2，再保存配置并清理设备。
-所有“点击”和设备命令都在浏览器中操作；还没有工作台地址时，先按 :doc:`workbench-start` 启动。
+.. container:: doc-lead
+
+   部署两台 PC、两台交换机和一台 FRR 路由器，让 PC1 ping 通 PC2，
+   再保存配置并清理设备。这是验证工作台能够正常组网的完整流程。
+
+.. container:: doc-meta
+
+   **操作位置**：客户端浏览器；命令输入网页中的设备终端。
+
+   **准备条件**：工作台地址、Token 及兼容的设备镜像。
+   还没有地址时，先按 :doc:`workbench-start` 启动。
 
 .. contents:: 实验步骤
    :local:
@@ -69,11 +77,18 @@
 四、从 PC1 验证连通性
 ----------------------------------------
 
-双击 PC1，在网页打开的 **PC1 Linux Shell** 输入::
+双击 PC1，在网页打开的终端中输入：
+
+.. code-block:: bash
+   :caption: PC1 · 网页设备终端 · Linux Shell
 
    ping -c 3 10.10.2.10
 
-应收到 PC2 的回复。这一实验使用 R1 的直连路由，不需要先配置 OSPF/BGP。
+.. tip::
+
+   **验证成功**：收到来自 ``10.10.2.10`` 的 ping 回复。
+   这一实验使用 R1 的直连路由，不需要先配置 OSPF/BGP。
+
 如果刚部署后的第一次 ping 失败，等待数秒再试；仍失败时在 PC1 用 ``ip -br addr``、``ip route``
 检查地址和网关，在 R1 的 FRR 终端用 ``show ip route`` 检查直连路由。
 
@@ -94,3 +109,10 @@
 ----------------------------------------
 
 使用 ``frr_init.sh`` 创建 FRR 容器的流程已独立整理到 :doc:`legacy-cli`，不与本页 Web 实验混用。
+
+.. container:: doc-next
+
+   **继续实验**
+
+   :doc:`自己绘制拓扑 <workbench-editor>` · :doc:`配置 FRR <workbench-terminal>` ·
+   :doc:`保存与恢复配置 <workbench-data>` · :doc:`观察报文 <workbench-capture>`

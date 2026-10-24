@@ -12,6 +12,40 @@ HTML 使用统一首页；用户和开发章节分别生成一本 PDF。
 Sphinx 配置可参考 `官方配置文档 <https://www.sphinx-doc.org/en/master/usage/configuration.html>`_；
 侧栏选项可参考 `主题文档 <https://sphinx-rtd-theme.readthedocs.io/en/stable/configuring.html>`_。
 
+内容组织与排版约定
+----------------------------------------
+
+文档布局参考 `containerlab 快速开始 <https://containerlab.dev/quickstart/>`_ 的任务顺序与页内目录、
+`GNS3 第一次拓扑 <https://docs.gns3.com/docs/getting-started/your-first-gns3-topology>`_ 的操作引导、
+`Caddy 入门教程 <https://caddyserver.com/docs/getting-started>`_ 的目标与前提说明。
+内容和命令以本项目实现为准，不照搬其他项目的功能或安装方式。
+
+新增或修改用户教程时，遵循以下顺序：
+
+1. **目标与前提**：用一段话说明这篇能完成什么，再标明操作位置、必需条件和完成结果。
+2. **操作步骤**：一个标题对应一个任务。需要按顺序执行的步骤编号；互斥的部署方式明确写成选择。
+3. **命令与结果**：命令块不带 Shell 提示符；有多个终端时用 ``:caption:`` 标明运行位置。
+   管理命令若只能按需选一条，放在操作对照表，不拼成可整体复制的命令块。
+4. **异常与下一步**：先写成功标志，再链接故障处理和后续操作，避免让入门教程变成参数手册。
+
+布局使用原生 reStructuredText，不增加主题或扩展依赖：
+
+* ``.. container:: doc-lead``：页面导语；``doc-meta``：操作位置与前提。
+* ``doc-cards`` 内放多个 ``doc-card``：首页任务入口，内部使用 ``:doc:`` 或 ``:ref:`` 链接。
+* ``doc-path``：简短操作路线；``doc-next``：页尾下一步。
+* 提示使用 ``note`` / ``tip``，可能导致已有数据变化的必要提醒才使用 ``warning``。
+* 长页保留 ``.. contents::``，设置 ``:local:`` 和合适的 ``:depth:``，供窄屏和 PDF 阅读。
+
+``_templates/page.html`` 为宽屏增加右侧目录；``_static/reading.css`` 管理内容宽度、字号、
+任务卡片、表格和窄屏布局；``_static/reading.js`` 增加复制按钮和当前位置提示。
+左侧目录只列章节，详细步骤在页内目录展示，避免两个导航重复展开。
+脚本不可用时正文和链接仍可阅读；复制失败时提供选中代码的手动操作。
+资源随 HTML 一起交付，不依赖 CDN，保持 ``file://``、静态托管、历史归档可用。
+原生容器内容也进入 LaTeX/PDF，右侧导航和复制按钮仅用于 HTML。
+
+排版改动后除 ``make check html`` 外，应检查宽屏、窄屏、长命令横向滚动、
+复制内容是否完整，以及旧锚点和版本切换入口。不要直接修改生成的 ``html/`` 文件。
+
 构建环境
 ----------------------------------------
 
@@ -45,6 +79,8 @@ PDF 另需 XeLaTeX、latexmk 和中文字体。Debian/Ubuntu 的安装示例::
   make serve
 
 ``make check`` 检查文档与交叉引用；默认构建把 Sphinx 警告作为失败处理。
+``make html`` 使用 ``-a`` 重写全部 HTML 并同步静态资源；即使只修改 CSS、脚本或模板，
+也会更新页面中的资源版本，避免继续使用旧排版。文档源码的解析仍可复用 Sphinx 缓存。
 ``make latex`` 只生成两本书的 LaTeX 源码，不需要安装 TeX，也不等于 PDF 编译成功。
 ``make pdf`` 在缺少 latexmk 或 XeLaTeX 时会明确报错。
 

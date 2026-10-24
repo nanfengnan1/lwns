@@ -1,25 +1,65 @@
 route-ovs 文档
 ========================================
 
-route-ovs 提供浏览器中的 Docker/veth 图形组网工作台，支持 FRR 路由器、Linux bridge 交换机、
-Linux/VPCS 主机、Web 终端、FRR 配置保存、镜像管理及本机 Wireshark 远程抓包。
-项目同时保留使用 Docker、Open vSwitch 和 Linux 网络命名空间的命令行实验工具。
+.. container:: doc-lead
 
-**使用工作台**：从 :doc:`user/index` 按任务选择入口。已有地址和 Token 的用户直接阅读
-:doc:`user/quickstart`；需要安装主机的用户先阅读 :doc:`user/deployment` 和 :doc:`user/workbench-start`。
+   在浏览器中搭建、配置和验证网络实验。设备运行在 Linux Docker 宿主机，
+   用 veth 连接，通过网页终端操作，并可在本机 Wireshark 中查看报文。
 
-**开发和维护项目**：从 :doc:`developer/index` 查阅工程结构、镜像构建、测试和文档发布。
-旧版命令行工具单独放在用户指南末尾，不需要为了使用 Web 工作台先学习 OVS 脚本。
+`源码仓库 <https://github.com/nanfengnan1/route-ovs>`_ · :ref:`下载与获取 <workbench-get-source>` ·
+:doc:`故障排查 <user/troubleshooting>`
 
-文档按当前可用功能编写；完整项目包、VPP 扩展等方案标注未实现，协议实验模板标注待补充。
+.. container:: doc-cards
+
+   .. container:: doc-card
+
+      :doc:`安装与启动 <user/deployment>`
+
+      从获取源码开始，准备 Linux 主机，选择开发或发布部署。
+
+      :doc:`选择部署方式 → <user/workbench-start>`
+
+   .. container:: doc-card
+
+      :doc:`完成第一次实验 <user/quickstart>`
+
+      已有工作台地址？加载双网段示例，让两台 PC 互通，再保存和清理。
+
+      :doc:`打开入门教程 → <user/quickstart>`
+
+   .. container:: doc-card
+
+      :doc:`使用工作台 <user/index>`
+
+      查找镜像导入、画布编辑、设备终端、配置保存和 Wireshark 抓包操作。
+
+      :doc:`浏览操作指南 → <user/workbench>`
+
+   .. container:: doc-card
+
+      :doc:`参与开发 <developer/index>`
+
+      了解工程结构，构建设备镜像，运行测试，维护和发布文档。
+
+      :doc:`打开开发指南 → <developer/index>`
+
+.. container:: doc-path
+
+   **第一次使用的顺序**　获取代码 → 准备环境 → 启动工作台 → 准备镜像 → 部署示例。
+   已有地址和 Token 的用户从“第一次实验”开始。
+
+当前支持 FRR 路由器、Linux bridge 交换机和 Linux/VPCS 主机。
+完整项目包、VPP 扩展等仍标注为未实现。旧版 OVS/FRR 命令行工具见 :doc:`user/legacy-cli`。
 
 .. toctree::
+   :hidden:
    :maxdepth: 1
    :caption: 用户指南
 
    user/index
 
 .. toctree::
+   :hidden:
    :maxdepth: 1
    :caption: 开发指南
 

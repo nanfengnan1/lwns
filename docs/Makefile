@@ -27,7 +27,7 @@ check:
 	$(SPHINXBUILD) $(SPHINXOPTS) -n -b dummy "$(SOURCEDIR)" "_build/check"
 
 html:
-	$(SPHINXBUILD) $(SPHINXOPTS) -b html "$(SOURCEDIR)" "$(BUILDDIR)"
+	$(SPHINXBUILD) $(SPHINXOPTS) -a -b html "$(SOURCEDIR)" "$(BUILDDIR)"
 	$(PYTHON) $(VERSION_TOOL) record-html
 
 latex:

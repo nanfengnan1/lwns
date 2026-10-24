@@ -61,6 +61,7 @@ Linux Docker 宿主机
 - 用户指南首页按任务提供入口，侧栏分为首次使用与部署、工作台操作、维护与参考、旧版命令行工具与实验。首次实验只讲 Web 操作，并明确每一步的预期结果；旧版 FRR 入门移到 `legacy-cli.rst`，OVS/VPCS/DHCP/协议章节标明旧版范围。
 - 部署教程必须从获取代码开始：仓库为 `https://github.com/nanfengnan1/route-ovs`，推荐 HTTPS clone，说明 Code → Download ZIP、项目根目录和首次进入目录。目录安装包下载来源指向 Releases 并注明核对时的实际状态；截至 2026-10-24 无公开 Release。源码归档、程序目录包、Docker 镜像必须区分，本地 `release/` 不自动上传。维护者发布安装包后同步更新 README 与获取教程的状态和实际附件信息。
 - `workbench.rst` 保留界面总览和旧的显式锚点；镜像、画布、终端分别维护在 `workbench-images.rst`、`workbench-editor.rst`、`workbench-terminal.rst`，FRR 保存恢复统一放入 `workbench-data.rst`。宿主机/客户端/设备终端位置、源码与目录包数据路径须保持明确。安装文档先讲使用者安装，构建发布说明放最后。文档主题折叠非当前分支，长表格换行，命令代码块保留原格式。
+- 文档排版参考 containerlab、GNS3 与 Caddy 官方教程，沿用 Sphinx/RTD，不增加构建依赖。首页使用原生 RST 容器组成任务入口，教程按目标/前提/步骤/成功标志/下一步组织，规范见 `docs/developer/build-docs.rst`。`docs/_templates/page.html` 提供宽屏右侧页内目录，左栏仅展示章节；窄屏保留正文 `contents`。`reading.css` 统一字号、间距、表格、提示框和打印样式，`reading.js` 提供纯代码复制及滚动定位；剪贴板失败后选中代码供手动复制。静态资源本地交付，支持 file:// 与原有版本归档，保留旧显式锚点。管理命令按需选择时用对照表，不能合成一段让用户全部执行。
 - 首页不静态导入 xterm 和两个管理面板：`DeviceTerminal.vue` 在首次创建标签时异步加载，`ImageManager.vue` / `CaptureManager.vue` 在首次打开时加载，之后保持挂载，保留会话、草稿和任务轮询。管理对话框挂载时同步打开状态，避免第一次点击无响应。旧分包失效时提示检查网络/导出草稿后刷新，不自动刷新页面。
 - 设备/注释拖动由对应图形捕获指针，空白平移由画布捕获，并在结束/切换时释放实际捕获者；避免部署后可拖动时把设备双击重定向到 SVG，确保双击终端入口可用。
 

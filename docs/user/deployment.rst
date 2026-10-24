@@ -8,6 +8,17 @@
 如果管理员已经提供工作台地址和 Token，你只需浏览器，直接阅读 :doc:`quickstart`。
 以下安装和检查命令由维护 Linux 宿主机的人执行。
 
+.. container:: doc-meta
+
+   **操作位置**：Linux 宿主机。
+
+   **完成结果**：取得代码或安装包，确认 Docker 和网络工具可用。
+   已具备这些条件时，直接阅读 :doc:`workbench-start`。
+
+.. contents:: 本页步骤
+   :local:
+   :depth: 1
+
 .. _workbench-get-source:
 
 第一步：获取项目源码
@@ -50,8 +61,11 @@ Debian/Ubuntu 可运行 ``sudo apt-get update`` 和 ``sudo apt-get install git``
 及同名 ``.sha256``，两份文件都要下载。GitHub 自动生成的 **Source code (zip/tar.gz)**
 是源码归档，不是包含可执行程序的目录安装包。
 
-**截至 2026-10-24 核对时，该仓库尚未发布 Release 安装包。** 当前可以取得维护者提供的目录包，
-或先克隆源码，再按 :doc:`workbench-install` 最后的“发布者：构建目录包”自行生成。
+.. note::
+
+   **截至 2026-10-24 核对时，该仓库尚未发布 Release 安装包。** 当前可以取得维护者提供的目录包，
+   或先克隆源码，再按 :doc:`workbench-install` 最后的“发布者：构建目录包”自行生成。
+
 构建产物位于构建机项目根目录的 ``release/``，这个目录不会随 Git 提交或自动上传到 GitHub。
 
 取得 ``.tar.gz`` 和 ``.sha256`` 后，按 :doc:`workbench-install` 校验、解压并安装。

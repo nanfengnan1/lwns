@@ -1,9 +1,16 @@
 设备终端与 FRR 命令
 ========================================
 
-使用位置：浏览器底部“设备终端”。实验应已经部署，目标容器处于运行状态。
 双击设备打开终端：FRR 路由器默认进入 ``vtysh``，主机和交换机默认进入 Linux ``sh``。
 输入命令前先确认当前是 FRR CLI 还是 Linux Shell，两者使用不同的命令。
+
+.. container:: doc-meta
+
+   **操作位置**：浏览器底部“设备终端”。
+
+   **准备条件**：实验已部署，目标容器处于运行状态。
+
+   **完成结果**：能查看设备状态或配置协议，并在清理前保存需要保留的 FRR 配置。
 
 .. contents:: 本页操作
    :local:
@@ -12,24 +19,30 @@
 在 FRR 中查看路由和配置协议
 ----------------------------------------
 
-双击路由器默认进入交互式 ``vtysh``，可连续输入::
+双击路由器默认进入交互式 ``vtysh``，下面是一个 OSPF 配置示例，网段需按实际拓扑调整：
 
-  show ip route
-  configure terminal
-  router ospf
-  network 10.0.0.0/8 area 0
-  end
+.. code-block:: text
+   :caption: FRR 路由器 · 网页设备终端 · vtysh
+
+   show ip route
+   configure terminal
+   router ospf
+   network 10.0.0.0/8 area 0
+   end
 
 路由器还可通过终端工具栏的“Linux Shell”打开独立 shell 标签。
 
 在 Linux Shell 中检查地址与连通性
 ----------------------------------------
 
-主机和交换机默认进入 ``sh``，可以运行::
+主机和交换机默认进入 ``sh``，下面以 ping 示例中的 PC2 为例：
 
-  ip -br addr
-  ip route
-  ping -c 3 10.10.2.10
+.. code-block:: bash
+   :caption: 主机或交换机 · 网页设备终端 · Linux Shell
+
+   ip -br addr
+   ip route
+   ping -c 3 10.10.2.10
 
 如果进入的是 FRR 容器的 Linux Shell，可以运行 ``vtysh -c 'show ip route'`` 或
 ``vtysh -c 'show ip ospf neighbor'``；普通 VPCS/Linux 主机和交换机镜像不保证带有 vtysh。
