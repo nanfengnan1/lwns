@@ -1,8 +1,6 @@
 """Local Docker image inventory, streamed uploads and background import jobs."""
 import copy
-import errno
 import json
-import lzma
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -24,10 +22,19 @@ from lab_devices import CATALOG, LabError
 ROOT = Path(__file__).resolve().parents[2]
 MAX_UPLOAD = 8 * 1024 ** 3
 MAX_CONTEXT = 16 * 1024 ** 3
-MAX_LOAD_ARCHIVE = 16 * 1024 ** 3
 MAX_LOG = 65536
 ID = re.compile(r"^[a-f0-9]{32}$")
 MANAGED_SOURCES = {"default", "archive", "url", "pull", "build", "local"}
+TAR_ONLY = "镜像归档仅支持未压缩的 .tar 文件，请先在本地解压后上传"
+
+
+def validate_load_archive(archive):
+    # Raw tar only: r: never invokes gzip/xz/etc. Docker validates the image contents.
+    try:
+        with tarfile.open(archive, "r:"):
+            pass
+    except (tarfile.TarError, EOFError) as exc:
+        raise LabError(TAR_ONLY + "；当前文件不是有效的未压缩 tar 归档") from exc
 
 
 def reference(value, tag_required=False):
@@ -312,6 +319,8 @@ class ImageService:
             raise LabError("上传文件名无效")
         if kind not in ("archive", "context"):
             raise LabError("上传类型无效")
+        if kind == "archive" and not name.lower().endswith(".tar"):
+            raise LabError(TAR_ONLY)
         with self.lock:
             self.prune_uploads()
             if sum(1 for _ in self.uploads.iterdir()) >= 8:
@@ -397,6 +406,8 @@ class ImageService:
                 if info["state"] != "ready" or info["kind"] != ("context" if mode == "build" else "archive"):
                     raise LabError("请先完成对应文件上传")
                 spec["filename"] = info["name"]
+                if mode == "archive" and not info["name"].lower().endswith(".tar"):
+                    raise LabError(TAR_ONLY)
             job = {"id": uuid.uuid4().hex, "mode": mode, "state": "queued", "created_at": stamp(), "finished_at": None,
                    "label": spec.get("reference") or spec.get("filename") or public_url(spec.get("url", "")), "logs": "", "error": "", "images": []}
             if "upload" in spec:
@@ -485,42 +496,6 @@ class ImageService:
             if item.get("Image") == image_id or item.get("Config", {}).get("Image") == ref:
                 raise LabError("镜像被容器使用，请先清理对应容器：" + item.get("Name", cid).lstrip("/"))
 
-    def prepare_load_archive(self, job_id, archive, work):
-        # Uploads and URL downloads have no extension; identify XZ by its header.
-        with archive.open("rb") as source:
-            if source.read(6) != b"\xfd7zXZ\x00":
-                return archive
-        target = work / "image.tar"
-        self.log(job_id, "检测到 XZ 压缩格式，正在解压镜像归档…\n")
-        total, previous, started = 0, 0, time.monotonic()
-        try:
-            with lzma.open(archive, "rb", format=lzma.FORMAT_XZ) as source, target.open("xb") as output:
-                while True:
-                    if time.monotonic() - started > 3600:
-                        raise LabError("XZ 解压超过 60 分钟，请检查归档或宿主机负载")
-                    chunk = source.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    total += len(chunk)
-                    if total > MAX_LOAD_ARCHIVE:
-                        raise LabError("XZ 镜像归档解压后超过 16 GiB 上限")
-                    if shutil.disk_usage(work).free < len(chunk) + 64 * 1024 ** 2:
-                        raise LabError("宿主机临时目录空间不足，无法解压 XZ 镜像归档")
-                    output.write(chunk)
-                    if total - previous >= 16 * 1024 ** 2:
-                        self.log(job_id, f"已解压 {total // (1024 ** 2)} MiB\n")
-                        previous = total
-        except (lzma.LZMAError, EOFError) as exc:
-            raise LabError("XZ 归档损坏或不完整，请重新导出或上传镜像") from exc
-        except OSError as exc:
-            if exc.errno == errno.ENOSPC:
-                raise LabError("宿主机临时目录空间不足，无法解压 XZ 镜像归档") from exc
-            raise
-        if not total:
-            raise LabError("XZ 解压结果为空，请上传 Docker 镜像归档")
-        self.log(job_id, f"XZ 解压完成：{total / (1024 ** 2):.2f} MiB，开始加载 Docker 镜像。\n")
-        return target
-
     def work(self, job_id, spec):
         work = self.jobs_dir / job_id
         try:
@@ -572,13 +547,13 @@ class ImageService:
                 else:
                     archive = self.upload_path(spec["upload"]) / "data"
                     source["filename"] = spec["filename"]
-                archive = self.prepare_load_archive(job_id, archive, work)
+                validate_load_archive(archive)
                 try:
                     output = self.command(job_id, ["load", "--input", str(archive)])
                 except LabError as exc:
                     if "does not contain a manifest.json" in str(exc):
                         raise LabError(str(exc) + "\n归档缺少 Docker 镜像清单；请使用 docker save 导出的镜像归档。"
-                                       "docker export、普通目录或再次打包的外层 tar 不能直接加载；XZ 解压不会补齐镜像清单。") from exc
+                                       "docker export、普通目录或再次打包的外层 tar 不能直接加载。") from exc
                     raise
                 refs = re.findall(r"(?m)^Loaded image(?: ID)?:\s*(\S+)", output)
             if mode not in ("delete", "forget"):

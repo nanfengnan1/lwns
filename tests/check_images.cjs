@@ -80,7 +80,7 @@ const [debugURL, appURL, outputDirectory] = process.argv.slice(2);
     await screenshot('device-library.png'); checks.push('200+ devices: pagination, search, categories, independent scroll, fixed footer');
     await click('#manage-images');
     await waitDOM('document.querySelector("#image-manager").open && !document.querySelector("#start-image-job").closest("fieldset").disabled');
-    await click('[data-image-mode=archive]'); await file('#image-archive-file', 'image.tar.xz');
+    await click('[data-image-mode=archive]'); await file('#image-archive-file', 'image.tar');
     await input('#image-title', '浏览器归档设备'); await input('#image-template', 'linux-host');
     await job(() => click('#start-image-job'), 'archive');
     await screenshot('image-imported.png');

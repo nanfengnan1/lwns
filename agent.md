@@ -200,8 +200,8 @@ Topology
 
 - 源码默认清单为 `config/images.defaults.json`，首次初始化运行清单时读取，默认 FRR/VPCS 引用不触发自动下载。运行清单为 `<data-dir>/images/registry.json`，原子保存镜像引用、显示名、模板、来源、ID、大小和是否存在；删除的记录不会因重启重新播种。
 - `ImageService` 在 bootstrap/主动刷新时只核对已管理条目的真实 Docker 状态，不自动纳入宿主机其他镜像。管理范围为默认清单、Web 导入/拉取/构建及通过“已有镜像”显式引用的条目；列表与设备库使用同一范围。外部删除后保留“未加载”记录，允许移出。导入结束只登记本次操作明确返回的镜像，不依据全机库存差集认领镜像。管理数据放在子目录，不参与实验 `*.json` 扫描。
-- 支持仓库引用（`docker pull`）、HTTP(S) Docker 镜像归档 URL、本地 tar/xz 等归档（`docker load`）、Dockerfile 文件/文本加可选 tar/zip 构建上下文（`docker build`）。私有仓库复用后端账户 Docker 凭据；下载记录不保存 URL 查询参数。
-- XZ 镜像显式解压后加载（已实现）：本地上传和 URL 下载按 XZ 文件头识别，不依赖扩展名；`prepare_load_archive` 使用 Python `lzma` 分块解压到 `images/jobs/<任务ID>/image.tar`，然后调用 `docker load --input`。日志显示开始、每 16 MiB 进度和完成；解压上限 16 GiB / 60 分钟，检查临时磁盘余量，损坏、截断或空输出直接失败。普通 tar 和其他压缩格式继续交给 Docker；不展开 tar 内部文件，不自动执行 `docker import`，缺少 `manifest.json` 时保留原错误并提示使用 `docker save` 归档。成功或失败均清理压缩上传和解压临时文件；不改变镜像清单格式或 API。
+- 支持仓库引用（`docker pull`）、HTTP(S) 未压缩 tar 镜像归档 URL、本地 `.tar` 归档（`docker load`）、Dockerfile 文件/文本加可选 tar/zip 构建上下文（`docker build`）。私有仓库复用后端账户 Docker 凭据；下载记录不保存 URL 查询参数。
+- 镜像加载仅支持未压缩 `.tar`（已实现，替代原 XZ 自动解压方案）：上传前端及登记 API 校验 `.tar` 扩展名，任务执行前使用 `tarfile.open(..., "r:")` 只检查未压缩 tar 格式，随后原文件直接传给 `docker load --input`。URL 可不带扩展名，但下载内容遵循相同校验；压缩包改名仍会被拒绝。不依赖 pixz 等解压命令、不展开 tar 内部文件、不回退为 `docker import`；镜像清单内容由 Docker 校验。任务结束回收上传/下载临时文件。Dockerfile 的构建上下文继续独立支持 tar、tar.gz、tar.xz、zip。
 - 大文件通过登记上传、二进制 PUT、提交任务三步处理，流式写盘，默认 8 GiB，可用 `--max-image-upload-gib` 调整；JSON 仍为 1 MiB，Dockerfile 为 512 KiB。构建上下文限制 16 GiB / 100000 项，拒绝路径越界、链接和特殊文件；选中的 Dockerfile 覆盖上下文根目录同名文件。
 - 任务返回 202，每 2 秒轮询；记录 queued/running/success/error 和有界日志，Docker 子进程超时 60 分钟。关闭窗口不取消已提交任务，上传可取消。完成/失败回收临时文件；服务重启将未完成任务标为失败并清理 UUID 工作目录。历史任务文件暂不自动轮转，API 返回最近 30 项。
 - 一次只执行一个镜像任务，启动时拒绝与正在执行的部署/清理任务并发；镜像任务期间拒绝新部署，允许清理已有设备。镜像管理只要求可访问本机 Linux Docker daemon；设计模式不能导入/删除，设备部署仍要求 root/ip/nsenter。

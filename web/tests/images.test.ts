@@ -147,6 +147,25 @@ it("only requests Docker deletion explicitly and otherwise forgets the record", 
   expect(fetchMock.mock.calls[1]?.[1].method).toBe("DELETE");
 });
 
+it("rejects compressed image filenames before uploading and releases submission state", async () => {
+  const images = useImagesStore();
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  for (const name of [
+    "image.tar.gz",
+    "image.tar.xz",
+    "image.tgz",
+    "image.zip",
+  ]) {
+    await expect(
+      images.start({ mode: "archive" }, new File(["archive"], name)),
+    ).rejects.toThrow("仅支持未压缩的 .tar");
+    expect(images.busy).toBe(false);
+    expect(images.uploading).toBe(false);
+  }
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
 it("supports the four sidebar groups and uses the firewall Linux template", () => {
   expect(deviceCategories.map((item) => item.id)).toEqual([
     "router",

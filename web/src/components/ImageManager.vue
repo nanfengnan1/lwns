@@ -436,8 +436,9 @@ async function remove(item: ImageEntry, deleteLocal = item.can_delete) {
                   required
               /></label>
               <p class="image-help">
-                支持 registry.example.com/router:tag，或指向 Docker 镜像归档的
-                HTTP(S) 下载地址。私有仓库使用后端运行账户的 Docker 登录凭据。
+                支持 registry.example.com/router:tag，或指向未压缩 .tar
+                镜像归档的 HTTP(S) 下载地址。私有仓库使用后端运行账户的 Docker
+                登录凭据。
               </p>
             </template>
             <template v-else-if="mode === 'archive'">
@@ -446,13 +447,13 @@ async function remove(item: ImageEntry, deleteLocal = item.can_delete) {
                 ><input
                   id="image-archive-file"
                   type="file"
-                  accept=".tar,.gz,.xz,.bz2,.zst,.tgz,.txz"
+                  accept=".tar"
                   required
                   @change="file = selected($event)"
               /></label>
               <p class="image-help">
-                上传 docker save 生成的 .tar、.tar.xz 或 .xz 等归档。XZ
-                会先自动解压，再加载镜像和标签。
+                仅支持 docker save 生成的未压缩 .tar 文件，直接调用 Docker
+                加载。 .tar.gz、.tar.xz 等压缩文件请先在本地解压。
               </p>
               <p v-if="file" class="image-file-info">
                 {{ file.name }} · {{ size(file.size) }}

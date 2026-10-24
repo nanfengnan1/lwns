@@ -67,6 +67,8 @@ export const useImagesStore = defineStore("images", () => {
     }
   }
   async function upload(file: File, kind: "archive" | "context") {
+    if (kind === "archive" && !file.name.toLowerCase().endsWith(".tar"))
+      throw Error("镜像归档仅支持未压缩的 .tar 文件，请先在本地解压后上传");
     if (file.size > data.value.max_upload_bytes)
       throw Error("文件超过宿主机上传大小限制");
     const info = await api<{ id: string }>("/api/images/uploads", "POST", {

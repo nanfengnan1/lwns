@@ -3,7 +3,6 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
-import lzma
 import os
 from pathlib import Path
 import sys
@@ -49,10 +48,9 @@ class ImageDockerFixture:
         self.manager.dock("build", "--network", "none", "-t", ref, str(build), timeout=120)
         archive = self.root / "image.tar"
         self.manager.dock("image", "save", "--output", str(archive), ref, timeout=120)
-        self.archive = self.root / "image.tar.xz"
-        self.archive.write_bytes(lzma.compress(archive.read_bytes()))
+        self.archive = archive
         self.manager.dock("image", "rm", ref)
-        return {"prefix": self.prefix, "archive": str(self.archive), "url": f"http://127.0.0.1:{self.http.server_port}/image.tar.xz", "data_dir": str(self.manager.directory)}
+        return {"prefix": self.prefix, "archive": str(self.archive), "url": f"http://127.0.0.1:{self.http.server_port}/image.tar", "data_dir": str(self.manager.directory)}
 
     def submit(self, client, payload):
         response = client.post("/api/images/jobs", json=payload, headers=self.headers)
@@ -119,29 +117,29 @@ class ImageDockerTests(unittest.TestCase):
             self.assertTrue(json.loads(fixture.manager.dock("image", "inspect", ref)))
             self.assertNotIn(ref, [item["reference"] for item in fixture.images.snapshot(refresh=True)["images"]])
 
-    def test_xz_upload_and_url_load_after_explicit_decompression(self):
+    def test_tar_upload_and_url_load_directly(self):
         fixture = ImageDockerFixture()
         self.addCleanup(fixture.cleanup)
         assets = fixture.prepare_archive()
-        expected = lzma.decompress(fixture.archive.read_bytes())
+        expected = fixture.archive.read_bytes()
         loaded_paths = []
         original_command = fixture.images.command
         def command(job_id, args):
             if args[0] == "load":
                 path = Path(args[-1])
-                self.assertEqual(path.name, "image.tar")
+                self.assertIn(path.name, ("data", "image-archive"))
                 self.assertEqual(path.read_bytes(), expected)
                 loaded_paths.append(path)
             return original_command(job_id, args)
         fixture.images.command = command
         with TestClient(fixture.app) as client:
-            upload = fixture.upload(client, "image.xz", fixture.archive.read_bytes(), "archive")
+            upload = fixture.upload(client, "image.tar", fixture.archive.read_bytes(), "archive")
             payloads = [{"mode": "archive", "upload": upload}, {"mode": "url", "url": assets["url"]}]
             ref = fixture.prefix + ":archive"
             for payload in payloads:
                 with self.subTest(mode=payload["mode"]):
                     job = fixture.submit(client, payload)
-                    self.assertIn("XZ 解压完成", job["logs"])
+                    self.assertNotIn("解压", job["logs"])
                     self.assertIn(ref, job["images"])
                     self.assertEqual(json.loads(fixture.manager.dock("image", "inspect", ref))[0]["Config"]["Labels"]
                                      ["io.route-ovs.image-test"], fixture.prefix)
@@ -166,7 +164,7 @@ class ImageDockerTests(unittest.TestCase):
             fixture.submit(client, {"mode": "build", "reference": build_ref, "upload": upload,
                                     "dockerfile": f'FROM scratch\nLABEL io.route-ovs.image-test="{fixture.prefix}"\nCOPY message.txt /message.txt\n'})
             archive_ref = fixture.prefix + ":archive"
-            upload = fixture.upload(client, "image.tar.xz", fixture.archive.read_bytes(), "archive")
+            upload = fixture.upload(client, "image.tar", fixture.archive.read_bytes(), "archive")
             fixture.submit(client, {"mode": "archive", "upload": upload, "template": "linux-host", "title": "归档测试镜像"})
             self.assertTrue(any(item["image"] == archive_ref for item in fixture.images.catalog()))
             fixture.delete(client, archive_ref)

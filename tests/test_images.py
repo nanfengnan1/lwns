@@ -1,4 +1,6 @@
 """Image inventory, import jobs, streaming uploads and deletion consistency."""
+import bz2
+import gzip
 import io
 import json
 import lzma
@@ -75,7 +77,7 @@ class ImageTests(unittest.TestCase):
         self.images.wait()
         return self.images.jobs[job["id"]]
 
-    def upload(self, content, kind="archive", name="archive.tar.xz"):
+    def upload(self, content, kind="archive", name="archive.tar"):
         info = self.images.create_upload({"name": name, "size": len(content), "kind": kind})
         self.images.begin_upload(info["id"])
         (self.images.upload_path(info["id"]) / "data").write_bytes(content)
@@ -105,7 +107,7 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(restarted.jobs[job["id"]]["state"], "success")
 
     def test_load_all_archive_tags_and_discard_staged_file(self):
-        upload = self.upload(b"fake archive")
+        upload = self.upload(self.archive_bytes())
         job = self.job({"mode": "archive", "upload": upload, "template": "linux-host"})
         self.assertEqual(job["state"], "success", job)
         self.assertEqual(set(job["images"]), set(self.host.imports))
@@ -114,62 +116,53 @@ class ImageTests(unittest.TestCase):
     def archive_bytes(self):
         output = io.BytesIO()
         with tarfile.open(fileobj=output, mode="w") as archive:
-            for name, content in (("manifest.json", b"[]"), ("layer.tar", b"layer" * 300000)):
+            for name, content in (("manifest.json", b"[]"), ("layer.tar", b"layer" * 10000)):
                 item = tarfile.TarInfo(name)
                 item.size = len(content)
                 archive.addfile(item, io.BytesIO(content))
         return output.getvalue()
 
-    def test_xz_upload_is_decompressed_before_load_regardless_of_name(self):
+    def test_tar_upload_is_passed_directly_to_docker(self):
         content = self.archive_bytes()
-        for name in ("image.tar.xz", "image.xz", "image.tar"):
+        for name in ("image.tar", "image.TAR"):
             with self.subTest(name=name):
-                upload = self.upload(lzma.compress(content), name=name)
+                upload = self.upload(content, name=name)
                 job = self.job({"mode": "archive", "upload": upload})
                 self.assertEqual(job["state"], "success", job)
                 path, loaded = self.host.loaded_archives[-1]
                 self.assertEqual(loaded, content)
-                self.assertEqual(path.name, "image.tar")
-                self.assertIn("XZ 解压完成", job["logs"])
+                self.assertEqual(path, self.images.upload_path(upload) / "data")
                 self.assertFalse(path.parent.exists())
+                self.assertFalse((self.images.jobs_dir / job["id"]).exists())
                 self.assertFalse(self.images.upload_path(upload).exists())
                 self.assertFalse(self.manager.image_busy)
 
-    def test_plain_tar_and_gzip_are_passed_through_without_xz_decompression(self):
-        import gzip
-        content = self.archive_bytes()
-        self.images.max_upload = len(content)
-        for archive in (content, gzip.compress(content)):
-            with self.subTest(header=archive[:6]):
-                upload = self.upload(archive)
-                job = self.job({"mode": "archive", "upload": upload})
-                self.assertEqual(job["state"], "success", job)
-                self.assertEqual(self.host.loaded_archives[-1][1], archive)
-                self.assertNotIn("XZ 解压", job["logs"])
+    def test_archive_upload_rejects_non_tar_extensions(self):
+        for name in ("image.tar.xz", "image.tar.gz", "image.tgz", "image.tar.bz2", "image.tar.zst", "image.zip", "image"):
+            with self.subTest(name=name), self.assertRaisesRegex(LabError, "仅支持未压缩"):
+                self.upload(self.archive_bytes(), name=name)
+        self.assertEqual(list(self.images.uploads.iterdir()), [])
 
-    def test_xz_url_without_extension_is_decompressed_before_load(self):
+    def test_tar_url_without_extension_is_passed_directly_to_docker(self):
         content = self.archive_bytes()
-        with patch.object(self.images, "download", side_effect=lambda job, url, path: path.write_bytes(lzma.compress(content))):
+        with patch.object(self.images, "download", side_effect=lambda job, url, path: path.write_bytes(content)):
             job = self.job({"mode": "url", "url": "https://example.com/download?token=secret"})
         self.assertEqual(job["state"], "success", job)
         path, loaded = self.host.loaded_archives[-1]
         self.assertEqual(loaded, content)
-        self.assertIn("XZ 解压完成", job["logs"])
+        self.assertEqual(path, self.images.jobs_dir / job["id"] / "image-archive")
         self.assertFalse(path.parent.exists())
         self.assertNotIn("secret", json.dumps(job))
         self.assertNotIn("secret", self.images.path.read_text())
 
-    def test_invalid_xz_never_reaches_docker_and_cleans_temporary_files(self):
-        compressed = lzma.compress(self.archive_bytes())
-        corrupt = bytearray(compressed)
-        corrupt[-5] ^= 255
-        for content, message in ((compressed[:-12], "损坏或不完整"), (bytes(corrupt), "损坏或不完整"),
-                                 (lzma.compress(b""), "结果为空")):
-            with self.subTest(message=message, length=len(content)):
+    def test_compressed_or_invalid_files_renamed_tar_never_reach_docker(self):
+        archive = self.archive_bytes()
+        for content in (lzma.compress(archive), gzip.compress(archive), bz2.compress(archive), b"not a tar", archive[:100]):
+            with self.subTest(header=content[:6]):
                 upload = self.upload(content)
                 job = self.job({"mode": "archive", "upload": upload})
                 self.assertEqual(job["state"], "error", job)
-                self.assertIn(message, job["error"])
+                self.assertIn("仅支持未压缩", job["error"])
                 self.assertEqual(self.host.loaded_archives, [])
                 self.assertFalse(any(args[0] == "load" for args, _ in self.host.calls))
                 self.assertFalse(self.images.upload_path(upload).exists())
@@ -177,29 +170,18 @@ class ImageTests(unittest.TestCase):
                 self.assertFalse(self.manager.image_busy)
                 self.assertFalse(any(item["reference"] in self.host.imports for item in self.images.snapshot()["images"]))
 
-    def test_xz_size_limit_stops_before_docker_load(self):
-        upload = self.upload(lzma.compress(self.archive_bytes()))
-        with patch("lab_images.MAX_LOAD_ARCHIVE", 1024):
-            job = self.job({"mode": "archive", "upload": upload})
-        self.assertEqual(job["state"], "error", job)
-        self.assertIn("解压后超过", job["error"])
-        self.assertEqual(self.host.loaded_archives, [])
-        self.assertFalse(self.images.upload_path(upload).exists())
-        self.assertFalse((self.images.jobs_dir / job["id"]).exists())
+    def test_compressed_url_never_reaches_docker(self):
+        for compress in (lzma.compress, gzip.compress, bz2.compress):
+            with self.subTest(compress=compress), patch.object(self.images, "download",
+                    side_effect=lambda job, url, path: path.write_bytes(compress(self.archive_bytes()))):
+                job = self.job({"mode": "url", "url": "https://example.com/image.tar"})
+                self.assertEqual(job["state"], "error", job)
+                self.assertIn("仅支持未压缩", job["error"])
+                self.assertEqual(self.host.loaded_archives, [])
+                self.assertFalse((self.images.jobs_dir / job["id"]).exists())
 
-    def test_xz_low_disk_space_stops_before_docker_load(self):
-        from types import SimpleNamespace
-        upload = self.upload(lzma.compress(self.archive_bytes()))
-        with patch("lab_images.shutil.disk_usage", return_value=SimpleNamespace(free=64 * 1024 ** 2)):
-            job = self.job({"mode": "archive", "upload": upload})
-        self.assertEqual(job["state"], "error", job)
-        self.assertIn("空间不足", job["error"])
-        self.assertEqual(self.host.loaded_archives, [])
-        self.assertFalse(self.images.upload_path(upload).exists())
-        self.assertFalse((self.images.jobs_dir / job["id"]).exists())
-
-    def test_xz_missing_manifest_reports_cause_and_cleans_decompressed_file(self):
-        upload = self.upload(lzma.compress(self.archive_bytes()))
+    def test_missing_manifest_reports_cause_and_cleans_upload(self):
+        upload = self.upload(self.archive_bytes())
         received = []
         def command(job_id, args):
             received.append(Path(args[-1]))
@@ -210,8 +192,7 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(job["state"], "error", job)
         self.assertIn("does not contain a manifest.json", job["error"])
         self.assertIn("docker save", job["error"])
-        self.assertIn("XZ 解压完成", job["logs"])
-        self.assertEqual(received[0].name, "image.tar")
+        self.assertEqual(received[0].name, "data")
         self.assertFalse(received[0].parent.exists())
         self.assertFalse(self.images.upload_path(upload).exists())
         self.assertFalse(self.manager.image_busy)
@@ -280,8 +261,8 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(self.host.last_context["hello.txt"], b"hello")
 
     def test_download_url_loads_and_redacts_query_from_manifest(self):
-        with patch.object(self.images, "download", side_effect=lambda job, url, path: path.write_bytes(b"archive")):
-            job = self.job({"mode": "url", "url": "https://example.com/router.tar.xz?token=secret"})
+        with patch.object(self.images, "download", side_effect=lambda job, url, path: path.write_bytes(self.archive_bytes())):
+            job = self.job({"mode": "url", "url": "https://example.com/router.tar?token=secret"})
         self.assertEqual(job["state"], "success", job)
         self.assertNotIn("secret", self.images.path.read_text())
         self.assertNotIn("secret", json.dumps(job))
@@ -401,7 +382,7 @@ class ImageTests(unittest.TestCase):
     def test_preexisting_image_import_does_not_grant_delete_permission(self):
         self.host.imports = ["system/existing:latest", "test/new:latest"]
         self.host.images["system/existing:latest"] = "sha256:" + "1" * 64
-        upload = self.upload(b"archive")
+        upload = self.upload(self.archive_bytes())
         self.assertEqual(self.job({"mode": "archive", "upload": upload})["state"], "success")
         entries = {item["reference"]: item for item in self.images.snapshot()["images"]}
         self.assertFalse(entries["system/existing:latest"]["can_delete"])
@@ -417,7 +398,7 @@ class ImageTests(unittest.TestCase):
             self.host.images["system/shared-alias:latest"] = self.host.images[self.host.imports[0]]
             return result
         self.images.command = command
-        job = self.job({"mode": "archive", "upload": self.upload(b"archive")})
+        job = self.job({"mode": "archive", "upload": self.upload(self.archive_bytes())})
         self.assertEqual(job["state"], "success", job)
         self.assertEqual(set(job["images"]), set(self.host.imports))
         self.assertFalse(any(item["reference"].startswith("system/") for item in self.images.snapshot()["images"]))
@@ -481,8 +462,11 @@ class ImageTests(unittest.TestCase):
             binary = {**headers, "Content-Type": "application/octet-stream"}
             self.assertEqual(client.put(endpoint, content=b"too long", headers=binary).status_code, 400)
             self.assertFalse(self.images.upload_path(info["id"]).exists())
-            info = client.post(url, json={"name": "test.tar", "size": 4, "kind": "archive"}, headers=headers).json()
-            self.assertEqual(client.put(url + "/" + info["id"], content=b"data", headers=binary).status_code, 200)
+            for name in ("image.tar.gz", "image.tar.xz"):
+                self.assertEqual(client.post(url, json={"name": name, "size": 4, "kind": "archive"}, headers=headers).status_code, 400)
+            archive = self.archive_bytes()
+            info = client.post(url, json={"name": "test.tar", "size": len(archive), "kind": "archive"}, headers=headers).json()
+            self.assertEqual(client.put(url + "/" + info["id"], content=archive, headers=binary).status_code, 200)
             result = client.post("/api/images/jobs", json={"mode": "archive", "upload": info["id"]}, headers=headers)
             self.assertEqual(result.status_code, 202)
             self.images.wait()

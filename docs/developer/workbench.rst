@@ -223,12 +223,11 @@ FRR 持久化目录和备份布局见 :doc:`../user/workbench`。
 
 JSON 仍限制 1 MiB；大文件使用 ``request.stream()`` 分块写盘，不读入完整内存。
 执行使用参数数组，不经过宿主机 shell。构建上下文拒绝路径逃逸、链接、特殊文件和解压超限。
-归档导入与 URL 下载共用 ``prepare_load_archive``，按六字节 XZ 文件头检测压缩格式，
-不依赖上传名称或 URL 后缀。Python ``lzma`` 以 1 MiB 块解压到任务目录的 ``image.tar``，
-完整读至 EOF 后才调用 ``docker load --input``；每 16 MiB 输出进度。
-解压输出限制 16 GiB、解压阶段限制 60 分钟，每次写入前保留至少 64 MiB 临时磁盘余量。
-损坏、截断、空输出或空间不足时不调用 load；任务 finally 回收上传及解压文件。
-非 XZ 文件直接传给 Docker，不自行展开 tar 或限定 Docker/OCI 清单格式；
+镜像归档仅支持未压缩 tar；前端及上传登记 API 对 archive 类型要求 ``.tar`` 扩展名。
+上传与 URL 下载共用 ``validate_load_archive``，通过 ``tarfile.open(..., "r:")`` 检查原始 tar 格式，
+拒绝压缩归档或非 tar 内容，随后将原文件直接传给 ``docker load --input``。
+URL 不强制后缀，内容校验不可绕过；不解压、不复制成另一份 tar、不展开内部文件或限定 Docker/OCI 清单格式。
+任务 finally 回收上传/下载文件；Dockerfile 构建上下文的解压逻辑独立保留。
 Docker 返回缺少 manifest.json 时保留原错误并补充归档来源说明，不回退为 docker import。
 任务开始与部署互斥；镜像任务执行中拒绝新部署，允许清理已有实验。
 删除前核对保存实验及 Docker 全部容器，使用非强制删除；失败后重新核对实际镜像，
@@ -418,11 +417,11 @@ Docker 终端测试。浏览器终端测试可先运行 ``tests/serve_terminal_f
 ``tests/test_images.py`` 覆盖清单持久化、导入/删除同步、引用保护、路径边界及上传 API。
 还覆盖全机镜像不自动纳入、旧清单迁移、已有镜像引用、移出清单保留本地镜像、
 新建标签的删除权限、外部替换撤销归属，以及绕过前端直接调用删除接口的保护。
-另覆盖 XZ 上传/URL 解压后的字节一致性、按内容识别、普通 tar/gzip 透传、损坏/截断/空输出、
-解压大小与磁盘限制，以及 Docker 拒绝归档时的错误提示和临时文件回收。
-仅验证真实 XZ 上传与 URL 加载（无需 registry 镜像）可执行::
+另覆盖 tar 上传/URL 原文件直传、非 tar 扩展名、压缩包伪装 tar、无效内容、
+Docker 拒绝归档时的错误提示和临时文件回收。
+仅验证真实 tar 上传与 URL 加载（无需 registry 镜像）可执行::
 
-  PYTHONPATH=tests ROUTE_OVS_IMAGE_DOCKER_TESTS=1 .venv/bin/python -m unittest test_images_docker.ImageDockerTests.test_xz_upload_and_url_load_after_explicit_decompression -v
+  PYTHONPATH=tests ROUTE_OVS_IMAGE_DOCKER_TESTS=1 .venv/bin/python -m unittest test_images_docker.ImageDockerTests.test_tar_upload_and_url_load_directly -v
 
 真实镜像测试使用随机标签、临时文件和本机临时仓库，不推送到外部仓库；
 需要可访问 Docker，且本机已存在 ``registry:2``::
@@ -431,7 +430,7 @@ Docker 终端测试。浏览器终端测试可先运行 ``tests/serve_terminal_f
 
 浏览器测试使用 ``tests/serve_image_fixture.py --large-library --metadata /tmp/image-check/fixture.json``，
 它只向测试目录注入 200 张模拟设备卡片，并为真实导入准备隔离归档。
-将生成的 ``fixture.json`` 及其 ``archive`` 指向的文件（命名为 ``image.tar.xz``）放入浏览器
+将生成的 ``fixture.json`` 及其 ``archive`` 指向的文件（命名为 ``image.tar``）放入浏览器
 测试输出目录，启动 Chromium 调试端口后执行::
 
   node tests/check_images.cjs http://127.0.0.1:9344 \

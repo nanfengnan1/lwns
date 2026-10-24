@@ -56,7 +56,7 @@ sudo .venv/bin/python script/python/lab_server.py --host 0.0.0.0 --port 8090
 `docker image ls` 为准，可在设备属性中修改。默认仅监听 `127.0.0.1`；此工具面向可信实验网络。
 
 也可启动后从左侧“镜像管理”导入镜像，支持仓库地址、HTTP(S) 归档 URL、本地
-`docker.tar.xz` 等镜像归档，以及 Dockerfile 文件和可选构建上下文。选择兼容的设备模板后，
+未压缩 `.tar` 镜像归档，以及 Dockerfile 文件和可选构建上下文；Web 镜像导入不解压 `.gz` / `.xz`。选择兼容的设备模板后，
 镜像会出现在设备库。初始默认清单在 `config/images.defaults.json`，实际管理清单自动保存到
 `.route-ovs-labs/images/registry.json`；导入和删除成功后同步，已被保存实验或容器引用的镜像拒绝删除。
 管理界面只显示项目管理的镜像，刷新不会纳入宿主机其他镜像；可通过“已有镜像”显式引用。
