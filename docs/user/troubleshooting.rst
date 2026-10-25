@@ -26,9 +26,9 @@ Web 实验不依赖旧脚本的 ``.frr_containers.tmp`` 或同名 netns 登记�
    * - 发布部署中，其他电脑无法访问 8090
      - 检查后端是否使用 --host 0.0.0.0、进程是否存活及该端口是否可达；浏览器填写宿主机 IP，不能填写客户端自己的 127.0.0.1。
    * - 访问令牌无效 / Unauthorized
-     - 源码运行使用当前后端终端打印的令牌，未固定时重启会变化；目录包读取 /etc/route-ovs/route-ovs.env 中的 Token。开发页面也使用后端令牌。
+     - 源码运行使用当前后端终端打印的令牌，未固定时重启会变化；目录包读取 /etc/lwns/lwns.env 中的 Token。开发页面也使用后端令牌。
    * - 5173 页面能打开，但 API 请求失败
-     - Vite 不代替后端。检查 Python 后端是否启动，以及 web/.env.local 的 ROUTE_OVS_API_TARGET 是否指向它。
+     - Vite 不代替后端。检查 Python 后端是否启动，以及 web/.env.local 的 LWNS_API_TARGET 是否指向它。
    * - npm run dev 已启动，但修改前端没有热更新
      - 确认浏览器访问 5173，而非 8090 或 HTTPS 发布入口。后两者读取已构建的 web/dist。
    * - 数据目录已被另一个后端占用

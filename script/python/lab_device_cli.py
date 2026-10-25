@@ -40,7 +40,7 @@ def library_lock(directory):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="route-ovs device", description="制作、检查和导入 .rov 设备包")
+    parser = argparse.ArgumentParser(prog="lwns device", description="制作、检查和导入 .rov 设备包")
     commands = parser.add_subparsers(dest="command", required=True)
     pack = commands.add_parser("pack", help="制作设备包，不部署设备")
     pack.add_argument("--descriptor", required=True, type=Path)
@@ -57,7 +57,7 @@ def main(argv=None):
     importing = commands.add_parser("import", help="准备镜像并注册到本机设备库，不部署项目")
     importing.add_argument("package", type=Path)
     importing.add_argument("--name", default="", help="本机设备库显示名称")
-    importing.add_argument("--data-dir", type=Path, default=Path(os.environ.get("ROUTE_OVS_DATA_DIR", default_data_dir())))
+    importing.add_argument("--data-dir", type=Path, default=default_data_dir())
     importing.add_argument("--docker-socket", default="/var/run/docker.sock")
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments[:1] == ["device"]:

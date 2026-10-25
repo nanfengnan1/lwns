@@ -1,4 +1,4 @@
-"""Sphinx configuration for the route-ovs user and developer guides."""
+"""Sphinx configuration for the lwns user and developer guides."""
 from pathlib import Path
 import re
 
@@ -11,9 +11,9 @@ def _get_release():
     return value
 
 
-project = 'route-ovs 文档'
-author = 'route-ovs 项目组'
-copyright = '2026, route-ovs 项目组'
+project = 'lwns 文档'
+author = 'lwns 项目组'
+copyright = '2026, lwns 项目组'
 release = _get_release()
 version = release
 language = 'zh_CN'
@@ -36,6 +36,6 @@ html_css_files = ['version-switch.css', 'reading.css']
 
 latex_engine = 'xelatex'
 latex_documents = [
-    ('user/index', 'route-ovs-user.tex', 'route-ovs 用户指南', author, 'manual'),
-    ('developer/index', 'route-ovs-dev.tex', 'route-ovs 开发指南', author, 'manual'),
+    ('user/index', 'lwns-user.tex', 'lwns 用户指南', author, 'manual'),
+    ('developer/index', 'lwns-dev.tex', 'lwns 开发指南', author, 'manual'),
 ]

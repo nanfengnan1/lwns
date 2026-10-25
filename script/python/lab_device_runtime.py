@@ -28,7 +28,7 @@ trap 'exit 130' INT
 remaining=600
 while [ ! -f /run/route-ovs/start ]; do
   if [ "$remaining" -le 0 ]; then
-    echo 'route-ovs: timed out waiting for device preparation' >&2
+    echo 'lwns: timed out waiting for device preparation' >&2
     exit 124
   fi
   sleep 1 &
@@ -125,7 +125,7 @@ fi
 """
         username, _, group = owner.partition(":")
         rows = manager.dock("run", "--rm", "--pull", "never", "--network", "none", "--entrypoint", "/bin/sh",
-                            node["image"], "-c", script, "route-ovs-owner", username, group).splitlines()
+                            node["image"], "-c", script, "lwns-owner", username, group).splitlines()
         try:
             uid, gid = map(int, rows)
             if uid < 0 or gid < 0:

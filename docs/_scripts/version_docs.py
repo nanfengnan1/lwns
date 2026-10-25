@@ -53,7 +53,7 @@ def check_products(root, kind):
             products.extend(root / 'html' / p.relative_to(root).with_suffix('.html')
                             for p in (root / guide).rglob('*.rst'))
     else:
-        products = [root / 'pdf/user/route-ovs-user.pdf', root / 'pdf/developer/route-ovs-dev.pdf']
+        products = [root / 'pdf/user/lwns-user.pdf', root / 'pdf/developer/lwns-dev.pdf']
     for path in products:
         if not path.is_file() or path.stat().st_size == 0:
             raise ValueError('Missing or empty build output: ' + str(path))
@@ -65,7 +65,7 @@ def write_version_config(html_root, version, archived=False):
     config = {'version': version, 'archived': archived,
               'archiveBase': '../../' if archived else '../versions/'}
     (static / 'version-config.js').write_text(
-        'window.ROUTE_OVS_DOC_VERSION = ' + json.dumps(config) + ';\n', encoding='utf-8')
+        'window.LWNS_DOC_VERSION = ' + json.dumps(config) + ';\n', encoding='utf-8')
 
 
 def record_build(root, kind):
@@ -116,10 +116,14 @@ def write_index(root):
     for info in list_records(root):
         version = html.escape(info['version'], quote=True)
         date = html.escape(info['archived_at'])
+        # Immutable old snapshots keep their original PDF filenames.
+        archived = root / 'versions' / info['version']
+        user_pdf = 'lwns-user.pdf' if (archived / 'pdf/user/lwns-user.pdf').is_file() else 'route-ovs-user.pdf'
+        dev_pdf = 'lwns-dev.pdf' if (archived / 'pdf/developer/lwns-dev.pdf').is_file() else 'route-ovs-dev.pdf'
         rows.append('<tr><td>' + version + '</td><td>' + date + '</td><td>'
                     + '<a href="' + version + '/html/index.html">HTML</a> | '
-                    + '<a href="' + version + '/pdf/user/route-ovs-user.pdf">User PDF</a> | '
-                    + '<a href="' + version + '/pdf/developer/route-ovs-dev.pdf">Developer PDF</a>'
+                    + '<a href="' + version + '/pdf/user/' + user_pdf + '">User PDF</a> | '
+                    + '<a href="' + version + '/pdf/developer/' + dev_pdf + '">Developer PDF</a>'
                     + '</td></tr>')
     content = ('<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
                '<title>文档版本归档</title><h1>文档版本归档</h1>'
@@ -128,7 +132,7 @@ def write_index(root):
     catalog = [{'version': info['version'], 'archived_at': info['archived_at'],
                 'pages': info['html_pages']} for info in list_records(root)]
     catalog_temp = root / 'versions/.catalog.tmp'
-    catalog_temp.write_text('window.ROUTE_OVS_DOC_VERSIONS = ' +
+    catalog_temp.write_text('window.LWNS_DOC_VERSIONS = window.ROUTE_OVS_DOC_VERSIONS = ' +
                             json.dumps(catalog, ensure_ascii=False) + ';\n', encoding='utf-8')
     catalog_temp.replace(root / 'versions/catalog.js')
     temporary = root / 'versions/.index.tmp'

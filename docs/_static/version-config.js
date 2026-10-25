@@ -1,1 +1,1 @@
-window.ROUTE_OVS_DOC_VERSION = {archived: false, archiveBase: "../versions/"};
+window.LWNS_DOC_VERSION = {archived: false, archiveBase: "../versions/"};

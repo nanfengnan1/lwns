@@ -56,7 +56,7 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     await send('Page.navigate',{url:appURL});
     await wait('!!document.querySelector("#empty-new-lab") && !document.querySelector("#access-dialog")?.open');
-    await evaluate('localStorage.removeItem("route-ovs-sidebars")');
+    await evaluate('localStorage.removeItem("lwns-sidebars")');
     for (const side of ['left','right']) await evaluate(`document.querySelector('#${side}-sidebar-resize').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`);
 
     // Cancel and invalid input must not replace the original canvas.

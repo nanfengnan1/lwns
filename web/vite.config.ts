@@ -3,7 +3,8 @@ import vue from "@vitejs/plugin-vue";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const target = env.ROUTE_OVS_API_TARGET || "http://127.0.0.1:8090";
+  const target =
+    env.LWNS_API_TARGET || env.ROUTE_OVS_API_TARGET || "http://127.0.0.1:8090";
   return {
     plugins: [vue()],
     server: {

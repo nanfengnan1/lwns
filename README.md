@@ -1,28 +1,35 @@
-# route-ovs
+# lwns — Linux Web Network Simulator
 
-通过 Docker 图形组网工作台搭建和验证路由实验，也保留原有 OVS/FRR 命令行工具。
+**lwns（Linux Web Network Simulator）** 是基于 Linux、Docker 和浏览器的网络实验平台。
+在 Web 画布中添加设备、连接端口，即可在当前连接的 Linux 宿主机上部署网络，
+通过网页终端配置设备，并用本机 Wireshark 远程抓包。Windows 和 Linux 客户端都可通过浏览器使用。
 
-Web 工作台以草原狼头像作为项目图标。顶部“实验 / 视图 / 工具”菜单集中提供新建、打开、
-保存及视图管理；启动后显示空白画布，从“打开项目”继续已有项目，或导入拓扑 JSON。
-“保存项目”写入宿主机，完整项目包导入导出仍未实现，详见[保存与恢复](docs/user/workbench-data.rst)。
+- **图形化组网**：设备分类库、拖放画布、自动对齐、注释和缩放；容器之间以 veth 对连接。
+- **真实设备运行环境**：支持 FRR、Linux bridge、VPCS/Linux 容器，以及通过 `.rov` 描述的 Docker 设备。
+- **设备包与配置恢复**：Web 或 CLI 将 `device.json` 与镜像来源打包为 `.rov`，按描述启动服务、挂载独立配置目录，并执行设备自己的保存命令。
+- **远程项目管理**：在当前服务器上新建、打开、保存和关闭项目；部署后可编辑拓扑，再显式应用变更。
+- **调试与部署**：Web 交互终端、部署日志、SSH/Wireshark 抓包；支持源码运行、Linux 目录安装包及可选的 HTTP/2、HTTP/3 入口。
 
-支持通过 Web 或 CLI 制作 `.rov` 设备包，导入时设置设备库名称，按设备描述自动准备镜像、
-启动服务并保存原生配置。入口为 **工具 → 设备管理**，操作见[设备包教程](docs/user/workbench-devices.rst)。
-教程包含完整 FRR `device.json`、从已有 `alpine/frr:latest` 制作离线 `frr.rov` 的命令，
-以及 Web 制作、上传导入、拖入画布和部署步骤。
+当前面向单用户、单台 Linux Docker 宿主机；完整项目包导入导出、虚拟机设备和跨宿主机连线尚未实现。
+配置恢复范围由设备描述及保存动作决定，手工 Shell 命令产生的运行状态不会自动全部持久化。
+原有 OVS/FRR 命令行工具仍可独立使用。
+
+从[设备包教程](docs/user/workbench-devices.rst)制作或加载 FRR `frr.rov`，
+再按[第一次实验](docs/user/quickstart.rst)完成组网。保存范围见[保存与恢复](docs/user/workbench-data.rst)。
+旧版本升级说明见[更名与已有数据](docs/user/workbench-start.rst#lwns-upgrade)。
 
 ## 获取代码或安装包
 
-源码仓库：[nanfengnan1/route-ovs](https://github.com/nanfengnan1/route-ovs)。在 Linux 宿主机准备存放源码的目录中执行：
+源码仓库：[nanfengnan1/lwns](https://github.com/nanfengnan1/lwns)。在 Linux 宿主机准备存放源码的目录中执行：
 
 ```bash
-git clone --branch main https://github.com/nanfengnan1/route-ovs.git
-cd route-ovs
+git clone --branch main https://github.com/nanfengnan1/lwns.git
+cd lwns
 ```
 
-后续源码命令都在这个项目根目录执行。也可在仓库网页选择 **Code → Download ZIP**，解压后进入 `route-ovs-main`。已有源码直接进入原目录即可。
+后续源码命令都在这个项目根目录执行。也可在仓库网页选择 **Code → Download ZIP**，解压后进入 `lwns-main`。已有源码直接进入原目录即可。
 
-安装包请查看 [GitHub Releases](https://github.com/nanfengnan1/route-ovs/releases)，选择目标架构的程序目录包和 SHA256 文件。**截至 2026-10-24 核对时尚无公开 Release 安装包**，当前需由维护者提供，或克隆源码后自行构建。GitHub 的 Source code 归档不是可执行安装包；本地 `release/` 产物不会自动上传。详细获取与环境准备见[用户教程](docs/user/deployment.rst)。
+安装包请查看 [GitHub Releases](https://github.com/nanfengnan1/lwns/releases)，选择目标架构的程序目录包和 SHA256 文件。**截至 2026-10-24 核对时尚无公开 Release 安装包**，当前需由维护者提供，或克隆源码后自行构建。GitHub 的 Source code 归档不是可执行安装包；本地 `release/` 产物不会自动上传。详细获取与环境准备见[用户教程](docs/user/deployment.rst)。
 
 ## 用户文档
 
@@ -109,7 +116,7 @@ Linux Docker 宿主机（例如 10.8.126.103）
                │            │            │
           Docker CLI    ip / nsenter   文件读写
                │            │            │
-       /var/run/            │     .route-ovs-labs/
+       /var/run/            │     .lwns-labs/
        docker.sock          │       ├─ 拓扑 JSON
                │            │       ├─ 镜像管理清单
        ┌───────▼──────┐     │       └─ 设备配置目录
@@ -214,7 +221,7 @@ sudo .venv/bin/python script/python/lab_server.py \
 也可启动后从左侧“镜像管理”导入镜像，支持仓库地址、HTTP(S) 归档 URL、本地
 未压缩 `.tar` 镜像归档，以及 Dockerfile 文件和可选构建上下文；Web 镜像导入不解压 `.gz` / `.xz`。选择兼容的设备模板后，
 镜像会出现在设备库。初始默认清单在 `config/images.defaults.json`，实际管理清单自动保存到
-`.route-ovs-labs/images/registry.json`；导入和删除成功后同步，已被保存项目或容器引用的镜像拒绝删除。
+`.lwns-labs/images/registry.json`；导入和删除成功后同步，已被保存项目或容器引用的镜像拒绝删除。
 管理界面只显示项目管理的镜像，刷新不会纳入宿主机其他镜像；可通过“已有镜像”显式引用。
 “移出清单”保留本地镜像，“删除镜像”仅适用于能确认由本项目新建且归属未变化的标签。
 
@@ -225,7 +232,7 @@ sudo .venv/bin/python script/python/lab_server.py \
 ```
 
 打开启动时显示的地址即可编辑和保存拓扑；设计模式不会创建设备。
-实验配置默认保存在 `.route-ovs-labs/`，不会接管旧脚本创建的容器。
+实验配置默认保存在 `.lwns-labs/`，不会接管旧脚本创建的容器。
 第一版仅支持同一 Linux 主机上的 Docker 设备；交换机使用容器内 Linux bridge。
 Windows 设计模式使用 `py -m venv .venv` 创建环境，通过 `.venv\Scripts\python.exe`
 安装相同依赖并启动。Python 虚拟环境与 `node_modules` 一样不能跨操作系统共用。
@@ -235,7 +242,7 @@ Windows 设计模式使用 `py -m venv .venv` 创建环境，通过 `.venv\Scrip
 对应终端，设备继续运行。刷新网页后需要重新打开终端。
 
 FRR 终端配置完成后，点击工具栏或设备属性中的“保存设备配置”；拓扑“保存”不会保存设备运行配置。后端执行
-`vtysh -w`，保存到 `.route-ovs-labs/devices/<实验ID>/<设备ID>/frr/`，同时同步拓扑
+`vtysh -w`，保存到 `.lwns-labs/devices/<实验ID>/<设备ID>/frr/`，同时同步拓扑
 中的启动配置。该目录读写挂载到容器 `/etc/frr`，包含 `frr.conf`、`daemons` 和
 `vtysh.conf`。清理容器保留配置，重新部署自动恢复；删除实验才会删除配置和备份。
 旧版本已部署设备也可先点击保存，再清理重建以启用目录共享。
@@ -249,8 +256,8 @@ SSH remote capture 组件，以及抓包窗口提供下载的本地启动器。�
 密码认证无需私钥：先不启用自动开始，在 Wireshark 的 SSH 接口设置中输入密码并开始。
 密码/密钥口令由本机 Wireshark 处理，不上传工作台。
 
-新版默认将报文保存到浏览器电脑的 `~/route-ovs/captures` 独立子目录，Windows 对应
-`%USERPROFILE%\route-ovs\captures`；Web 会话显示完整路径。更新抓包功能后需重新下载安装
+新版默认将报文保存到浏览器电脑的 `~/lwns/captures` 独立子目录，Windows 对应
+`%USERPROFILE%\lwns\captures`；Web 会话显示完整路径。更新抓包功能后需重新下载安装
 本地启动器，仅刷新页面不会更新客户端。详细步骤见 [抓包指南](docs/user/workbench-capture.rst)
 和 [启动器说明](clients/capture/README.md)。
 
@@ -268,7 +275,7 @@ npm --prefix web run dev
 ```
 
 访问 `http://127.0.0.1:5173` 并输入 Python 后端打印的令牌。Vite 将 `/api` 代理到
-`http://127.0.0.1:8090`；可在 `web/.env.local` 中设置 `ROUTE_OVS_API_TARGET`
+`http://127.0.0.1:8090`；可在 `web/.env.local` 中设置 `LWNS_API_TARGET`
 指向 Linux 后端。Vite 只负责开发与构建，实际 Docker/veth 操作仍在 Linux 后端执行。
 
 ```bash

@@ -6,7 +6,7 @@ export const SIDEBAR_LIMITS = {
   left: { min: 200, max: 420, default: 240 },
   right: { min: 240, max: 480, default: 280 },
 };
-export const LAYOUT_KEY = "route-ovs-sidebars";
+export const LAYOUT_KEY = "lwns-sidebars";
 const RAIL = 36;
 const STAGE_MIN = 460;
 
@@ -59,7 +59,11 @@ export const useLayoutStore = defineStore("layout", () => {
   }
   function restore() {
     try {
-      const data = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "null");
+      const data = JSON.parse(
+        localStorage.getItem(LAYOUT_KEY) ??
+          localStorage.getItem("route-ovs-sidebars") ??
+          "null",
+      );
       for (const side of ["left", "right"] as const) {
         const value = data?.[side];
         if (typeof value?.width === "number" && Number.isFinite(value.width))

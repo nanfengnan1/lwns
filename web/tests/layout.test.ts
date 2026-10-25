@@ -13,6 +13,26 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 describe("sidebar layout", () => {
+  it("reads legacy layout preferences and writes changes under the new name", () => {
+    stored.set(
+      "route-ovs-sidebars",
+      JSON.stringify({ left: { width: 320, collapsed: true } }),
+    );
+    const layout = useLayoutStore();
+    layout.restore();
+    expect(layout.sides.left).toEqual({ width: 320, collapsed: true });
+    layout.toggle("left");
+    expect(JSON.parse(stored.get("lwns-sidebars")!).left).toEqual({
+      width: 320,
+      collapsed: false,
+    });
+    stored.set(
+      "route-ovs-sidebars",
+      JSON.stringify({ left: { width: 400, collapsed: true } }),
+    );
+    layout.restore();
+    expect(layout.sides.left).toEqual({ width: 320, collapsed: false });
+  });
   it("restores independent widths and collapsed states across a reload", () => {
     const layout = useLayoutStore();
     layout.setWidth("left", 350);

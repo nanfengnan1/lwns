@@ -22,7 +22,7 @@ CLEANUP = r'''
 for pass in HUP KILL; do
   for entry in /proc/[0-9]*/environ; do
     [ -r "$entry" ] || continue
-    if tr '\000' '\n' < "$entry" 2>/dev/null | grep -Fqx "ROUTE_OVS_TERMINAL=$1"; then
+    if tr '\000' '\n' < "$entry" 2>/dev/null | grep -Fqx "LWNS_TERMINAL=$1"; then
       pid=${entry#/proc/}; pid=${pid%/environ}
       [ "$pid" -gt 1 ] && kill -"$pass" "$pid" 2>/dev/null
     fi
@@ -148,7 +148,7 @@ class TerminalSession:
             self.resize(cols, rows)
             program = self.target["argv"]
             argv = self.manager.docker + ["exec", "-it", "-u", "0", "-e", "TERM=xterm-256color",
-                                          "-e", "ROUTE_OVS_TERMINAL=" + self.marker,
+                                          "-e", "LWNS_TERMINAL=" + self.marker,
                                           self.target["container"]] + program
             self.process = await asyncio.create_subprocess_exec(
                 *argv, stdin=slave, stdout=slave, stderr=slave, start_new_session=True, env=host_environment())

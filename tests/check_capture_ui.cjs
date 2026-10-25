@@ -31,7 +31,7 @@ const [debugURL, appURL, output] = process.argv.slice(2);
     await click('#start-capture');
     await wait('!!document.querySelector("#capture-launch-link")');
     const url=new URL(await evaluate('document.querySelector("#capture-launch-link").href'));
-    assert.equal(url.protocol,'route-ovs:');assert.equal(url.searchParams.get('server'),new URL(appURL).origin);
+    assert.equal(url.protocol,'lwns:');assert.equal(url.searchParams.get('server'),new URL(appURL).origin);
     assert.deepEqual([...url.searchParams.keys()],['server','ticket']);
     assert.equal(await evaluate('document.querySelector(".capture-state").textContent'),'等待打开本机程序');
     assert.equal(await evaluate('document.querySelector("#start-capture").disabled'),true);

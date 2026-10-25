@@ -1,4 +1,8 @@
-# route-ovs Web 工作台设计与开发说明
+# lwns Web 工作台设计与开发说明
+
+项目名称统一为 **lwns（Linux Web Network Simulator）**，仓库为 `nanfengnan1/lwns`。网页、CLI、发布包、systemd 服务与文档使用新名称；新安装使用 `lwns` 命令、`lwns-web.service`、`LWNS_*` 配置及 `/opt/lwns`、`/etc/lwns`、`/var/lib/lwns`。源码新数据默认 `.lwns-labs`。不自动搬迁已有数据：未显式配置且新目录不存在时沿用 `.route-ovs-labs`（冻结程序为 `/var/lib/route-ovs`）；显式 `--data-dir` 优先，其次 `LWNS_DATA_DIR`、旧 `ROUTE_OVS_DATA_DIR`。启动 Token、安装包装器和 Vite 保留旧环境变量回退，浏览器保留旧布局与会话读取。
+
+兼容标识不是品牌展示：Docker 归属标签 `io.route-ovs.*`、veth alias 的 `route-ovs:` 前缀、容器控制路径 `/run/route-ovs*` 和 `.rov` v1 清单格式 `route-ovs-device` 保持不变，保证既有容器和设备包可管理。`.rov` 扩展名与 JSON schema 版本不变。抓包新链接为 `lwns://`，需重新安装客户端以注册新协议；新客户端兼容解析旧链接、读取旧本地连接配置。目录包旧服务停用、配置继承和 Caddy 变量更新见用户文档 `workbench-start.rst` 的 `lwns-upgrade`。
 
 记录日期：2026-10-25。本文第 1～10 节描述当前已实现的 Web 工作台，第 11 节记录未实现的端口接入讨论方案，第 12 节记录 SSH/Wireshark 抓包设计与实施状态，第 13 节区分已实现的远程项目保存与未实现的可移植项目包机制，第 14 节维护任务列表及完成状态，第 15 节记录已实现的第一版通用配置保存、设备描述与 `.rov` 设备包，以及后续适配边界。修改架构、交互、启动方式或数据协议时，应同步更新本文及对应用户文档。
 
@@ -41,9 +45,9 @@ Linux Docker 宿主机
   ├─ lab_capture.py：抓包凭证、命名空间校验、tcpdump 流与回收
   └─ lab_terminal.py：连接凭证、PTY、交互会话和资源回收
            │
-           ├─ .route-ovs-labs/*.json
-           ├─ .route-ovs-labs/devices/<实验ID>/<设备ID>/frr/ → 容器 /etc/frr（RW）
-           ├─ .route-ovs-labs/images/registry.json、jobs/、uploads/
+           ├─ .lwns-labs/*.json
+           ├─ .lwns-labs/devices/<实验ID>/<设备ID>/frr/ → 容器 /etc/frr（RW）
+           ├─ .lwns-labs/images/registry.json、jobs/、uploads/
            ├─ Docker CLI → 本机 Docker Unix socket
            └─ ip / nsenter → 容器网络命名空间
 ```
@@ -53,7 +57,7 @@ Linux Docker 宿主机
 - 后端为 Python 3.10+、FastAPI、Uvicorn，依赖见 [requirements.txt](script/python/requirements.txt)。当前已经替换早期的标准库 HTTP 服务。
 - 文件和 Docker 等阻塞操作在线程中执行，避免阻塞 WebSocket 事件循环。
 - 后端保持单进程运行。数据目录锁、部署任务、终端凭证和会话保存在同一实例中，不能直接改成多个 Uvicorn worker。
-- Linux 发布使用 PyInstaller onedir 的 `.tar.gz` 目录包，不采用 deb/rpm。`packaging/linux/build.py` 构建前端并按固定清单收集后端资源；内置 Python 运行环境，宿主机仍需 Docker/ip/nsenter，SSH 抓包转发另需 python3。安装到 `/opt/route-ovs/releases/<BUILD_ID>`，`current` 选择版本，`/usr/local/bin/route-ovs` 读取 `/etc/route-ovs/route-ovs.env`，默认数据为 `/var/lib/route-ovs`。源码部署默认目录不变。
+- Linux 发布使用 PyInstaller onedir 的 `.tar.gz` 目录包，不采用 deb/rpm。`packaging/linux/build.py` 构建前端并按固定清单收集后端资源；内置 Python 运行环境，宿主机仍需 Docker/ip/nsenter，SSH 抓包转发另需 python3。安装到 `/opt/lwns/releases/<BUILD_ID>`，`current` 选择版本，`/usr/local/bin/lwns` 读取 `/etc/lwns/lwns.env`，默认数据为 `/var/lib/lwns`。源码部署默认目录不变。
 - 目录包安装器校验包内文件、拒绝覆盖非本安装器管理的目录/同名服务，要求升级前停止服务；保留配置、Token、数据和旧版本。systemd 模式启用开机启动但由用户显式 start；支持 `--no-systemd` 和隔离验收用 `--root`。卸载保留配置、数据、Docker 镜像和设备。Caddy 单独配置，目录包不携带当前主机证书私钥/令牌或实验数据。操作见 [目录包用户教程](docs/user/workbench-install.rst)。
 - `lab_paths.py` 处理冻结程序资源目录及可写数据目录，`host_environment()` 恢复宿主机动态库搜索路径，供 Docker、PTY 终端和 tcpdump 子进程使用。目录包按 Linux CPU 架构分别构建，记录 glibc/Python/依赖版本；发行格式通用不代表任意发行版二进制兼容。
 - 生产模式由后端同时提供 `web/dist`、HTTP API 和 WebSocket，浏览器只访问一个端口，不需要启动 Vite。
@@ -63,7 +67,7 @@ Linux Docker 宿主机
 - 部署文档统一入口为 [开发部署与发布部署](docs/user/workbench-start.rst)，先选用途再选协议：开发部署为 Vite + Python 两终端、访问 5173、无需预先 build；发布部署分源码构建与 Linux 目录包，后端提供成品页面、默认访问 8090。HTTPS/HTTP2/HTTP3 是发布部署的可选 Caddy 入口，不能把协议与部署方式混为一层选项。
 - 文档导航按“环境准备 → 部署与启动 → 快速组网 → 工作台操作”组织；目录包和 HTTPS 各自作为专项教程。保留 `workbench.html#workbench-start`、`#workbench-start-http` 旧锚点并指向新流程，README、快速开始和开发指南同步端口与命令。启动教程明确首次准备/每次启动/停止更新、Token 来源、同机代理与数据目录；区分 Vite 开发模式和后端 `--preview` 设计模式。
 - 用户指南首页按任务提供入口，侧栏分为首次使用与部署、工作台操作、维护与参考、旧版命令行工具与实验。首次实验只讲 Web 操作，并明确每一步的预期结果；旧版 FRR 入门移到 `legacy-cli.rst`，OVS/VPCS/DHCP/协议章节标明旧版范围。
-- 部署教程必须从获取代码开始：仓库为 `https://github.com/nanfengnan1/route-ovs`，推荐 HTTPS clone，说明 Code → Download ZIP、项目根目录和首次进入目录。目录安装包下载来源指向 Releases 并注明核对时的实际状态；截至 2026-10-24 无公开 Release。源码归档、程序目录包、Docker 镜像必须区分，本地 `release/` 不自动上传。维护者发布安装包后同步更新 README 与获取教程的状态和实际附件信息。
+- 部署教程必须从获取代码开始：仓库为 `https://github.com/nanfengnan1/lwns`，推荐 HTTPS clone，说明 Code → Download ZIP、项目根目录和首次进入目录。目录安装包下载来源指向 Releases 并注明核对时的实际状态；截至 2026-10-24 无公开 Release。源码归档、程序目录包、Docker 镜像必须区分，本地 `release/` 不自动上传。维护者发布安装包后同步更新 README 与获取教程的状态和实际附件信息。
 - `workbench.rst` 保留界面总览和旧的显式锚点；镜像、画布、终端分别维护在 `workbench-images.rst`、`workbench-editor.rst`、`workbench-terminal.rst`，FRR 保存恢复统一放入 `workbench-data.rst`。宿主机/客户端/设备终端位置、源码与目录包数据路径须保持明确。安装文档先讲使用者安装，构建发布说明放最后。文档主题折叠非当前分支，长表格换行，命令代码块保留原格式。
 - 文档排版参考 containerlab、GNS3 与 Caddy 官方教程，沿用 Sphinx/RTD，不增加构建依赖。首页使用原生 RST 容器组成任务入口，教程按目标/前提/步骤/成功标志/下一步组织，规范见 `docs/developer/build-docs.rst`。`docs/_templates/page.html` 提供宽屏右侧页内目录，左栏仅展示章节；窄屏保留正文 `contents`。`reading.css` 统一字号、间距、表格、提示框和打印样式，`reading.js` 提供纯代码复制及滚动定位；剪贴板失败后选中代码供手动复制。静态资源本地交付，支持 file:// 与原有版本归档，保留旧显式锚点。管理命令按需选择时用对照表，不能合成一段让用户全部执行。
 - 首页不静态导入 xterm 和两个管理面板：`DeviceTerminal.vue` 在首次创建标签时异步加载，`ImageManager.vue` / `CaptureManager.vue` 在首次打开时加载，之后保持挂载，保留会话、草稿和任务轮询。管理对话框挂载时同步打开状态，避免第一次点击无响应。旧分包失效时提示检查网络/导出草稿后刷新，不自动刷新页面。
@@ -75,7 +79,7 @@ Linux Docker 宿主机
 
 | 区域 | 内容与作用 |
 | --- | --- |
-| 顶部导航 | 草原狼头像、route-ovs 品牌、实验/视图/工具菜单、宿主机环境状态 |
+| 顶部导航 | 草原狼头像、lwns 品牌、实验/视图/工具菜单、宿主机环境状态 |
 | 左侧设备库 | 横向四类入口、双列圆形设备与独立滚动 |
 | 中间工具栏 | 项目名称与重命名入口；同一操作行左侧排版/注释，右侧保存/配置/部署/清理 |
 | 中间画布 | 设备、端口、veth 连线、缩放和平移、运行状态 |
@@ -98,14 +102,14 @@ Linux Docker 宿主机
 - 左右两侧使用 `SidebarPanel.vue`，均可收起/展开及拖动与画布之间的竖向分隔条调整宽度；收起时保留 36px 展开入口，内容通过 `v-show` 保留，设备属性草稿和设备库子目录状态不丢失。
 - 左侧宽度 200～420px，默认 240px；右侧 240～480px，默认 280px。窗口变小时按可用空间限制实际宽度，中间区域至少 460px；重新变宽时恢复首选宽度。
 - 双击分隔条恢复该侧默认宽度；键盘左右键按边界移动方向微调 10px，Shift 为 40px，Home/End 调至当前最小/最大值。
-- `stores/layout.ts` 将宽度和收起状态保存在 `localStorage` 的 `route-ovs-sidebars`；读取无效数据或存储被禁用时仍可操作。布局偏好不写入拓扑、不标记未保存、不受部署编辑锁限制。
+- `stores/layout.ts` 将宽度和收起状态保存在 `localStorage` 的 `lwns-sidebars`；读取无效数据或存储被禁用时仍可操作。布局偏好不写入拓扑、不标记未保存、不受部署编辑锁限制。
 - 拖动使用 Pointer Events 和捕获，结束、失焦或卸载时清理捕获及光标；工作区尺寸通过 ResizeObserver 更新，原有画布与终端尺寸观察继续生效。
 
 底部面板约定：
 
 - 拖动面板顶部的水平分隔条调整高度，双击恢复默认；聚焦分隔条后可使用方向键、Home、End。
 - 默认内容区高度为 174px，最小为 96px；普通模式为画布保留至少 280px 高度，最大面板高度随窗口计算。
-- 首选高度保存在浏览器 `localStorage` 的 `route-ovs-panel-height`，切换标签、收起和刷新后保留。
+- 首选高度保存在浏览器 `localStorage` 的 `lwns-panel-height`，切换标签、收起和刷新后保留。
 - 放大模式覆盖顶部导航以下区域，恢复后回到普通布局；布局变化必须同步终端行列数。
 - 拖动使用 Pointer Events 和 pointer capture，结束或组件卸载时释放捕获、光标及事件资源。
 
@@ -176,7 +180,7 @@ Topology
 - 可选 `annotations` 最多 100 条，独立且唯一的合法 ID；内容 1～1000 字符，坐标有限且绝对值不超过 100000，字号 12～28 的整数；颜色为六位十六进制，背景额外支持 `none`。前后端均校验，非法导入/保存不覆盖原记录；旧文件缺字段时仍可使用。
 - CIDR、默认网关、镜像、端口和连线约束同时在前后端校验，后端是部署约束的最终校验方。
 - 当前限制：最多 64 台设备、256 条链路、每台 1～32 个端口；单个拓扑导入上限为 1 MiB，普通 JSON 请求上限 1 MiB；`/update` 同时包含 topology/base 两份拓扑，请求体上限 2 MiB。
-- 实验记录包含 `topology`、`runtime`、更新时间；保存在 `.route-ovs-labs/<实验ID>.json`，采用原子写入。
+- 实验记录包含 `topology`、`runtime`、更新时间；保存在 `.lwns-labs/<实验ID>.json`，采用原子写入。
 - 运行阶段包括 `idle`、`deploying`、`running`、`updating`、`destroying`、`error`、`degraded`。
 - 部署、拓扑应用和清理使用后台任务，接口返回 202，前端轮询状态；任务受全局互斥保护。应用支持删除全部节点，保留 deployment 和空 nodes，后续可再增加设备；清理后回到 idle。
 - 后端固定使用本机 Docker Unix socket，默认 `/var/run/docker.sock`；不跟随 Docker 的远程 context。
@@ -198,7 +202,7 @@ Topology
 ### 5.2 FRR 配置持久化
 
 ```text
-.route-ovs-labs/
+.lwns-labs/
   <实验ID>.json
   devices/<实验ID>/<设备ID>/
     config-meta.json
@@ -300,7 +304,7 @@ Topology
 | `WS /api/terminal` | 交互式终端 |
 | `POST /api/labs/{id}/exec` | 保留的单次命令 API，等待上限 15 秒 |
 
-- 启动时随机生成访问令牌，也可通过 `ROUTE_OVS_TOKEN` 设置。前端从输入框、URL fragment 或 `sessionStorage` 读取；从 fragment 读取后移除 URL 中的令牌。
+- 启动时随机生成访问令牌，也可通过 `LWNS_TOKEN` 设置。前端从输入框、URL fragment 或 `sessionStorage` 读取；从 fragment 读取后移除 URL 中的令牌。
 - 管理类 HTTP API 使用 Bearer 认证并校验 Origin；WebSocket 需要同源 Origin 和一次性凭证。抓包 claim/client-report/stream 使用各自短期单次凭证代替长期令牌，stream 额外限制回环来源，详见第 12 节。
 - Vite 同时代理 HTTP 和 WebSocket，保留浏览器原始 Host/Origin，后端按规范化的协议、主机和有效端口验证同源；不放开任意 CORS，也不把外站 Origin 改写成可信来源。HTTPS 经同机 Caddy 时后端必须显式使用 `--trusted-proxy 127.0.0.1`，默认不信任任意转发头。
 - 静态服务只开放构建首页和 `assets` 资源，不开放源代码、实验文件或整个项目目录。
@@ -370,12 +374,12 @@ sudo .venv/bin/python script/python/lab_server.py --host 0.0.0.0 --port 8090
 
 源码发布访问 `http://宿主机IP:8090`，不运行 Vite。目录包发布按安装教程由 systemd 启动。源码后端加 `--preview` 可仅设计拓扑；这与是否使用 Vite 无关。
 
-- 开发默认地址为 `http://127.0.0.1:5173`。通过 `web/.env.local` 的 `ROUTE_OVS_API_TARGET` 指定后端，默认 `http://127.0.0.1:8090`。
+- 开发默认地址为 `http://127.0.0.1:5173`。通过 `web/.env.local` 的 `LWNS_API_TARGET` 指定后端，默认 `http://127.0.0.1:8090`。
 - 前端构建输出为 `web/dist`，可以跨平台复制；仅运行生产后端不需要 Node.js。
 - Windows 设计模式使用独立虚拟环境及 `.venv\Scripts\python.exe` 安装依赖并启动。
 - Windows 与 Linux 不能共用 `node_modules` 或 `.venv`。通过 Samba 共享代码时，应在实际运行环境安装依赖；不要在 Windows 安装依赖覆盖正在供 Linux 使用的目录。
 - 遇到 Rolldown 原生模块缺失，在实际运行 Vite 的系统执行 `npm --prefix web ci --include=optional`，保留锁文件。`web/scripts/check-native.mjs` 会在开发和构建前检查原生绑定。
-- `.route-ovs-labs`、`.venv`、`web/node_modules`、`web/dist` 和本地环境文件已被 Git 忽略。
+- `.lwns-labs`、`.venv`、`web/node_modules`、`web/dist` 和本地环境文件已被 Git 忽略。
 - 更新后端代码后需要重启服务；更新生产前端代码后需要重新构建。
 
 ## 10. 验证与后续修改约定
@@ -383,13 +387,13 @@ sudo .venv/bin/python script/python/lab_server.py --host 0.0.0.0 --port 8090
 2026-10-25 远程项目生命周期与来源校验验收：
 
 - 新建/打开/保存/关闭和部署均使用当前页面同源 `/api`，创建由服务器分配 ID 并立即保存。统一保存包含拓扑/画布和受支持 FRR 运行配置，逐设备区分成功、失败、不支持；关闭回收服务端终端和抓包，项目、配置及运行设备保留。
-- 实际部署问题定位为 Caddy HTTPS 转发到手工启动的 8090 后端，该进程缺少 `--trusted-proxy`，导致 HTTPS Origin 被按 HTTP 校验。已切回现有 `route-ovs-web.service`，使用相同数据目录及 `/etc/route-ovs/web.env` 中的固定 Token，显式信任同机代理 `127.0.0.1`。前端改为保留 Host/Origin 的 Vite 代理；这是一致性简化，不将未证实的 Vite 请求头修改作为根因。
+- 实际部署问题定位为 Caddy HTTPS 转发到手工启动的 8090 后端，该进程缺少 `--trusted-proxy`，导致 HTTPS Origin 被按 HTTP 校验。已切回现有 `lwns-web.service`，使用相同数据目录及 `/etc/lwns/web.env` 中的固定 Token，显式信任同机代理 `127.0.0.1`。前端改为保留 Host/Origin 的 Vite 代理；这是一致性简化，不将未证实的 Vite 请求头修改作为根因。
 - 前端 122 项单测、类型检查、格式检查与生产构建通过。Python 全量 145 项中 139 项通过、6 项显式集成测试跳过；随后独立启用并通过真实 FRR/veth 配置集成，验证新 `/save`、`/close`、`/open`，FRR 成功/PC 不支持提示、容器 ID/PID 与 deployment 保留，清理重建恢复配置/布局及 ping。
 - Chromium 对隔离后端直连和 Vite 入口分别通过 8 组项目生命周期检查；部署画布 18 组、侧栏/中文命名 10 组及菜单回归通过。新建即远端可见，创建/保存/打开/关闭失败保留草稿，刷新重开保持部署；所有 API 请求同当前页面 origin。`check_proxy_websocket.cjs` 验证同源 WS 握手 101 后拒绝无效凭证，外站 WS 握手 403；未创建测试外的终端。
 - Sphinx 严格构建通过。上线后通过实际 Caddy HTTPS 完成临时项目创建/打开/保存/关闭/删除，并检查 5173 API、外站 Origin 403；验收前后已有项目文件哈希和运行容器集合不变。测试使用隔离数据目录和带归属的临时设备，测试项目与容器已清理。
 - 新验收入口为 `tests/test_project_lifecycle.py`、`web/tests/remote-projects.test.ts`、`tests/check_remote_projects.cjs`、`tests/check_proxy_websocket.cjs`；完整可移植项目包仍未实现，后续加入的通用设备配置保存见第 15 节。
 
-加载优化及代理部署见 [HTTPS 与证书指南](docs/user/workbench-https.rst)：默认 Caddy 内部 CA 自动续期，也支持 mkcert 手动证书；每台客户端信任相同根证书，证书包含实际访问 IP/域名。Chrome/Chromium 对 QUIC 的自定义 CA 限制需要独立验证；HTTPS 成功或 Alt-Svc 并不能证明实际使用 h3。证书和私钥不提交，项目忽略 `.route-ovs-tls/`。
+加载优化及代理部署见 [HTTPS 与证书指南](docs/user/workbench-https.rst)：默认 Caddy 内部 CA 自动续期，也支持 mkcert 手动证书；每台客户端信任相同根证书，证书包含实际访问 IP/域名。Chrome/Chromium 对 QUIC 的自定义 CA 限制需要独立验证；HTTPS 成功或 Alt-Svc 并不能证明实际使用 h3。证书和私钥不提交，项目忽略 `.lwns-tls/`。
 
 根据改动运行相应检查：
 
@@ -403,10 +407,10 @@ npm --prefix web run build
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
 
 # 显式启用真实 Docker 终端测试：创建独立测试容器，结束时清理
-ROUTE_OVS_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_terminal.py' -v
+LWNS_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_terminal.py' -v
 
 # 显式启用真实 FRR/veth 配置恢复验证，需要 root；结束时清理独立测试设备
-sudo env ROUTE_OVS_CONFIG_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_config_docker.py' -v
+sudo env LWNS_CONFIG_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_config_docker.py' -v
 ```
 
 - [check_workbench.cjs](tests/check_workbench.cjs)：Chromium 中验证圆形设备、单按钮临近行列对齐及视口保持、最近端点连线、注释编辑/拖动/样式/删除及 JSON 往返，也回归设备编辑、连线和底部面板；使用独立设计模式数据目录。
@@ -428,12 +432,12 @@ sudo env ROUTE_OVS_CONFIG_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -
 - `web/tests/lazy-panels.test.ts` 验证管理面板按需挂载及保留；终端、镜像管理、抓包浏览器检查增加首页无对应分包、首次打开、关闭重开状态及隐藏时抓包轮询断言。
 - `tests/test_web_delivery.py` 覆盖 gzip/identity/q=0、缓存/304、HTML 更新、HEAD/Range、路径边界、可信代理与 HTTP/WS Origin。`tests/check_caddy.py --caddy <binary> --http3` 使用隔离端口/CA 验证真实 H2/H3、gzip/304、流式上传、WSS 和 PCAP 拦截；仅测试环境需额外 httpx[http2]/aioquic，运行产品不依赖它们，不安装系统信任。
 - 2026-10-24 加载与代理验证：生产构建无大分包警告，主 JS 约 158 kB（gzip 报告约 59 kB），终端约 335 kB 按需加载；78 项前端测试通过，107 项 Python 测试中 101 项通过/6 项显式集成用例跳过。另行通过真实 Docker 终端 Chromium 检查、镜像管理/抓包/画布浏览器检查、真实 Caddy HTTP/2 与 aioquic HTTP/3、流式上传及 WSS 校验；Sphinx 严格构建通过。自定义 CA 在浏览器中的 QUIC 协商仍按客户端策略验收。
-- 2026-10-24 内网部署验收：`10.8.126.103` 已使用 Caddy 和 `route-ovs-web.service` 开机启动，后端监听 `127.0.0.1:8090`，保留原实验数据；Windows 信任服务端实际 CA 后，普通 HTTPS 和 HTTP/2 验证通过。独立 Chrome 配置使用经 CA 校验的当前证书 SPKI，页面、静态资源和认证 API 实测协议均为 `h3`，环境接口报告可部署。内网 CA 的普通浏览器窗口仍可能使用 HTTP/2；令牌及客户端启动参数保存在受限本地目录，不提交版本库。
+- 2026-10-24 内网部署验收：`10.8.126.103` 已使用 Caddy 和 `lwns-web.service` 开机启动，后端监听 `127.0.0.1:8090`，保留原实验数据；Windows 信任服务端实际 CA 后，普通 HTTPS 和 HTTP/2 验证通过。独立 Chrome 配置使用经 CA 校验的当前证书 SPKI，页面、静态资源和认证 API 实测协议均为 `h3`，环境接口报告可部署。内网 CA 的普通浏览器窗口仍可能使用 HTTP/2；令牌及客户端启动参数保存在受限本地目录，不提交版本库。
 - [serve_terminal_fixture.py](tests/serve_terminal_fixture.py)：为浏览器测试创建独立 Docker 设备，退出时清理；测试用的环境替换不能复制到生产入口。
 - Docker 终端测试不验证 veth 数据平面，真实拓扑仍需按照用户指南检查跨设备连通性和清理结果。
 - `test_configs.py` / `web/tests/configs.test.ts` 覆盖备份、恢复、旧容器导出、部分失败、归属和挂载校验、终端保留、草稿同步、过期响应。
 - `test_config_docker.py` 验证真实 FRR 保存 API、清理重建、OSPF/Loopback 恢复、终端 write memory 保留和 veth ping；`serve_config_fixture.py` + `check_configs.cjs` 验证浏览器终端输入、单台/全部保存、预览与清理后恢复。
-- `test_images.py` / `web/tests/images.test.ts` 覆盖镜像持久化、模板绑定、引用保护、上传认证与大小/解压边界、任务互斥及旧响应隔离；`ROUTE_OVS_IMAGE_DOCKER_TESTS=1` 启用 `test_images_docker.py` 的真实构建/加载/下载/本机仓库拉取/删除（需已有 `registry:2`）。`serve_image_fixture.py --large-library` + `check_images.cjs` 验证长列表和真实浏览器镜像流程，使用独立临时数据及标签。
+- `test_images.py` / `web/tests/images.test.ts` 覆盖镜像持久化、模板绑定、引用保护、上传认证与大小/解压边界、任务互斥及旧响应隔离；`LWNS_IMAGE_DOCKER_TESTS=1` 启用 `test_images_docker.py` 的真实构建/加载/下载/本机仓库拉取/删除（需已有 `registry:2`）。`serve_image_fixture.py --large-library` + `check_images.cjs` 验证长列表和真实浏览器镜像流程，使用独立临时数据及标签。
 - 保持 `version: 1` 拓扑兼容、组件职责、状态隔离及资源生命周期；新增设备类型时同步前端类型、模板、展示和后端部署逻辑。
 - 修改终端时同时检查输入/输出、尺寸、连接认证、断开、重连和清理；保留终端键盘与画布快捷键之间的隔离。
 - 修改布局或品牌时保持草原狼头像、三栏工作台及可调整底部面板的设计，除非用户明确要求变更。
@@ -558,18 +562,18 @@ vppctl set interface state host-eth0 up
 用户先点击已部署连线，再选择 a/b 端点、BPF 过滤条件和抓包长度，启动本地 Windows/Linux Wireshark。设备镜像无需 SSH 或 tcpdump；抓取对象为当前 Docker/veth 网络命名空间中的接口。VPP 内部/DPDK 接口抓包不属于本阶段。
 
 ```text
-Web 连线属性 → 后端创建抓包会话 → route-ovs://capture（短期启动凭证）
+Web 连线属性 → 后端创建抓包会话 → lwns://capture（短期启动凭证）
   → 本地启动器 → 本机 Wireshark + sshdump → SSH 普通用户登录 Docker 宿主机
   → Python 标准库转发程序 → 127.0.0.1 上的后端单次凭证流接口
   → root 后端 nsenter -n + 宿主机 tcpdump → PCAP 经原路径返回 Wireshark
 ```
 
 - 本地首次配置 Wireshark 路径、SSH 主机/端口/用户名及已有 Wireshark Profile；支持可选私钥路径。用户名、密码、私钥和密钥口令不进入拓扑、Web 后端或协议 URL。密码与口令由 Wireshark 的 SSH 接口配置处理，其存储策略遵循 Wireshark；未配置凭据可先打开 Wireshark 配置后手动开始，配置好密钥/agent/Profile 后支持自动开始。
-- Windows 注册当前用户 `route-ovs` URL 协议，Linux 注册 `.desktop`/`x-scheme-handler/route-ovs`。启动器仅信任用户确认的后端 origin，URL 参数不能作为本地命令执行。SSH 主机来自本地连接配置，避免 URL 任意指定登录目标。保留现有 Wireshark Profile，使用进程级参数覆盖抓包命令，不为每条连线永久修改配置。
+- Windows 注册当前用户 `lwns` URL 协议，Linux 注册 `.desktop`/`x-scheme-handler/lwns`。启动器仅信任用户确认的后端 origin，URL 参数不能作为本地命令执行。SSH 主机来自本地连接配置，避免 URL 任意指定登录目标。保留现有 Wireshark Profile，使用进程级参数覆盖抓包命令，不为每条连线永久修改配置。
 - Web 使用原有 Bearer/Origin 认证创建、查询和停止会话。启动凭证短期、一次性兑换为独立流凭证；不在启动 URL 放长期 Web 令牌。流接口只接受回环地址连接及单次流凭证，SSH 用户只转发二进制数据，无须 sudo 或容器权限。两类凭证都绑定已核对的实验、部署、容器和接口。
 - 后端重新读取 Docker 状态与 veth alias/对端索引，拒绝容器替换、外部重启、接口失效和部署/应用/清理期间抓包；捕获开始及运行中均复查。BPF 作为 tcpdump 参数传递，不通过 shell；标准输出仅包含 PCAP，错误信息另行记录。
 - 后端管理 tcpdump 生命周期和会话状态，收到 PCAP 文件头才标记正在抓包；单纯协议唤起不表示成功。停止、连接断开、清理实验或后端退出均回收自己的子进程。会话和凭证仅在内存中保存，后端重启不恢复抓包；新版启动器指定本机独立目录中的 `capture.pcapng`，由 Wireshark 自动写入；后端不保存抓包副本。
-- Web 使用“准备抓包 → 点击打开本机 Wireshark”两步流程，避免异步自动跳转被浏览器拦截；同端点待连接期间禁止重复创建。提供安装说明、可再次点击的启动链接及 `route-ovs://configure` 本地设置入口，处理浏览器外部应用确认与未安装情况。第一版支持一个会话抓一端，分别启动会话可观察两端；支持长度/BPF 和并发上限，SSH/磁盘/本机处理速度仍可能导致丢包。
+- Web 使用“准备抓包 → 点击打开本机 Wireshark”两步流程，避免异步自动跳转被浏览器拦截；同端点待连接期间禁止重复创建。提供安装说明、可再次点击的启动链接及 `lwns://configure` 本地设置入口，处理浏览器外部应用确认与未安装情况。第一版支持一个会话抓一端，分别启动会话可观察两端；支持长度/BPF 和并发上限，SSH/磁盘/本机处理速度仍可能导致丢包。
 
 验收包括认证与过期/重放拒绝、容器/接口归属核对、有效/无效 BPF、PCAP 流、停止与断线清理、Windows/Linux 参数生成和协议安装、真实 SSH → sshdump 抓到 veth 上的 ARP/ICMP，以及原有画布回归。
 
@@ -581,9 +585,9 @@ Web 连线属性 → 后端创建抓包会话 → route-ovs://capture（短期�
 - 启动器检测接口名及偏好前缀（例如 `sshdump.exe` / `sshdump_exe`），使用参数数组启动程序；远端仅执行本地包内固定的 Python 转发代码。URL 无 SSH 命令和凭据，本地配置决定 SSH 主机。下载包仅包含固定客户端文件，存在 Windows 构建产物时附带 exe。
 - 新版启动器仅允许图形程序 Wireshark，校验 Profile、检测提前退出，并尝试还原/前置 Windows 窗口。配置窗口使用表格对齐和路径浏览；Web 表单统一控件高度，消除全局 input 间距影响，会话与路径按固定列排版。
 - claim 同时发放独立的 `client_ticket`，5 分钟内单次回报启动结果、手动认证模式及目标文件路径；不能替代数据流凭证或将会话标为 running。Web 显示“等待在 Wireshark 中认证”及 SSH 接口齿轮 → Authentication → Start 步骤。密码登录无需私钥。
-- 默认输出为本机用户主目录 `route-ovs/captures/<时间-端点-随机标识>/capture.pcapng`，可在本地配置修改目录。使用 `-w` / `-o capture.pcap_ng:TRUE` / `-S` 指定保存及实时显示；Web 仅显示启动器报告的目标路径并提供复制，不保证文件已写入或跟踪 Wireshark 后续另存。旧版缺少路径回报时提示手动另存及升级。
+- 默认输出为本机用户主目录 `lwns/captures/<时间-端点-随机标识>/capture.pcapng`，可在本地配置修改目录。使用 `-w` / `-o capture.pcap_ng:TRUE` / `-S` 指定保存及实时显示；Web 仅显示启动器报告的目标路径并提供复制，不保证文件已写入或跟踪 Wireshark 后续另存。旧版缺少路径回报时提示手动另存及升级。
 - 启动器等待 GUI 生命周期并持续排空 stderr，提前退出显示错误并回报 Web；简要诊断写入本地配置旁的 `capture-launcher.log`，不记录完整 URI，隐藏会话凭证。升级需重新安装本地客户端，保留已有非秘密连接配置。
-- `test_capture.py` 和 `web/tests/captures.test.ts` 验证控制逻辑与状态边界；`ROUTE_OVS_CAPTURE_DOCKER_TESTS=1` 启用真实 veth/PCAP 测试。`serve_capture_fixture.py` + `check_capture_relay.py` 验证非 root 转发和 SSH 通道 EOF 对应的进程回收；`check_capture_ssh.py` 为目标本机 sshdump 验收入口。
+- `test_capture.py` 和 `web/tests/captures.test.ts` 验证控制逻辑与状态边界；`LWNS_CAPTURE_DOCKER_TESTS=1` 启用真实 veth/PCAP 测试。`serve_capture_fixture.py` + `check_capture_relay.py` 验证非 root 转发和 SSH 通道 EOF 对应的进程回收；`check_capture_ssh.py` 为目标本机 sshdump 验收入口。
 - `serve_capture_ui.cjs` + `check_capture_ui.cjs` 使用独立模拟状态检查界面，不应拿它替代真实 SSH/桌面端到端验证。不要将测试用的环境替换或模拟路由复制到生产入口。
 
 ## 13. 项目保存与可移植项目包机制
@@ -596,7 +600,7 @@ Web 连线属性 → 后端创建抓包会话 → route-ovs://capture（短期�
 
 参考 GNS3 的项目描述文件与可移植项目包分工：GNS3 2.2 的 `.gns3` 使用 JSON 描述拓扑和画布，`.gns3project` 使用 ZIP 打包项目相关文件，并支持选择携带镜像。格式版本校验和旧版本迁移也值得借鉴；参考其组织方式，不承诺兼容 GNS3 文件格式。
 
-当前 `.route-ovs-labs/<实验ID>.json` 同时包含拓扑与本机运行状态；FRR 文件位于 `devices/<实验ID>/<设备ID>/frr/`。现有 Web 导出只携带拓扑及已同步的 `node.config` 文本，不包含完整的 `daemons`、`vtysh.conf` 等文件。因此，本机清理后能够恢复，不代表导出的 JSON 能在另一台宿主机完整恢复。
+当前 `.lwns-labs/<实验ID>.json` 同时包含拓扑与本机运行状态；FRR 文件位于 `devices/<实验ID>/<设备ID>/frr/`。现有 Web 导出只携带拓扑及已同步的 `node.config` 文本，不包含完整的 `daemons`、`vtysh.conf` 等文件。因此，本机清理后能够恢复，不代表导出的 JSON 能在另一台宿主机完整恢复。
 
 目标是支持“配置设备 → 保存 → 导出一个项目包 → 另一台宿主机导入 → 部署恢复”，同时保持项目目录适合查看和 Git 管理。
 
@@ -657,7 +661,7 @@ OSPF实验.rovproject              # 建议扩展名，内部为 ZIP；尚未确
 
 ### 13.6 Compose 定位与建议实施顺序
 
-`compose.yaml` 暂作为未来可生成的部署产物，不作为当前候选项目主文件。Compose 的 `x-` 扩展可以携带自定义信息，但 Docker 会忽略这些字段；画布、veth 接线及设备恢复仍需 route-ovs 实现。
+`compose.yaml` 暂作为未来可生成的部署产物，不作为当前候选项目主文件。Compose 的 `x-` 扩展可以携带自定义信息，但 Docker 会忽略这些字段；画布、veth 接线及设备恢复仍需 lwns 实现。
 
 建议先基于现有存储布局实现完整项目导出/导入及 FRR 跨宿主机恢复，避免同时改动全部持久化代码。随后在实验清理后迁移为独立项目目录，不能移动正在被容器绑定挂载的 FRR 目录。后续再扩展项目级离线镜像收集、历史快照及 Compose 生成；设备级离线镜像包和通用保存机制已按第 15 节提供。
 
@@ -679,7 +683,10 @@ OSPF实验.rovproject              # 建议扩展名，内部为 ZIP；尚未确
 - [x] **现代化工作台与菜单栏**：统一布局、控件、空状态和管理窗口；实验/视图/工具菜单提供实际打开、保存、导入导出与视图控制，完整项目包仍按上项待实现。
 - [x] **删除默认实验**：空白启动与刷新、取消自动示例和示例按钮、已保存实验通过打开窗口选择，保留用户数据与可手动导入的示例文件。
 - [x] **草原狼品牌图标**：替换导航、登录窗口与浏览器图标共用 SVG。
-- [x] **项目起名字（实验项目命名与重命名）**：新建时填写名称，顶部名称打开重命名窗口；已保存项目立即保存名称，已部署项目无需清理容器即可改名，原 ID、配置和终端保留。此次按实验项目命名实施；软件品牌仍为 route-ovs，整体品牌更名尚未确定。
+- [x] **项目起名字（实验项目命名与重命名）**：新建时填写名称，顶部名称打开重命名窗口；已保存项目立即保存名称，已部署项目无需清理容器即可改名，原 ID、配置和终端保留。这是实验名称，与软件品牌独立。
+- [x] **软件更名 lwns**：统一使用 Linux Web Network Simulator 全称，更新界面、CLI、目录包、服务、抓包协议、README、用户/开发文档与截图；保留旧数据、环境配置、容器归属及 `.rov` 格式兼容，升级步骤见 `lwns-upgrade`。
+
+更名验收（2026-10-25）：前端 135 项单测、格式检查、类型检查与生产构建通过；Python 全量 206 项中 197 项通过、9 项显式跳过。Chromium 工作台 35 组及抓包界面 9 组通过，新增页面标题/品牌与旧布局读取检查，三张文档截图重新生成。实际构建 Linux x86_64/glibc 的 lwns 目录包，在隔离根目录验证安装、启动、认证、WebSocket、升级保留配置及卸载保留数据；不安装到真实系统，不重启正式服务。Caddy 新变量解析和新旧文档版本归档兼容检查通过，Sphinx 严格检查与 HTML 构建通过。
 - [x] **侧边栏收缩和拉伸**：左右两侧均支持收起、展开、拖动调宽、双击复位和键盘调整；浏览器记住宽度与收起状态，窗口变窄时保留画布空间。
 - [ ] **FRR 容器支持 FTP、RTSP 服务器（未实现）**：在 FRR 设备容器中提供可选的 FTP、RTSP 服务程序，规划安装方式、配置文件、监听接口/端口及进程启停管理。应用服务作为容器内的独立进程运行；具体软件选型和镜像集成方式待设计。
 - [ ] **Web FRR 设备应用协议配置（未实现）**：参考 eNSP 的配置交互，在 FRR 设备配置页面增加应用服务配置入口，支持按需配置、启动和停止 FTP server、DHCP server、DNS server 等服务，并展示运行状态与错误。与容器内服务能力匹配，后续规划服务配置的保存及清理重建后的恢复；具体字段和首批支持范围待设计。
@@ -837,7 +844,7 @@ OSPF实验.rovproject              # 建议扩展名，内部为 ZIP；尚未确
 
 ### 15.6 Web 制作、关联和导入交互
 
-用户教程 [workbench-devices.rst](docs/user/workbench-devices.rst) 按“已有包加载 → 画布部署 → FRR 离线制作 → Web 制作 → CLI 来源及导入”组织，提供完整可复制的 FRR `device.json` 与 `docker save` / pack / inspect 命令。锚点 `rov-import-device`、`rov-frr-offline`、`rov-web-pack`、`rov-cli-pack`、`rov-cli-import` 作为入口；明确浏览器选客户端文件、Web 操作发生在远程后端，以及源码 `.route-ovs-labs` 与安装包数据目录的区别。
+用户教程 [workbench-devices.rst](docs/user/workbench-devices.rst) 按“已有包加载 → 画布部署 → FRR 离线制作 → Web 制作 → CLI 来源及导入”组织，提供完整可复制的 FRR `device.json` 与 `docker save` / pack / inspect 命令。锚点 `rov-import-device`、`rov-frr-offline`、`rov-web-pack`、`rov-cli-pack`、`rov-cli-import` 作为入口；明确浏览器选客户端文件、Web 操作发生在远程后端，以及源码 `.lwns-labs` 与安装包数据目录的区别。
 
 ```text
 制作设备包窗口
@@ -864,20 +871,20 @@ OSPF实验.rovproject              # 建议扩展名，内部为 ZIP；尚未确
 
 `lab_device_packages.py` 提供格式校验、打包、检查和版本库，`lab_device_service.py` 管理上传与后台任务，`lab_device_cli.py` 与 Web 共用这些模块。CLI 检查和制作不依赖 Web 服务运行；需要导出镜像或构建时才使用相应 Docker 能力。
 
-以下命令适用于重新构建安装后的 Linux 目录包；源码版将 `route-ovs` 替换为 `python3 script/python/lab_server.py`。CLI 导入与后端共用数据目录锁，后端运行时使用 Web 导入，或停止同数据目录后端后再进行 CLI 导入；pack/inspect 不占用此锁：
+以下命令适用于重新构建安装后的 Linux 目录包；源码版将 `lwns` 替换为 `python3 script/python/lab_server.py`。CLI 导入与后端共用数据目录锁，后端运行时使用 Web 导入，或停止同数据目录后端后再进行 CLI 导入；pack/inspect 不占用此锁：
 
 ```bash
 # 制作离线镜像设备包
-route-ovs device pack --descriptor device.json --image-tar frr.tar --output frr-1.0.0.rov
+lwns device pack --descriptor device.json --image-tar frr.tar --output frr-1.0.0.rov
 
 # 制作构建配方设备包
-route-ovs device pack --descriptor device.json --dockerfile Dockerfile --output frr-1.0.0.rov
+lwns device pack --descriptor device.json --dockerfile Dockerfile --output frr-1.0.0.rov
 
 # 检查设备包信息与完整性；不执行包内动作
-route-ovs device inspect frr-1.0.0.rov
+lwns device inspect frr-1.0.0.rov
 
 # 导入设备库并准备镜像；不部署项目
-route-ovs device import frr-1.0.0.rov
+lwns device import frr-1.0.0.rov
 ```
 
 CLI 在执行命令的机器上读取文件并输出到指定路径，不能因为浏览器连接了某台服务器就自动操作那台服务器。Web 生成包可下载给 CLI 使用，CLI 生成包也可上传 Web；两者必须使用相同格式版本和校验规则。

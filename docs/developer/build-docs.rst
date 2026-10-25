@@ -5,7 +5,7 @@
 ----------------------------------------
 
 本工程沿用参考 docs 的 Sphinx、Read the Docs 主题、中文、双 PDF 和不可覆盖版本归档方式。
-配置与脚本已改为 route-ovs 命名；文档版本保存在本目录的 ``docs/.version``，
+配置与脚本已改为 lwns 命名；文档版本保存在本目录的 ``docs/.version``，
 初始值为 ``v0.1``，表示文档框架版本，不代表 FRR 或 OVS 软件版本。
 
 HTML 使用统一首页；用户和开发章节分别生成一本 PDF。
@@ -87,8 +87,8 @@ PDF 另需 XeLaTeX、latexmk 和中文字体。Debian/Ubuntu 的安装示例::
 产物位置：
 
 * HTML：``html/index.html``。
-* 用户 PDF：``pdf/user/route-ovs-user.pdf``。
-* 开发 PDF：``pdf/developer/route-ovs-dev.pdf``。
+* 用户 PDF：``pdf/user/lwns-user.pdf``。
+* 开发 PDF：``pdf/developer/lwns-dev.pdf``。
 * LaTeX 中间文件：``_build/latex/``。
 
 ``make serve`` 在本机 ``127.0.0.1:8000`` 提供静态预览，入口为 ``/html/index.html``。
@@ -112,8 +112,8 @@ PDF 另需 XeLaTeX、latexmk 和中文字体。Debian/Ubuntu 的安装示例::
   ├── catalog.js
   └── v0.1/
       ├── html/
-      ├── pdf/user/route-ovs-user.pdf
-      ├── pdf/developer/route-ovs-dev.pdf
+      ├── pdf/user/lwns-user.pdf
+      ├── pdf/developer/lwns-dev.pdf
       ├── source/
       ├── .version
       └── manifest.json

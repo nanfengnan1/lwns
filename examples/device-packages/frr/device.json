@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "id": "route-ovs-frr",
+  "id": "lwns-frr",
   "version": "1.0.0",
   "name": "FRR 路由器",
   "category": "router",
-  "image": "route-ovs/frr:1.0.0",
+  "image": "lwns/frr:1.0.0",
   "source": { "type": "dockerfile", "path": "Dockerfile" },
   "profile": "frr",
   "console": ["vtysh"],

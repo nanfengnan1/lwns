@@ -53,7 +53,7 @@
 
 先将该文件放到 **客户端电脑**，再点击 **实验 → 导入拓扑 JSON** 选择它。
 如果代码只在 Linux 宿主机，可在
-`仓库示例文件 <https://github.com/nanfengnan1/route-ovs/blob/main/examples/basic-lab.json>`_
+`仓库示例文件 <https://github.com/nanfengnan1/lwns/blob/main/examples/basic-lab.json>`_
 页面下载原始 JSON 到客户端；不要保存成 GitHub 的 HTML 网页。导入后画布应出现：
 
 .. code-block:: text

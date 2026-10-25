@@ -13,10 +13,10 @@
 已有 ``.rov`` 文件或需要制作 FRR 设备包时，直接阅读 :doc:`workbench-devices`。
 
 .. figure:: /_static/images/workbench-overview.png
-   :alt: 草原狼品牌的工作台，顶部为实验、视图、工具菜单，左侧设备库，中间空白画布，右侧属性栏，底部部署日志
+   :alt: lwns 工作台，顶部为实验、视图、工具菜单，左侧设备库，中间双网段拓扑，右侧属性栏，底部部署日志
    :width: 100%
 
-   工作台启动后的空白画布。侧栏与底部面板可以收起或拖动调整大小；图中为设计模式。
+   导入双网段示例后的 lwns 工作台。侧栏与底部面板可以收起或拖动调整大小；图中为设计模式。
 
 .. list-table:: 界面位置与用途
    :header-rows: 1
@@ -162,8 +162,8 @@ FRR 与设备终端
 点击已部署网线 → “在 Wireshark 中抓包” → 选择端点/BPF → “准备抓包” → “打开本机 Wireshark”。
 密码认证无需私钥；未启用自动开始时，在 Wireshark 的 SSH 接口配置中输入密码并开始。
 
-新版默认将 ``capture.pcapng`` 保存到浏览器所在电脑的 ``~/route-ovs/captures`` 独立子目录，
-Windows 对应 ``%USERPROFILE%\route-ovs\captures``。Web 会话显示完整目标路径，可复制到本机使用。
+新版默认将 ``capture.pcapng`` 保存到浏览器所在电脑的 ``~/lwns/captures`` 独立子目录，
+Windows 对应 ``%USERPROFILE%\lwns\captures``。Web 会话显示完整目标路径，可复制到本机使用。
 安装步骤、认证配置、状态含义和排障见 :doc:`workbench-capture`。
 
 .. _workbench-frr-config:
@@ -177,7 +177,7 @@ JSON 导入导出、宿主机备份与恢复也在 :doc:`workbench-data` 中说�
 保存、回滚和状态核对
 ----------------------------------------
 
-源码默认数据目录为项目根目录的 ``.route-ovs-labs/``，目录包默认为 ``/var/lib/route-ovs``，
+源码默认数据目录为项目根目录的 ``.lwns-labs/``，目录包默认为 ``/var/lib/lwns``，
 可通过启动参数或系统配置修改。每个实验文件分别记录拓扑和运行时归属。
 同一个数据目录只能启动一个后端。运行数据、锁和 Python 缓存不应提交到 Git。
 

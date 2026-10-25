@@ -85,22 +85,22 @@ FRR 示例：从已有镜像制作 frr.rov
 
 进入你的源码目录，确认镜像存在，并创建独立的输出目录::
 
-  cd ~/program/github/route-ovs
+  cd ~/program/github/lwns
   docker image inspect alpine/frr:latest --format '{{.Id}}'
-  mkdir -p ~/route-ovs-devices/frr
+  mkdir -p ~/lwns-devices/frr
 
 项目如果放在其他目录，请替换第一行路径。若镜像不存在，先按 :doc:`workbench-images`
-准备镜像。本例会创建 ``~/route-ovs-devices/frr/device.json``，已有同名自定义文件时应先保留它。
+准备镜像。本例会创建 ``~/lwns-devices/frr/device.json``，已有同名自定义文件时应先保留它。
 
 二、创建 device.json
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 复制执行下面的完整命令，生成描述文件::
 
-  cat > ~/route-ovs-devices/frr/device.json <<'JSON'
+  cat > ~/lwns-devices/frr/device.json <<'JSON'
   {
     "schema_version": 1,
-    "id": "route-ovs-frr",
+    "id": "lwns-frr",
     "version": "1.0.0",
     "name": "FRR 路由器",
     "category": "router",
@@ -156,16 +156,16 @@ FRR 示例：从已有镜像制作 frr.rov
 三、导出镜像并制作设备包
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-仍在 route-ovs 项目根目录执行::
+仍在 lwns 项目根目录执行::
 
   docker save \
-    --output ~/route-ovs-devices/frr/frr.tar \
+    --output ~/lwns-devices/frr/frr.tar \
     alpine/frr:latest
 
   python3 script/python/lab_server.py device pack \
-    --descriptor ~/route-ovs-devices/frr/device.json \
-    --image-tar ~/route-ovs-devices/frr/frr.tar \
-    --output ~/route-ovs-devices/frr/frr.rov
+    --descriptor ~/lwns-devices/frr/device.json \
+    --image-tar ~/lwns-devices/frr/frr.tar \
+    --output ~/lwns-devices/frr/frr.rov
 
 使用 ``docker save`` 导出的未压缩 ``.tar``，不要使用 ``docker export``。
 工具会校验归档中的镜像名称，自动将镜像存为包内 ``image.tar`` 并生成校验清单。
@@ -177,14 +177,14 @@ FRR 示例：从已有镜像制作 frr.rov
 检查制作结果::
 
   python3 script/python/lab_server.py device inspect \
-    ~/route-ovs-devices/frr/frr.rov
+    ~/lwns-devices/frr/frr.rov
 
 命令成功退出，并输出设备定义和资源清单。结果中应能看到 ``alpine/frr:latest``、
 ``archive`` 来源和 ``image.tar`` 资源。最终目录为：
 
 .. code-block:: text
 
-   ~/route-ovs-devices/frr/
+   ~/lwns-devices/frr/
    ├── device.json
    ├── frr.tar
    └── frr.rov       # 分享或上传这一个文件即可
@@ -260,7 +260,7 @@ FRR 示例：从已有镜像制作 frr.rov
     --image alpine/frr:latest \
     --output frr-reference.rov
 
-离线包按 :ref:`rov-frr-offline` 制作。仓库里的 Dockerfile 示例使用 ``route-ovs/frr:1.0.0``，
+离线包按 :ref:`rov-frr-offline` 制作。仓库里的 Dockerfile 示例使用 ``lwns/frr:1.0.0``，
 本页离线描述使用 ``alpine/frr:latest``，不要把不同镜像标签的描述与归档混用。
 检查上面生成的构建配方包或引用包，例如::
 
@@ -272,7 +272,7 @@ FRR 示例：从已有镜像制作 frr.rov
 不能通过覆盖输出文件强制替换已安装版本。
 
 已安装 Linux 目录包时，将上面的 ``python3 script/python/lab_server.py``
-替换为 ``route-ovs``，例如 ``route-ovs device inspect ~/route-ovs-devices/frr/frr.rov``。
+替换为 ``lwns``，例如 ``lwns device inspect ~/lwns-devices/frr/frr.rov``。
 Web 与 CLI 使用相同模块，生成的设备包可以互相导入。
 
 .. _rov-cli-import:
@@ -282,15 +282,16 @@ CLI 导入到指定服务器
 
 在要运行设备的 Linux 宿主机上执行；命令不会自动连接浏览器所连接的另一台机器::
 
-  sudo .venv/bin/python script/python/lab_server.py device import ~/route-ovs-devices/frr/frr.rov \
+  sudo .venv/bin/python script/python/lab_server.py device import ~/lwns-devices/frr/frr.rov \
     --name "FRR 路由器" \
-    --data-dir .route-ovs-labs
+    --data-dir .lwns-labs
 
 上例使用源码默认数据目录，并在项目根目录运行。如果后端通过 ``--data-dir`` 使用其他目录，
 应将该参数替换为相同路径，否则浏览器看不到刚导入的设备。
+从旧版升级时可能仍沿用旧数据目录，以后端启动日志为准，详见 :ref:`lwns-upgrade`。
 目录包可执行，默认数据目录来自安装配置::
 
-  sudo route-ovs device import ~/route-ovs-devices/frr/frr.rov --name "FRR 路由器"
+  sudo lwns device import ~/lwns-devices/frr/frr.rov --name "FRR 路由器"
 
 指定与工作台一致的数据目录。CLI 导入与后端共用数据目录锁：后端正在使用该目录时，
 通过 Web 导入即可；如需使用 CLI 导入，应先停止使用该目录的后端，完成后再启动。
@@ -338,8 +339,8 @@ FRR 的具体操作见 :ref:`workbench-data-frr`。
 文件保存在哪里
 ----------------------------------------
 
-所有路径以启动时选择的数据目录为根；源码默认 ``.route-ovs-labs``，
-目录包默认 ``/var/lib/route-ovs``。
+所有路径以启动时选择的数据目录为根；源码默认 ``.lwns-labs``，
+目录包默认 ``/var/lib/lwns``。
 
 .. code-block:: text
 

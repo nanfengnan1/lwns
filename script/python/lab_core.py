@@ -24,6 +24,8 @@ from lab_devices import CATALOG, LabError, adapter_for, device_root, template_fo
 from lab_updates import apply_update, gateway_port, plan_update, runtime_signature
 
 
+# Stable ownership protocol: keep existing Docker labels and veth aliases valid
+# across the lwns rename so running projects can still be inspected and cleaned.
 LABEL = "io.route-ovs.lab"
 # Kept for compatibility with the standalone terminal test fixture.
 FRR_START = "sed -i 's/^bgpd=no/bgpd=yes/;s/^ospfd=no/ospfd=yes/;s/^ospf6d=no/ospf6d=yes/' /etc/frr/daemons && exec /usr/lib/frr/docker-start"

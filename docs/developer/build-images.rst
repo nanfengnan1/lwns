@@ -40,7 +40,7 @@ FRR 镜像与 frr.tar 编译
 在 FRR 源码根目录执行::
 
   cd /home/alexan/program/github/frr
-  cp /home/alexan/program/test/route-ovs/docker/devices/route/Dockerfile.frr \
+  cp /home/alexan/program/test/lwns/docker/devices/route/Dockerfile.frr \
     docker/alpine/Dockerfile
 
 本工程中的实际目录名是 ``docker/devices/route/``，其中 ``devices`` 为复数。
@@ -69,19 +69,19 @@ FRR 镜像与 frr.tar 编译
 
 ``build.sh`` 生成 Docker 镜像，不自动生成 ``frr.tar``。需要交付镜像文件时执行::
 
-  docker save -o /home/alexan/program/test/route-ovs/devices/route/frr.tar \
+  docker save -o /home/alexan/program/test/lwns/devices/route/frr.tar \
     alpine/frr:latest
 
 需要生成项目约定的 ``frr.tar.xz`` 时，再使用宿主机的 ``xz`` 压缩::
 
-  xz -T0 -k /home/alexan/program/test/route-ovs/devices/route/frr.tar
+  xz -T0 -k /home/alexan/program/test/lwns/devices/route/frr.tar
 
 ``-k`` 保留原始 ``frr.tar``。同名 ``frr.tar.xz`` 已存在时，xz 会拒绝覆盖，
 应先核对并处理旧交付文件，再执行压缩。
 
 在实验主机加载未压缩或压缩的归档，例如::
 
-  docker load -i /home/alexan/program/test/route-ovs/devices/route/frr.tar
+  docker load -i /home/alexan/program/test/lwns/devices/route/frr.tar
 
 加载后核对 ``script/frr_init.sh`` 中的 ``CONTAINER_IMG`` 是否指向
 ``alpine/frr:latest``。若使用其他标签，需同步调整镜像标签和启动配置。

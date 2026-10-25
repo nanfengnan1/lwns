@@ -1,5 +1,5 @@
 # Optional HTTPS entry point. Run on the same Linux host as lab_server.py.
-# Set ROUTE_OVS_SITE to the actual LAN IP or hostname before starting Caddy.
+# Set LWNS_SITE to the actual LAN IP or hostname before starting Caddy.
 {
 	servers {
 		protocols h1 h2 h3
@@ -8,7 +8,7 @@
 	skip_install_trust
 }
 
-{$ROUTE_OVS_SITE:localhost} {
+{$LWNS_SITE:localhost} {
 	# Internal CA: automatic certificate issuance and renewal.
 	# For mkcert: replace this with tls /absolute/server.pem /absolute/server-key.pem
 	# For a public domain with ACME: remove this line (see workbench-https.rst).
@@ -21,7 +21,7 @@
 		respond "Capture data requires an SSH tunnel" 403
 	}
 	handle {
-		reverse_proxy {$ROUTE_OVS_UPSTREAM:127.0.0.1:8090} {
+		reverse_proxy {$LWNS_UPSTREAM:127.0.0.1:8090} {
 			# Preserve Host/Origin. Caddy supplies trusted X-Forwarded-* headers.
 			# Keep uploads streaming: no request_buffers or short body timeout.
 			stream_close_delay 5m

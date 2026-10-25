@@ -77,6 +77,8 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   await importExample();
   await waitFor('document.querySelectorAll(".topology-node").length===5');
   await waitFor('document.querySelector(".brand-mark")?.naturalWidth > 0');
+  assert.equal(await evaluate('document.querySelector(".brand b").textContent'),'lwns');
+  assert.equal(await evaluate('document.title'),'lwns · Linux Web Network Simulator');
   assert.equal(await evaluate('document.querySelector(".brand-mark").alt'),'草原狼头像');
   assert.equal(await evaluate('document.querySelector(".brand").textContent.includes(">")'),false,'brand must not render stray markup');
   assert.equal(await evaluate('fetch(document.querySelector("link[rel=icon]").href).then(async response=>response.ok&&(await response.text()).includes("草原狼"))'),true,'steppe wolf favicon is served');

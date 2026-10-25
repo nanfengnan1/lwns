@@ -6,7 +6,7 @@
 
 .. code-block:: text
 
-   route-ovs/
+   lwns/
    ├── devices/
    │   ├── route/           # FRR 镜像归档
    │   ├── switch/          # 交换设备资源目录

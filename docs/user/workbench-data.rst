@@ -1,6 +1,8 @@
 实验保存、备份与恢复
 ========================================
 
+从旧名称升级后，原数据目录可能继续保留；备份前以后台启动日志显示的实际路径为准，见 :ref:`lwns-upgrade`。
+
 当前已实现服务器上的新建、打开、保存和关闭项目；“保存项目”统一保存拓扑、画布及受支持设备的运行配置，包括 FRR 和已导入的 ``.rov`` 设备定义。**完整项目包导入、导出仍在讨论，尚未实现**；
 不能把现有“导出拓扑 JSON”当作包含全部设备文件和镜像的完整备份。
 
@@ -114,13 +116,13 @@ FRR、主机和交换机的区别
 项目文件写在服务器上；浏览器所在的 Windows 电脑仅负责交互。生产入口与后端同机，
 开发代理默认指向同机 ``127.0.0.1:8090``。切换服务器后显示该服务器自己的项目列表。
 
-先确认实际数据目录：源码启动默认为项目根目录的 ``.route-ovs-labs``，目录包安装默认为
-``/var/lib/route-ovs``。自定义目录以启动参数 ``--data-dir`` 或目录包配置中的
-``ROUTE_OVS_DATA_DIR`` 为准。下面用源码默认目录说明内部结构，两种安装形式的内部结构相同：
+先确认实际数据目录：源码启动默认为项目根目录的 ``.lwns-labs``，目录包安装默认为
+``/var/lib/lwns``。自定义目录以启动参数 ``--data-dir`` 或目录包配置中的
+``LWNS_DATA_DIR`` 为准。下面用源码默认目录说明内部结构，两种安装形式的内部结构相同：
 
 .. code-block:: text
 
-   .route-ovs-labs/
+   .lwns-labs/
      <实验ID>.json                 # 拓扑、运行状态、更新时间
      devices/<实验ID>/<设备ID>/
        config-meta.json
@@ -176,17 +178,17 @@ JSON 适合分享拓扑及已同步的 FRR 启动文本，但不包含 ``daemons
 3. 等待镜像导入、构建和上传结束，停止使用该数据目录的后端。
 4. 在项目根目录备份数据。例如默认目录可执行::
 
-     sudo tar -czf "$HOME/route-ovs-data-$(date +%Y%m%d-%H%M%S).tar.gz" .route-ovs-labs
+     sudo tar -czf "$HOME/lwns-data-$(date +%Y%m%d-%H%M%S).tar.gz" .lwns-labs
 
-   目录包使用默认数据目录时，改用下面的命令；归档顶层目录名为 ``route-ovs``::
+   目录包使用默认数据目录时，改用下面的命令；归档顶层目录名为 ``lwns``::
 
-     sudo tar -C /var/lib -czf "$HOME/route-ovs-data-$(date +%Y%m%d-%H%M%S).tar.gz" route-ovs
+     sudo tar -C /var/lib -czf "$HOME/lwns-data-$(date +%Y%m%d-%H%M%S).tar.gz" lwns
 
    两条命令按实际安装形式选择其一。使用自定义数据目录时，改为对该目录归档。
    备份文件应放在数据目录外；服务配置和 Token 不在数据目录内，需要时另外保存配置。
 5. 记录实际使用的镜像及平台。需要离线搬迁镜像时，对用到的标签执行 ``docker save``，例如::
 
-     sudo docker save -o route-ovs-images.tar alpine/frr:latest alpine/vpcs:latest
+     sudo docker save -o lwns-images.tar alpine/frr:latest alpine/vpcs:latest
 
    自定义设备镜像也要加入实际清单。仅记住 ``latest`` 标签无法保证重新拉取到相同镜像内容。
 
@@ -200,21 +202,21 @@ JSON 适合分享拓扑及已同步的 FRR 启动文本，但不包含 ``daemons
 先按 :doc:`workbench-start` 准备目标后端，保持目标后端停止。
 将备份复制到目标机器后，使用一个 **全新空目录** 恢复；以下命令不覆盖已有数据目录::
 
-  sudo mkdir /srv/route-ovs-restored
-  sudo tar -xzf /实际路径/route-ovs-data-时间.tar.gz -C /srv/route-ovs-restored
-  sudo docker load -i /实际路径/route-ovs-images.tar
+  sudo mkdir /srv/lwns-restored
+  sudo tar -xzf /实际路径/lwns-data-时间.tar.gz -C /srv/lwns-restored
+  sudo docker load -i /实际路径/lwns-images.tar
 
 源码发布部署：在项目根目录启动，指向恢复后的数据::
 
   sudo .venv/bin/python script/python/lab_server.py \
     --host 0.0.0.0 --port 8090 \
-    --data-dir /srv/route-ovs-restored/.route-ovs-labs
+    --data-dir /srv/lwns-restored/.lwns-labs
 
 上面的 Python 命令对应源码默认数据目录生成的归档。
-目录包部署不运行此命令：编辑 ``/etc/route-ovs/route-ovs.env``，将 ``ROUTE_OVS_DATA_DIR``
-设为恢复后的实际目录，再执行 ``sudo systemctl start route-ovs-web``。
-采用本页目录包备份命令时，恢复目录为 ``/srv/route-ovs-restored/route-ovs``；
-采用源码备份命令时为 ``/srv/route-ovs-restored/.route-ovs-labs``，与目标安装形式无关。
+目录包部署不运行此命令：编辑 ``/etc/lwns/lwns.env``，将 ``LWNS_DATA_DIR``
+设为恢复后的实际目录，再执行 ``sudo systemctl start lwns-web``。
+采用本页目录包备份命令时，恢复目录为 ``/srv/lwns-restored/lwns``；
+采用源码备份命令时为 ``/srv/lwns-restored/.lwns-labs``，与目标安装形式无关。
 如果归档内目录名不同，请相应修改参数。
 ``mkdir`` 提示目录已存在时，换用新的空目录或先核对其用途，不要直接覆盖。
 如果目标已具有完全相同的镜像，可以省略 ``docker load``。
@@ -234,4 +236,4 @@ JSON 适合分享拓扑及已同步的 FRR 启动文本，但不包含 ``daemons
 * VPCS/Linux 主机、VPP 和任意厂商设备的通用运行配置保存。
 
 以上待办记录在仓库 ``agent.md`` 的讨论方案及任务列表中，不能作为当前可用功能操作。
-实验项目命名与重命名已实现，操作见 :ref:`workbench-edit`；软件名称仍为 route-ovs。
+实验项目命名与重命名已实现，操作见 :ref:`workbench-edit`；软件名称仍为 lwns。

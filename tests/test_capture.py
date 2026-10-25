@@ -192,10 +192,25 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
 
 
 class LauncherTests(unittest.TestCase):
+    def test_rebrand_keeps_legacy_links_and_connection_settings(self):
+        url = "route-ovs://configure?server=http%3A%2F%2Fhost%3A8090"
+        self.assertEqual(launcher.parse_uri(url), launcher.parse_uri(url.replace("route-ovs:", "lwns:")))
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {"LOCALAPPDATA": temporary, "XDG_CONFIG_HOME": temporary}):
+            root = Path(temporary)
+            legacy = root / "route-ovs/capture-client.json"
+            legacy.parent.mkdir()
+            data = {"version": 1, "connections": {"http://host:8090": {"username": "test-user"}}}
+            launcher.save_config(legacy, data)
+            self.assertEqual(launcher.config_path(), legacy)
+            self.assertEqual(launcher.load_config(launcher.config_path()), data)
+            current = root / "lwns/capture-client.json"
+            launcher.save_config(current, {"version": 1, "connections": {}})
+            self.assertEqual(launcher.config_path(), current)
+
     def test_configure_uri_has_no_ticket_or_arbitrary_command(self):
-        self.assertEqual(launcher.parse_uri("route-ovs://configure?server=http%3A%2F%2Fhost%3A8090"), ("http://host:8090", None))
+        self.assertEqual(launcher.parse_uri("lwns://configure?server=http%3A%2F%2Fhost%3A8090"), ("http://host:8090", None))
         with self.assertRaises(ValueError):
-            launcher.parse_uri("route-ovs://configure?server=http://host&command=calc")
+            launcher.parse_uri("lwns://configure?server=http://host&command=calc")
 
     def test_capture_path_is_unique_local_and_used_with_live_display(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -240,9 +255,9 @@ class LauncherTests(unittest.TestCase):
 
     def test_uri_rejects_unknown_commands_credentials_and_repeated_arguments(self):
         token = "A" * 43
-        server, ticket = launcher.parse_uri("route-ovs://capture?server=http%3A%2F%2Fexample.test%3A8090&ticket=" + token)
+        server, ticket = launcher.parse_uri("lwns://capture?server=http%3A%2F%2Fexample.test%3A8090&ticket=" + token)
         self.assertEqual((server, ticket), ("http://example.test:8090", token))
-        for uri in ("route-ovs://exec?server=http://x&ticket=" + token, "route-ovs://capture?server=http://x&ticket=x", "route-ovs://capture?server=http://x&ticket=" + token + "&command=cmd", "route-ovs://capture?server=http://x&server=http://y&ticket=" + token, "route-ovs://capture?server=http://user:pass@x&ticket=" + token):
+        for uri in ("lwns://exec?server=http://x&ticket=" + token, "lwns://capture?server=http://x&ticket=x", "lwns://capture?server=http://x&ticket=" + token + "&command=cmd", "lwns://capture?server=http://x&server=http://y&ticket=" + token, "lwns://capture?server=http://user:pass@x&ticket=" + token):
             with self.assertRaises(ValueError): launcher.parse_uri(uri)
 
     def test_connection_settings_never_store_password_and_command_uses_detected_prefix(self):

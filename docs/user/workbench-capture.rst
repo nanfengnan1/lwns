@@ -50,12 +50,12 @@ Windows
 
   powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 
-下载包包含 ``route-ovs-capture.exe`` 时不需要安装 Python。
+下载包包含 ``lwns-capture.exe`` 时不需要安装 Python。
 如果包内只有源码，需要 Python 3.10+；安装脚本无法找到 Python 时可指定::
 
   powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Python C:\Python310\python.exe
 
-将示例路径替换为实际 Python 路径。安装只注册当前 Windows 用户的 ``route-ovs://`` 协议。
+将示例路径替换为实际 Python 路径。安装只注册当前 Windows 用户的 ``lwns://`` 协议。
 使用浏览器的用户必须与安装启动器的用户一致。
 
 Linux 桌面
@@ -68,7 +68,7 @@ Linux 桌面
 
 在桌面登录用户下安装，不需要 sudo。没有 Tk 时可先在终端配置；默认安装路径下的命令为::
 
-  python3 ~/.local/share/route-ovs-capture/launcher.py --configure http://宿主机IP:8090 --terminal
+  python3 ~/.local/share/lwns-capture/launcher.py --configure http://宿主机IP:8090 --terminal
 
 如果设置了 ``XDG_DATA_HOME``，请改用安装脚本显示的实际路径。
 
@@ -149,11 +149,11 @@ Linux 桌面
 
 .. code-block:: text
 
-   Windows：%USERPROFILE%\route-ovs\captures\<时间-端点-随机标识>\capture.pcapng
-   Linux：  ~/route-ovs/captures/<时间-端点-随机标识>/capture.pcapng
+   Windows：%USERPROFILE%\lwns\captures\<时间-端点-随机标识>\capture.pcapng
+   Linux：  ~/lwns/captures/<时间-端点-随机标识>/capture.pcapng
 
 例如浏览器运行在 Windows 上时，文件保存在该 Windows 用户目录下，
-不在 Linux 宿主机的 ``.route-ovs-labs`` 中，也不在容器内。宿主机后端不保留副本。
+不在 Linux 宿主机的 ``.lwns-labs`` 中，也不在容器内。宿主机后端不保留副本。
 
 Web 会话显示启动时指定的完整路径，并提供“复制路径”。复制后可在本机文件管理器打开所在目录，
 或在 Wireshark 使用“文件 → 打开”读取。只有成功开始抓包后才会写入文件；
@@ -193,10 +193,10 @@ Web 会话显示启动时指定的完整路径，并提供“复制路径”。�
 
 .. code-block:: text
 
-   Windows：%LOCALAPPDATA%\route-ovs\capture-client.json
-            %LOCALAPPDATA%\route-ovs\capture-launcher.log
-   Linux：  ~/.config/route-ovs/capture-client.json
-            ~/.config/route-ovs/capture-launcher.log
+   Windows：%LOCALAPPDATA%\lwns\capture-client.json
+            %LOCALAPPDATA%\lwns\capture-launcher.log
+   Linux：  ~/.config/lwns/capture-client.json
+            ~/.config/lwns/capture-launcher.log
 
 Linux 设置了 ``XDG_CONFIG_HOME`` 时，以该目录替代 ``~/.config``。
 排错时结合本地错误弹窗、日志和 Web 会话错误；本地日志不是报文文件。

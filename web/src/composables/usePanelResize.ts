@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, type Ref } from "vue";
 
-const STORAGE_KEY = "route-ovs-panel-height";
+const STORAGE_KEY = "lwns-panel-height";
 const DEFAULT_HEIGHT = 174;
 const MIN_HEIGHT = 96;
 
@@ -112,7 +112,10 @@ export function usePanelResize(panel: Ref<HTMLElement | undefined>) {
   }
   onMounted(() => {
     try {
-      const stored = Number(localStorage.getItem(STORAGE_KEY));
+      const stored = Number(
+        localStorage.getItem(STORAGE_KEY) ??
+          localStorage.getItem("route-ovs-panel-height"),
+      );
       if (Number.isFinite(stored) && stored >= MIN_HEIGHT)
         preferredHeight.value = stored;
     } catch {

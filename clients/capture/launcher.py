@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native route-ovs URL handler. SSH credentials remain in local Wireshark."""
+"""Native lwns URL handler. SSH credentials remain in local Wireshark."""
 import argparse
 import base64
 import json
@@ -22,11 +22,12 @@ CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 def config_path():
     root = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) if os.name == "nt" else Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
-    return root / "route-ovs" / "capture-client.json"
+    current, legacy = root / "lwns" / "capture-client.json", root / "route-ovs" / "capture-client.json"
+    return legacy if not current.exists() and legacy.is_file() else current
 
 
 def default_capture_dir():
-    return str(Path.home() / "route-ovs" / "captures")
+    return str(Path.home() / "lwns" / "captures")
 
 
 def diagnostic(message):
@@ -52,7 +53,7 @@ def parse_uri(value):
     if len(value) > 4096:
         raise ValueError("抓包链接过长")
     parsed = urlsplit(value)
-    if parsed.scheme != "route-ovs" or parsed.netloc not in ("capture", "configure") or parsed.path not in ("", "/") or parsed.fragment:
+    if parsed.scheme not in ("lwns", "route-ovs") or parsed.netloc not in ("capture", "configure") or parsed.path not in ("", "/") or parsed.fragment:
         raise ValueError("不支持的抓包链接")
     fields = parse_qs(parsed.query, strict_parsing=True)
     expected = {"server", "ticket"} if parsed.netloc == "capture" else {"server"}
@@ -145,7 +146,7 @@ def configure(server, previous=None, terminal=False):
                 defaults[key] = value
         defaults["autostart"] = input("认证已配置好，自动开始抓包？[y/N]: ").lower() == "y"
     elif os.name == "nt":
-        with tempfile.TemporaryDirectory(prefix="route-ovs-setup-") as folder:
+        with tempfile.TemporaryDirectory(prefix="lwns-setup-") as folder:
             source, output = Path(folder) / "input.json", Path(folder) / "output.json"
             source.write_text(json.dumps(defaults, ensure_ascii=True), encoding="utf-8")
             result = subprocess.run(["powershell.exe", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "configure.ps1"),
@@ -159,7 +160,7 @@ def configure(server, previous=None, terminal=False):
             from tkinter import ttk
         except ImportError as exc:
             raise ValueError("请安装 python3-tk，或在终端运行 launcher.py --configure 后端地址 --terminal") from exc
-        window = tk.Tk(); window.title("route-ovs SSH 抓包连接")
+        window = tk.Tk(); window.title("lwns SSH 抓包连接")
         frame = ttk.Frame(window, padding=20); frame.pack(fill="both", expand=True)
         ttk.Label(frame, text="仅为你信任的工作台配置 SSH 连接：\n" + server, wraplength=520).grid(row=0, column=0, columnspan=2, sticky="w", pady=8)
         fields = {}
@@ -242,7 +243,7 @@ def claim(server, ticket):
 
 def remote_command(port, ticket):
     source = base64.b64encode((ROOT / "remote_relay.py").read_bytes()).decode("ascii")
-    code = "import base64;exec(compile(base64.b64decode('" + source + "'),'<route-ovs-relay>','exec'))"
+    code = "import base64;exec(compile(base64.b64decode('" + source + "'),'<lwns-relay>','exec'))"
     return shlex.join(["python3", "-c", code, "--port", str(port), "--ticket", ticket])
 
 
@@ -350,10 +351,10 @@ def notify_error(message):
         print(message, file=sys.stderr)
     if os.name == "nt":
         import ctypes
-        ctypes.windll.user32.MessageBoxW(None, message, "route-ovs 抓包", 0x10)
+        ctypes.windll.user32.MessageBoxW(None, message, "lwns 抓包", 0x10)
     elif os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
         if shutil.which("zenity"):
-            subprocess.run(["zenity", "--error", "--title=route-ovs 抓包", "--text=" + message])
+            subprocess.run(["zenity", "--error", "--title=lwns 抓包", "--text=" + message])
 
 
 def main():
@@ -368,9 +369,9 @@ def main():
         # inheriting PyInstaller's extraction directory as a DLL search path.
         import ctypes
         ctypes.windll.kernel32.SetDllDirectoryW(None)
-    if len(sys.argv) > 1 and sys.argv[1].startswith("route-ovs:") and len(sys.argv) != 2:
+    if len(sys.argv) > 1 and sys.argv[1].startswith(("lwns:", "route-ovs:")) and len(sys.argv) != 2:
         raise ValueError("协议启动只接受一个完整抓包链接")
-    parser = argparse.ArgumentParser(description="route-ovs 本地 Wireshark 启动器")
+    parser = argparse.ArgumentParser(description="lwns 本地 Wireshark 启动器")
     parser.add_argument("url", nargs="?")
     parser.add_argument("--configure", metavar="SERVER")
     parser.add_argument("--terminal", action="store_true", help="在终端配置，适用于无 Tk 的 Linux")

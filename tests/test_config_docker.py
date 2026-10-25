@@ -1,6 +1,6 @@
 """Opt-in Linux/root integration: FRR + veth + Web API + restore.
 
-ROUTE_OVS_CONFIG_DOCKER_TESTS=1 sudo -E .venv/bin/python -m unittest discover -s tests -p test_config_docker.py -v
+LWNS_CONFIG_DOCKER_TESTS=1 sudo -E .venv/bin/python -m unittest discover -s tests -p test_config_docker.py -v
 """
 import os
 from pathlib import Path
@@ -17,7 +17,7 @@ from lab_server import create_app
 
 class ConfigDockerFixture:
     def __init__(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="route-ovs-config-test-", dir=os.environ.get("ROUTE_OVS_TEST_DIR"))
+        self.temp = tempfile.TemporaryDirectory(prefix="lwns-config-test-", dir=os.environ.get("LWNS_TEST_DIR"))
         self.manager = LabManager(self.temp.name)
         self.lab_id = "config-test-" + uuid.uuid4().hex[:10]
         self.manager.authorize()
@@ -39,7 +39,7 @@ class ConfigDockerFixture:
             self.temp.cleanup()
 
 
-@unittest.skipUnless(os.environ.get("ROUTE_OVS_CONFIG_DOCKER_TESTS") == "1", "opt-in real FRR/veth persistence test")
+@unittest.skipUnless(os.environ.get("LWNS_CONFIG_DOCKER_TESTS") == "1", "opt-in real FRR/veth persistence test")
 class ConfigDockerTests(unittest.TestCase):
     def test_real_frr_api_save_cleanup_redeploy_and_connectivity(self):
         fixture = ConfigDockerFixture()

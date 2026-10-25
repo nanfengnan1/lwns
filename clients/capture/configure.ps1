@@ -4,7 +4,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 $settings = Get-Content -LiteralPath $InputPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'route-ovs · 本地抓包设置'
+$form.Text = 'lwns · 本地抓包设置'
 $form.ClientSize = New-Object System.Drawing.Size(740, 570)
 $form.StartPosition = 'CenterScreen'
 $form.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)

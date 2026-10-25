@@ -335,7 +335,7 @@ async function copyPath(path: string) {
             <h4>文件保存在本机</h4>
             <p>
               新版默认保存到当前用户主目录下的
-              <code>route-ovs/captures</code>，每次使用独立子目录及
+              <code>lwns/captures</code>，每次使用独立子目录及
               <code>capture.pcapng</code>。可在本地设置中修改目录。
             </p>
             <p>

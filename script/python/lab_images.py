@@ -471,7 +471,7 @@ class ImageService:
         self.log(job_id, "下载归档：" + public_url(url) + "\n")
         opener = build_opener(ArchiveRedirects())
         received, previous, started = 0, 0, time.monotonic()
-        with opener.open(Request(url, headers={"User-Agent": "route-ovs-image-manager"}), timeout=30) as response, path.open("wb") as output:
+        with opener.open(Request(url, headers={"User-Agent": "lwns-image-manager"}), timeout=30) as response, path.open("wb") as output:
             length = response.headers.get("Content-Length")
             if length and int(length) > self.max_upload:
                 raise LabError("远程归档超过上传大小限制")

@@ -1,4 +1,4 @@
-"""Terminal auth tests; opt-in Docker integration: ROUTE_OVS_DOCKER_TESTS=1.
+"""Terminal auth tests; opt-in Docker integration: LWNS_DOCKER_TESTS=1.
 
 Integration creates only uniquely named, labelled network=none test containers.
 It uses Docker group access without exercising root-only veth deployment.
@@ -81,7 +81,7 @@ class TerminalAuthTests(unittest.TestCase):
 class DockerFixture:
     """Disposable fixtures shared by real WS and browser checks."""
     def __init__(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="route-ovs-terminal-test-")
+        self.temp = tempfile.TemporaryDirectory(prefix="lwns-terminal-test-")
         self.manager = LabManager(self.temp.name)
         self.lab_id = "term-test-" + uuid.uuid4().hex[:12]
         self.created = []
@@ -133,7 +133,7 @@ class DockerFixture:
         self.temp.cleanup()
 
 
-@unittest.skipUnless(os.environ.get("ROUTE_OVS_DOCKER_TESTS") == "1", "opt-in real Docker test")
+@unittest.skipUnless(os.environ.get("LWNS_DOCKER_TESTS") == "1", "opt-in real Docker test")
 class DockerTerminalTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.fixture = DockerFixture()

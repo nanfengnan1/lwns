@@ -71,17 +71,17 @@ Ubuntu/Debian 首次安装可执行（使用官方 stable 软件源）::
 **目录包发布部署**：后端运行环境和页面已经包含在包内。首次安装时可以在解压目录执行::
 
    sudo bash install.sh --listen 127.0.0.1 --port 8090 --trusted-proxy 127.0.0.1
-   sudo systemctl start route-ovs-web
+   sudo systemctl start lwns-web
 
-已有目录包安装时，编辑 ``/etc/route-ovs/route-ovs.env`` 的以下三个值，保留 Token 和数据目录：
+已有目录包安装时，编辑 ``/etc/lwns/lwns.env`` 的以下三个值，保留 Token 和数据目录：
 
 .. code-block:: bash
 
-   ROUTE_OVS_HOST=127.0.0.1
-   ROUTE_OVS_PORT=8090
-   ROUTE_OVS_TRUSTED_PROXY=127.0.0.1
+   LWNS_HOST=127.0.0.1
+   LWNS_PORT=8090
+   LWNS_TRUSTED_PROXY=127.0.0.1
 
-修改后执行 ``sudo systemctl restart route-ovs-web``。不要另外启动源码 Python 后端。
+修改后执行 ``sudo systemctl restart lwns-web``。不要另外启动源码 Python 后端。
 已有源码进程切换参数时先结束旧进程，再用相同数据目录启动。
 重启会断开当前网页终端连接，设备容器不会因此被清理。
 
@@ -91,13 +91,13 @@ Ubuntu/Debian 首次安装可执行（使用官方 stable 软件源）::
 
 将源码的 ``config/Caddyfile`` 或目录包内的 ``Caddyfile.example`` 内容合入
 ``/etc/caddy/Caddyfile``；已有站点时保留原站点配置。
-将站点行 ``{$ROUTE_OVS_SITE:localhost}`` 改为实际 IP，例如 ``10.8.126.103``。
-后端默认 ``127.0.0.1:8090``；使用其他端口时同步修改 ``ROUTE_OVS_UPSTREAM`` 占位符或默认值。
+将站点行 ``{$LWNS_SITE:localhost}`` 改为实际 IP，例如 ``10.8.126.103``。
+后端默认 ``127.0.0.1:8090``；使用其他端口时同步修改 ``LWNS_UPSTREAM`` 占位符或默认值。
 这两个变量也可通过 Caddy 服务的环境配置设置；普通终端的 export 不会自动传入 systemd 服务。
 
 对于首次安装、尚无自定义站点的主机，先备份默认配置::
 
-   sudo cp -an /etc/caddy/Caddyfile /etc/caddy/Caddyfile.before-route-ovs
+   sudo cp -an /etc/caddy/Caddyfile /etc/caddy/Caddyfile.before-lwns
 
 源码发布：在项目根目录复制配置::
 
@@ -205,18 +205,18 @@ HTTP/3 配置启用不保证所有浏览器立即使用 h3，UDP 可达性、自
 
    sudo install -m 644 \
      /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt \
-     /tmp/route-ovs-root.crt
+     /tmp/lwns-root.crt
 
 Windows 客户端在 PowerShell 中执行（替换 SSH 用户和地址）：
 
 .. code-block:: powershell
 
-   scp alexan@10.8.126.103:/tmp/route-ovs-root.crt .
-   certutil -user -addstore Root .\route-ovs-root.crt
+   scp alexan@10.8.126.103:/tmp/lwns-root.crt .
+   certutil -user -addstore Root .\lwns-root.crt
 
 Debian/Ubuntu 客户端取得相同根证书后执行::
 
-   sudo install -m 644 route-ovs-root.crt /usr/local/share/ca-certificates/route-ovs.crt
+   sudo install -m 644 lwns-root.crt /usr/local/share/ca-certificates/lwns.crt
    sudo update-ca-certificates
 
 重启浏览器后访问 ``https://10.8.126.103``，输入后端令牌。
@@ -233,31 +233,31 @@ Firefox 若使用独立证书库，还需在“证书颁发机构”中导入相
 
 .. code-block:: powershell
 
-   New-Item -ItemType Directory -Force .route-ovs-tls
-   Set-Location .route-ovs-tls
+   New-Item -ItemType Directory -Force .lwns-tls
+   Set-Location .lwns-tls
    mkcert -install
-   mkcert -cert-file route-ovs.pem -key-file route-ovs-key.pem 10.8.126.103
-   Copy-Item (Join-Path (mkcert -CAROOT) 'rootCA.pem') .\route-ovs-root.crt
-   scp .\route-ovs.pem .\route-ovs-key.pem alexan@10.8.126.103:/tmp/
+   mkcert -cert-file lwns.pem -key-file lwns-key.pem 10.8.126.103
+   Copy-Item (Join-Path (mkcert -CAROOT) 'rootCA.pem') .\lwns-root.crt
+   scp .\lwns.pem .\lwns-key.pem alexan@10.8.126.103:/tmp/
 
 证书必须包含实际访问的 IP 或域名；只有 Common Name 不够。
 若添加域名，可把域名一起传给 mkcert，并配置 DNS/hosts，使其解析到服务器。
-项目已忽略 ``.route-ovs-tls/``；生成的私钥不要提交到版本库。
+项目已忽略 ``.lwns-tls/``；生成的私钥不要提交到版本库。
 
 在 Linux 服务器上安装服务器证书和私钥::
 
-   sudo install -d -m 750 -o root -g caddy /etc/caddy/route-ovs-certs
-   sudo install -m 644 -o root -g caddy /tmp/route-ovs.pem /etc/caddy/route-ovs-certs/server.pem
-   sudo install -m 640 -o root -g caddy /tmp/route-ovs-key.pem /etc/caddy/route-ovs-certs/server-key.pem
-   rm /tmp/route-ovs.pem /tmp/route-ovs-key.pem
+   sudo install -d -m 750 -o root -g caddy /etc/caddy/lwns-certs
+   sudo install -m 644 -o root -g caddy /tmp/lwns.pem /etc/caddy/lwns-certs/server.pem
+   sudo install -m 640 -o root -g caddy /tmp/lwns-key.pem /etc/caddy/lwns-certs/server-key.pem
+   rm /tmp/lwns.pem /tmp/lwns-key.pem
 
 将 Caddyfile 的 ``tls internal`` 替换为：
 
 .. code-block:: text
 
-   tls /etc/caddy/route-ovs-certs/server.pem /etc/caddy/route-ovs-certs/server-key.pem
+   tls /etc/caddy/lwns-certs/server.pem /etc/caddy/lwns-certs/server-key.pem
 
-校验并重载 Caddy。其他客户端安装上面导出的 ``route-ovs-root.crt``，方法与前节相同。
+校验并重载 Caddy。其他客户端安装上面导出的 ``lwns-root.crt``，方法与前节相同。
 mkcert 生成的服务器证书由你手动续期：重新签发、替换文件、重载 Caddy；Caddy 不会自动续期手动加载的文件。
 使用公网域名时也可删除 ``tls internal``，由 Caddy 自动申请公共 CA 证书；需要满足该 CA 的
 域名验证条件，见 `Caddy 自动 HTTPS <https://caddyserver.com/docs/automatic-https>`_。
@@ -285,7 +285,7 @@ Chrome/Chromium 对 QUIC 自定义 CA 有额外限制：导入本地 CA、普通
 
 例如使用 mkcert 方案时，在 Linux 上计算服务器证书的 SPKI（不要在旧 PowerShell 中执行二进制管道）::
 
-   openssl x509 -in /etc/caddy/route-ovs-certs/server.pem -pubkey -noout \
+   openssl x509 -in /etc/caddy/lwns-certs/server.pem -pubkey -noout \
      | openssl pkey -pubin -outform DER \
      | openssl dgst -sha256 -binary | openssl base64 -A
 
@@ -294,7 +294,7 @@ Chrome/Chromium 对 QUIC 自定义 CA 有额外限制：导入本地 CA、普通
 .. code-block:: powershell
 
    & 'C:\Program Files\Google\Chrome\Application\chrome.exe' `
-     --user-data-dir="$env:TEMP\route-ovs-h3-test" `
+     --user-data-dir="$env:TEMP\lwns-h3-test" `
      --no-proxy-server `
      --enable-quic `
      --ignore-certificate-errors-spki-list='替换为上述SPKI值' `
@@ -304,16 +304,16 @@ Chrome/Chromium 对 QUIC 自定义 CA 有额外限制：导入本地 CA、普通
 这个独立配置用于协议验收；修改启动参数前先关闭该测试窗口。
 服务器更换密钥后 SPKI 需重新计算，Caddy 自动续期也可能更换密钥。
 日常使用保留 HTTP/2 回退；若希望浏览器默认自动使用 HTTP/3，可采用满足浏览器信任策略的公共 CA 证书。
-支持 HTTP/3 的 curl 也可使用 ``--http3-only --cacert route-ovs-root.crt`` 验证；
+支持 HTTP/3 的 curl 也可使用 ``--http3-only --cacert lwns-root.crt`` 验证；
 先用 ``curl --version`` 确认包含 HTTP3。普通发行版 curl 可能只有 HTTP2。
 
 HTTP/2 可用以下命令验证（在根证书文件所在客户端执行）::
 
-   curl --http2 --cacert route-ovs-root.crt -I https://10.8.126.103/
+   curl --http2 --cacert lwns-root.crt -I https://10.8.126.103/
 
 静态压缩验证需请求实际 JS 文件，并查看 ``Content-Encoding: gzip``、``Cache-Control`` 和 ``Vary``::
 
-   curl --cacert route-ovs-root.crt -H 'Accept-Encoding: gzip' -D - -o /dev/null \
+   curl --cacert lwns-root.crt -H 'Accept-Encoding: gzip' -D - -o /dev/null \
      https://10.8.126.103/assets/实际构建的文件名.js
 
 确认管理 API 正常、终端能连接和调整尺寸、上传完成后能提交镜像任务。

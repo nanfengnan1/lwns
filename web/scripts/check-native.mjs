@@ -4,7 +4,7 @@ try {
   await import("rolldown");
 } catch (error) {
   console.error(
-    `[route-ovs] 无法加载 ${process.platform}/${process.arch} 的前端原生依赖。`,
+    `[lwns] 无法加载 ${process.platform}/${process.arch} 的前端原生依赖。`,
   );
   console.error(
     "Windows 和 Linux 不能直接复用 node_modules。请在要运行 Vite 的系统中，" +

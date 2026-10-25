@@ -16,7 +16,7 @@ Web 工作台
       │ WebSocket：设备终端
       ▼
    Linux Docker 宿主机：Python 后端（root）
-      ├── .route-ovs-labs：实验和共享配置
+      ├── .lwns-labs：实验和共享配置
       ├── FRR 容器 ── veth ── Linux bridge / 主机容器
       └── tcpdump：按选定端点抓包
 

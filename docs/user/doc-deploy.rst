@@ -25,8 +25,8 @@ HTML 与 PDF
 构建后的 HTML 首页是 ``docs/html/index.html``，可直接在浏览器中打开。
 两本 PDF 分别位于：
 
-* ``docs/pdf/user/route-ovs-user.pdf``。
-* ``docs/pdf/developer/route-ovs-dev.pdf``。
+* ``docs/pdf/user/lwns-user.pdf``。
+* ``docs/pdf/developer/lwns-dev.pdf``。
 
 PDF 只有在成功执行 ``make pdf`` 或 ``make all`` 后才会生成。
 构建环境和命令见开发指南“文档构建与版本发布”章节。

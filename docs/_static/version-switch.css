@@ -1,8 +1,8 @@
 /* A compact Read the Docs-style footer, contained by the mobile sidebar too. */
-.wy-nav-side.route-ovs-has-version-switch .wy-side-scroll {
+.wy-nav-side.lwns-has-version-switch .wy-side-scroll {
   height: calc(100% - 44px);
 }
-.route-ovs-version-switch {
+.lwns-version-switch {
   position: absolute;
   bottom: 0;
   left: 0;
@@ -14,7 +14,7 @@
   z-index: 3;
   font-size: 13px;
 }
-.route-ovs-version-switch > summary {
+.lwns-version-switch > summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -25,11 +25,11 @@
   cursor: pointer;
   user-select: none;
 }
-.route-ovs-version-switch > summary::-webkit-details-marker { display: none; }
-.route-ovs-version-switch > summary:hover,
-.route-ovs-version-switch[open] > summary { background: #302d2d; }
-.route-ovs-version-label { color: #c6c3c3; white-space: nowrap; }
-.route-ovs-version-current {
+.lwns-version-switch > summary::-webkit-details-marker { display: none; }
+.lwns-version-switch > summary:hover,
+.lwns-version-switch[open] > summary { background: #302d2d; }
+.lwns-version-label { color: #c6c3c3; white-space: nowrap; }
+.lwns-version-current {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -38,7 +38,7 @@
   font-weight: 600;
   overflow-wrap: anywhere;
 }
-.route-ovs-version-arrow {
+.lwns-version-arrow {
   flex-shrink: 0;
   width: 7px;
   height: 7px;
@@ -46,8 +46,8 @@
   border-right: 1.5px solid currentColor;
   transform: rotate(-45deg);
 }
-.route-ovs-version-switch[open] .route-ovs-version-arrow { transform: rotate(135deg); }
-.route-ovs-version-panel {
+.lwns-version-switch[open] .lwns-version-arrow { transform: rotate(135deg); }
+.lwns-version-panel {
   position: absolute;
   bottom: 100%;
   left: 0;
@@ -59,8 +59,8 @@
   border-top: 1px solid #454242;
   box-shadow: 0 -5px 16px #0003;
 }
-.route-ovs-version-heading { padding: 3px 16px 9px; color: #aaa; font-size: 12px; }
-.route-ovs-version-panel a.route-ovs-version-option {
+.lwns-version-heading { padding: 3px 16px 9px; color: #aaa; font-size: 12px; }
+.lwns-version-panel a.lwns-version-option {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -70,8 +70,8 @@
   text-decoration: none;
   overflow-wrap: anywhere;
 }
-.route-ovs-version-panel a.route-ovs-version-option:hover { background: #3b3838; }
-.route-ovs-version-panel a.is-current { color: #64cc98; background: #323a35; }
-.route-ovs-version-kind { flex-shrink: 0; font-size: 11px; color: #aaa; }
-.route-ovs-version-switch > summary:focus-visible,
-.route-ovs-version-panel a:focus-visible { outline: 2px solid #79c5ed; outline-offset: -3px; }
+.lwns-version-panel a.lwns-version-option:hover { background: #3b3838; }
+.lwns-version-panel a.is-current { color: #64cc98; background: #323a35; }
+.lwns-version-kind { flex-shrink: 0; font-size: 11px; color: #aaa; }
+.lwns-version-switch > summary:focus-visible,
+.lwns-version-panel a:focus-visible { outline: 2px solid #79c5ed; outline-offset: -3px; }

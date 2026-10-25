@@ -37,7 +37,7 @@ from lab_images import ImageService, MAX_UPLOAD
 from lab_device_service import DevicePackageService
 from lab_capture import CaptureService
 from lab_static import StaticGZipMiddleware, WorkbenchStatic, is_static_path
-from lab_paths import default_data_dir, resource_root
+from lab_paths import default_data_dir, environment_setting, resource_root
 
 ROOT = resource_root()
 log = logging.getLogger(__name__)
@@ -190,9 +190,9 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
             with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
                 for name in ("launcher.py", "remote_relay.py", "configure.ps1", "install.ps1", "install.sh", "README.md"):
                     archive.write(folder / name, name)
-                if (folder / "dist" / "route-ovs-capture.exe").is_file():
-                    archive.write(folder / "dist" / "route-ovs-capture.exe", "route-ovs-capture.exe")
-            return Response(output.getvalue(), media_type="application/zip", headers={**HEADERS, "Content-Disposition": 'attachment; filename="route-ovs-capture-client.zip"'})
+                if (folder / "dist" / "lwns-capture.exe").is_file():
+                    archive.write(folder / "dist" / "lwns-capture.exe", "lwns-capture.exe")
+            return Response(output.getvalue(), media_type="application/zip", headers={**HEADERS, "Content-Disposition": 'attachment; filename="lwns-capture-client.zip"'})
         if method == "GET" and path == "/api/catalog":
             device_packages.snapshot(refresh=True)
             return respond(200, images.catalog() + device_packages.catalog())
@@ -394,7 +394,7 @@ def proxy_address(value):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="route-ovs Docker / veth 工作台（Python 3.10+）")
+    parser = argparse.ArgumentParser(description="lwns — Linux Web Network Simulator（Python 3.10+）")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8090)
     parser.add_argument("--data-dir", type=Path, default=default_data_dir())
@@ -407,13 +407,13 @@ def main():
     args = parser.parse_args()
     if args.max_image_upload_gib < 1:
         parser.error("--max-image-upload-gib 必须大于 0")
-    token = os.environ.get("ROUTE_OVS_TOKEN") or secrets.token_urlsafe(24)
+    token = environment_setting("TOKEN") or secrets.token_urlsafe(24)
     lock = acquire_lock(args.data_dir)
     try:
         manager = LabManager(args.data_dir, preview=args.preview, docker_socket=args.docker_socket)
         images = ImageService(manager, max_upload=args.max_image_upload_gib * 1024 ** 3)
         shown_host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
-        print("Route OVS 工作台: http://{}:{}/#token={}".format(shown_host, args.port, token), flush=True)
+        print("LWNS 工作台: http://{}:{}/#token={}".format(shown_host, args.port, token), flush=True)
         print("数据目录: " + str(manager.directory), flush=True)
         print("前端目录: " + str(args.web_dir), flush=True)
         print("访问令牌: " + token, flush=True)

@@ -41,17 +41,17 @@ def main():
         subprocess.run(["npm", "--prefix", str(ROOT / "web"), "run", "build"], check=True)
     if not (ROOT / "web/dist/index.html").is_file():
         parser.error("Build web/dist before packaging.")
-    name = f"route-ovs-{args.version}-linux-{platform.machine()}"
+    name = f"lwns-{args.version}-linux-{platform.machine()}"
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     archive = output / (name + ".tar.gz")
     if archive.exists() or archive.with_suffix(archive.suffix + ".sha256").exists():
         parser.error("Release already exists; choose a new --version or --output.")
     # Build locally: Samba checkouts may not support the symlinks used by PyInstaller.
-    with tempfile.TemporaryDirectory(prefix="route-ovs-build-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="lwns-build-") as temporary:
         work = Path(temporary)
         command = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir",
-                   "--name", "route-ovs", "--distpath", str(work / "dist"),
+                   "--name", "lwns", "--distpath", str(work / "dist"),
                    "--workpath", str(work / "work"), "--specpath", str(work),
                    "--paths", str(ROOT / "script/python"),
                    "--collect-submodules", "uvicorn", "--collect-submodules", "websockets",
@@ -69,13 +69,13 @@ def main():
                        env={**os.environ, "PYINSTALLER_CONFIG_DIR": str(work / "cache")})
         package = work / name
         package.mkdir()
-        shutil.move(str(work / "dist/route-ovs"), package / "app")
+        shutil.move(str(work / "dist/lwns"), package / "app")
         for filename in ("run.sh", "uninstall.sh"):
             shutil.copy2(HERE / filename, package / "app" / filename)
             (package / "app" / filename).chmod(0o755)
         shutil.copy2(HERE / "install.sh", package / "install.sh")
         (package / "install.sh").chmod(0o755)
-        shutil.copy2(HERE / "route-ovs-web.service", package / "route-ovs-web.service")
+        shutil.copy2(HERE / "lwns-web.service", package / "lwns-web.service")
         shutil.copy2(ROOT / "config/Caddyfile", package / "Caddyfile.example")
         shutil.copy2(ROOT / "docs/user/workbench-install.rst", package / "INSTALL.rst")
         now = datetime.now(timezone.utc)

@@ -34,7 +34,7 @@ async function connect() {
   setToken(tokenInput.value);
   try {
     await lab.bootstrap();
-    sessionStorage.setItem("route-ovs-token", getToken());
+    sessionStorage.setItem("lwns-token", getToken());
     ui.accessOpen = false;
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : String(reason);
@@ -62,7 +62,7 @@ async function connect() {
         width="52"
         height="52"
       />
-      <span class="dialog-eyebrow">ROUTE OVS</span>
+      <span class="dialog-eyebrow">LWNS</span>
       <h2>连接实验主机</h2>
       <p>连接 {{ lab.serverHost }}，粘贴服务器启动时显示的访问令牌。</p>
       <input

@@ -24,15 +24,15 @@
 第一步：获取项目源码
 ----------------------------------------
 
-项目仓库：`nanfengnan1/route-ovs <https://github.com/nanfengnan1/route-ovs>`_。
+项目仓库：`nanfengnan1/lwns <https://github.com/nanfengnan1/lwns>`_。
 开发部署、源码发布部署和自行制作目录包，都从这里取得代码。
 
 在 **Linux 宿主机** 的普通用户终端执行，下面以 ``~/program/github`` 存放源码为例::
 
    mkdir -p ~/program/github
    cd ~/program/github
-   git clone --branch main https://github.com/nanfengnan1/route-ovs.git
-   cd route-ovs
+   git clone --branch main https://github.com/nanfengnan1/lwns.git
+   cd lwns
 
 HTTPS 克隆公开仓库不需要配置 GitHub SSH 私钥。若提示找不到 ``git``，先用发行版包管理器安装；
 Debian/Ubuntu 可运行 ``sudo apt-get update`` 和 ``sudo apt-get install git``，再执行上述命令。
@@ -44,7 +44,7 @@ Debian/Ubuntu 可运行 ``sudo apt-get update`` 和 ``sudo apt-get install git``
 看到上述文件后，当前位置就是后续命令所说的 **项目根目录**。
 已下载过源码的用户直接进入已有目录，不必再次 clone。
 
-不使用 Git 时，也可在仓库网页点击 **Code → Download ZIP**。解压后进入 ``route-ovs-main``，
+不使用 Git 时，也可在仓库网页点击 **Code → Download ZIP**。解压后进入 ``lwns-main``，
 该目录同样是项目根目录。这个 ZIP 是源码归档，需要安装依赖并按所选部署方式启动，
 不能当作 Docker 设备镜像上传到镜像管理。
 
@@ -56,8 +56,8 @@ Debian/Ubuntu 可运行 ``sudo apt-get update`` 和 ``sudo apt-get install git``
 另一种选择：获取 Linux 目录安装包
 ----------------------------------------
 
-安装包发布入口为 `GitHub Releases <https://github.com/nanfengnan1/route-ovs/releases>`_。
-有可用版本时，在其 **Assets** 中选择目标架构的 ``route-ovs-<版本>-linux-<架构>.tar.gz``
+安装包发布入口为 `GitHub Releases <https://github.com/nanfengnan1/lwns/releases>`_。
+有可用版本时，在其 **Assets** 中选择目标架构的 ``lwns-<版本>-linux-<架构>.tar.gz``
 及同名 ``.sha256``，两份文件都要下载。GitHub 自动生成的 **Source code (zip/tar.gz)**
 是源码归档，不是包含可执行程序的目录安装包。
 
@@ -137,7 +137,7 @@ VPCS 镜像也可从项目中的 Dockerfile 构建，见开发指南“镜像构
 实验目录
 ----------------------------------------
 
-源码启动默认写入项目根目录的 ``.route-ovs-labs``，目录包安装默认写入 ``/var/lib/route-ovs``。
+源码启动默认写入项目根目录的 ``.lwns-labs``，目录包安装默认写入 ``/var/lib/lwns``。
 可通过 ``--data-dir`` 或目录包配置指定其他位置。
 配置备份与迁移见 :doc:`workbench-data`。保持数据目录不变即可在后端重启后继续管理原实验。
 

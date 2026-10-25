@@ -74,10 +74,10 @@ Caddy 入口拒绝 PCAP stream 路径，数据通道继续通过 SSH。证书制
 上传测试需要本机 Docker info 可访问；仅登记、传输并删除临时上传，不提交 docker load。
 在独立测试虚拟环境中执行::
 
-   python3 -m venv /tmp/route-ovs-caddy-venv
-   /tmp/route-ovs-caddy-venv/bin/pip install -r tests/requirements.txt 'httpx[http2]' aioquic
+   python3 -m venv /tmp/lwns-caddy-venv
+   /tmp/lwns-caddy-venv/bin/pip install -r tests/requirements.txt 'httpx[http2]' aioquic
    npm --prefix web run build
-   /tmp/route-ovs-caddy-venv/bin/python tests/check_caddy.py --caddy /实际路径/caddy --http3
+   /tmp/lwns-caddy-venv/bin/python tests/check_caddy.py --caddy /实际路径/caddy --http3
 
 该检查启动真实后端与 Caddy，验证 HTTP/2、通过证书校验的 HTTP/3 请求、gzip/304、
 认证/跨站拒绝、流式上传、WSS 及公开 PCAP 路径拦截，最后停止进程并删除测试目录。
@@ -112,7 +112,7 @@ Vite 默认只监听本机；如需局域网开发访问，可显式传入 ``-- 
 若 Python 后端在其他主机或端口，将 ``web/.env.example`` 复制为
 ``web/.env.local`` 并修改::
 
-  ROUTE_OVS_API_TARGET=http://Linux主机IP:8090
+  LWNS_API_TARGET=http://Linux主机IP:8090
 
 修改后重启 Vite。该设置仅供开发服务器代理使用，生产环境前端与后端使用同一源。
 令牌由访问页面时输入，不写入环境文件或前端构建产物。
@@ -265,7 +265,7 @@ HTTP 接口沿用 Bearer/Origin 校验，接口响应与忙状态不能共享可
 为中间区域保留 460px；窗口变宽后恢复首选值。收起时保留 36px 操作栏，
 内容使用 v-show 保留，避免丢失属性草稿和设备库子目录状态。
 拖动结束、失焦或卸载时释放捕获及光标。布局状态不参与拓扑脏标记及部署编辑锁。
-``route-ovs-sidebars`` 本地存储读取时校验类型和范围；存储失效不影响当前会话操作。
+``lwns-sidebars`` 本地存储读取时校验类型和范围；存储失效不影响当前会话操作。
 
 ``ProjectNameDialog.vue`` 共用新建和重命名表单；新建先校验名称，再确认是否放弃原草稿。
 名称支持中文、首尾去空白、非空及最多 80 字符，项目身份仍由 ID 决定。
@@ -374,13 +374,13 @@ HTTP 接口沿用 Bearer、同源与请求大小校验：
 * ``PATCH /api/device-packages/{id}``：``{name}`` 修改库显示名；``DELETE`` 删除未引用的定义。
 
 ``lab_device_cli.py`` 与 Web 使用同一套包模块，源码入口为
-``python3 script/python/lab_server.py device ...``，冻结入口为 ``route-ovs device ...``。
+``python3 script/python/lab_server.py device ...``，冻结入口为 ``lwns device ...``。
 pack/inspect 在导入 Web 依赖前分流，能够独立运行；import 使用与后端相同的数据目录锁，
 防止 CLI 与运行中的服务竞争清单。目录包启动脚本将 device 子命令直接交给可执行文件。
 
 测试入口为 ``test_device_packages.py``、``test_device_package_api.py`` 和
 ``test_device_runtime.py``；真实 Docker 恢复测试需要显式启用
-``ROUTE_OVS_DEVICE_DOCKER_TESTS=1`` 并以 root 执行 ``test_device_runtime_docker.py``。
+``LWNS_DEVICE_DOCKER_TESTS=1`` 并以 root 执行 ``test_device_runtime_docker.py``。
 浏览器验证使用 ``serve_device_package_fixture.py`` 的模拟 Docker，
 ``check_device_packages.cjs`` 覆盖制作、下载、导入、名称、引用保护及设备库同步。
 
@@ -472,7 +472,7 @@ API 提供 ``can_delete``，执行删除前重新同步并校验标签与归属 
 running，stderr 单独保存有界日志。数据块最大 64 KiB，按客户端读取速度提供背压。
 停止、流断开、目标变化和后端生命周期结束时终止进程组；清理实验同步关闭其抓包会话。
 
-``clients/capture/launcher.py`` 注册后的入口接收完整 ``route-ovs://capture`` 链接；``route-ovs://configure?server=...`` 只打开本地连接设置。
+``clients/capture/launcher.py`` 注册后的入口接收完整 ``lwns://capture`` 链接；``lwns://configure?server=...`` 只打开本地连接设置。
 本地配置按可信后端 origin 隔离，URL 只携带启动凭证；SSH 目标由用户本地配置确定。
 通过 tshark 检测实际接口名及偏好前缀（Windows 的 ``sshdump.exe`` 可对应 ``sshdump_exe``），
 复用 Wireshark Profile，以进程参数覆盖捕获命令，不读取/转存 Profile 密码。
@@ -485,7 +485,7 @@ stdin EOF/SIGHUP/SIGTERM 结束转发。后台 root 权限不需要授予 SSH �
 
 Windows 使用 PowerShell Forms 配置和当前用户协议注册；Linux 使用 Tk/终端配置及 desktop entry。
 可在 Windows 通过 PyInstaller 构建独立 exe，具体命令见 ``clients/capture/README.md``。
-下载 API 使用固定文件清单打包，存在 ``clients/capture/dist/route-ovs-capture.exe`` 时附带独立版；
+下载 API 使用固定文件清单打包，存在 ``clients/capture/dist/lwns-capture.exe`` 时附带独立版；
 发布源码之外还需保留 ``clients/capture``，不能只复制 Python 和前端目录。
 
 ``stores/captures.ts`` / ``CaptureManager.vue`` 管理端点选择、BPF、启动 URI、环境提示及状态轮询。
@@ -515,8 +515,8 @@ Linux 目录包由 ``packaging/linux/build.py`` 构建，PyInstaller onedir 内�
 固定清单中的模板、示例与抓包客户端脚本。构建配置、系统目录安装、升级与卸载见
 :doc:`../user/workbench-install`。构建输出 ``release/`` 和构建虚拟环境 ``.venv-build/`` 不提交。
 
-``lab_paths.py`` 统一源码/冻结程序的资源路径；冻结程序默认数据目录为 ``/var/lib/route-ovs``，
-源码默认仍为 ``.route-ovs-labs``。所有 Docker、终端和抓包子进程使用 ``host_environment()``
+``lab_paths.py`` 统一源码/冻结程序的资源路径；冻结程序默认数据目录为 ``/var/lib/lwns``，
+源码默认仍为 ``.lwns-labs``。所有 Docker、终端和抓包子进程使用 ``host_environment()``
 恢复宿主机动态库路径，避免 PyInstaller 的 LD_LIBRARY_PATH 影响系统命令。
 测试使用 ``test_packaging.py`` 以及 ``check_linux_package.py <归档路径>``；后者在临时根目录
 验收真实打包程序和安装脚本，不替换正在运行的系统服务。版本包采用 BUILD_ID 目录，配置和数据不随程序替换。
@@ -567,13 +567,13 @@ Linux、Docker 和 root 权限要求保持不变，使用方法见 :doc:`../user
 以及中文命名、取消、空白校验、保存与改名时保留未保存属性。
 两个浏览器脚本都应连接独立的设计模式后端，不使用日常实验数据。例如先构建前端，然后运行::
 
-  ROUTE_OVS_TOKEN=layout-browser-check .venv/bin/python script/python/lab_server.py \
-    --preview --port 8097 --data-dir /tmp/route-ovs-layout-check
+  LWNS_TOKEN=layout-browser-check .venv/bin/python script/python/lab_server.py \
+    --preview --port 8097 --data-dir /tmp/lwns-layout-check
 
 本例数据目录必须是全新空目录。在已开启远程调试端口的专用 Chromium 测试实例上运行::
 
   node tests/check_sidebar_projects.cjs http://127.0.0.1:9348 \
-    'http://127.0.0.1:8097/#token=layout-browser-check' /tmp/route-ovs-layout-results
+    'http://127.0.0.1:8097/#token=layout-browser-check' /tmp/lwns-layout-results
 
 脚本使用 Node.js 22+，创建并删除自己的测试项目，输出断言结果和截图。
 ``web/tests/layout.test.ts`` / ``web/tests/project-name.test.ts`` 覆盖布局存储和命名状态；
@@ -617,7 +617,7 @@ Docker 终端测试。浏览器终端测试可先运行 ``tests/serve_terminal_f
 部分失败和权限/归属边界；``web/tests/configs.test.ts`` 验证保存后保留终端、
 更新草稿及拒绝过期响应。真实 FRR/veth 测试需要 Linux root::
 
-  sudo env ROUTE_OVS_CONFIG_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_config_docker.py' -v
+  sudo env LWNS_CONFIG_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_config_docker.py' -v
 
 浏览器完整流程测试使用独立临时数据目录，不修改现有实验::
 
@@ -634,12 +634,12 @@ Docker 终端测试。浏览器终端测试可先运行 ``tests/serve_terminal_f
 Docker 拒绝归档时的错误提示和临时文件回收。
 仅验证真实 tar 上传与 URL 加载（无需 registry 镜像）可执行::
 
-  PYTHONPATH=tests ROUTE_OVS_IMAGE_DOCKER_TESTS=1 .venv/bin/python -m unittest test_images_docker.ImageDockerTests.test_tar_upload_and_url_load_directly -v
+  PYTHONPATH=tests LWNS_IMAGE_DOCKER_TESTS=1 .venv/bin/python -m unittest test_images_docker.ImageDockerTests.test_tar_upload_and_url_load_directly -v
 
 真实镜像测试使用随机标签、临时文件和本机临时仓库，不推送到外部仓库；
 需要可访问 Docker，且本机已存在 ``registry:2``::
 
-  ROUTE_OVS_IMAGE_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_images_docker.py' -v
+  LWNS_IMAGE_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_images_docker.py' -v
 
 浏览器测试使用 ``tests/serve_image_fixture.py --large-library --metadata /tmp/image-check/fixture.json``，
 它只向测试目录注入 200 张模拟设备卡片，并为真实导入准备隔离归档。
@@ -673,7 +673,7 @@ Docker 拒绝归档时的错误提示和临时文件回收。
 回环限制、下载认证以及本地启动器输入边界；前端 ``captures.test.ts`` 覆盖链接内容和异步状态隔离。
 真实 veth 抓包测试在 root/Linux 环境显式运行::
 
-  sudo env ROUTE_OVS_CAPTURE_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_capture_docker.py' -v
+  sudo env LWNS_CAPTURE_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p 'test_capture_docker.py' -v
 
 它创建两个独立 Linux 容器，分别抓取两端 ICMP 请求/回复，验证 BPF 和进程回收。
 普通用户转发验证可先以 root 启动独立 ``serve_capture_fixture.py --metadata /tmp/capture-check/fixture.json``

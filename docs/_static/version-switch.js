@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const htmlRoot = new URL("../", document.currentScript.src);
-  const config = window.ROUTE_OVS_DOC_VERSION || {};
+  const config = window.LWNS_DOC_VERSION || window.ROUTE_OVS_DOC_VERSION || {};
   const catalogURL = new URL((config.archiveBase || "../versions/") + "catalog.js", htmlRoot);
   let page = decodeURIComponent(window.location.pathname.slice(htmlRoot.pathname.length));
   if (!page || page.endsWith("/")) page += "index.html";
@@ -11,33 +11,33 @@
     const sidebar = document.querySelector(".wy-nav-side");
     if (!sidebar) return;
     const box = document.createElement("details");
-    box.className = "route-ovs-version-switch";
+    box.className = "lwns-version-switch";
     const summary = document.createElement("summary");
     summary.setAttribute("aria-label", "选择文档版本");
     const label = document.createElement("span");
-    label.className = "route-ovs-version-label";
+    label.className = "lwns-version-label";
     label.textContent = "文档版本";
     const pageVersion = window.DOCUMENTATION_OPTIONS && window.DOCUMENTATION_OPTIONS.VERSION;
     const activeVersion = (config.archived ? config.version : pageVersion) || config.version || "当前版本";
     const value = document.createElement("span");
-    value.className = "route-ovs-version-current";
+    value.className = "lwns-version-current";
     value.textContent = activeVersion;
     const arrow = document.createElement("span");
-    arrow.className = "route-ovs-version-arrow";
+    arrow.className = "lwns-version-arrow";
     arrow.setAttribute("aria-hidden", "true");
     value.appendChild(arrow);
     summary.append(label, value);
     const panel = document.createElement("nav");
-    panel.className = "route-ovs-version-panel";
+    panel.className = "lwns-version-panel";
     panel.setAttribute("aria-label", "可选文档版本");
     const heading = document.createElement("div");
-    heading.className = "route-ovs-version-heading";
+    heading.className = "lwns-version-heading";
     heading.textContent = "版本";
     panel.appendChild(heading);
     function add(version, kind, destination, selected) {
       const link = document.createElement("a");
       link.href = destination;
-      link.className = "route-ovs-version-option";
+      link.className = "lwns-version-option";
       if (selected) {
         link.classList.add("is-current");
         link.setAttribute("aria-current", "true");
@@ -45,13 +45,13 @@
       const name = document.createElement("span");
       name.textContent = version;
       const badge = document.createElement("span");
-      badge.className = "route-ovs-version-kind";
+      badge.className = "lwns-version-kind";
       badge.textContent = kind + (selected ? " ✓" : "");
       link.append(name, badge);
       panel.appendChild(link);
     }
     if (!config.archived) add(activeVersion, "当前构建", window.location.href, true);
-    const records = window.ROUTE_OVS_DOC_VERSIONS || [];
+    const records = window.LWNS_DOC_VERSIONS || window.ROUTE_OVS_DOC_VERSIONS || [];
     records.forEach(function (record) {
       const targetPage = record.pages.includes(page) ? page : "index.html";
       const target = new URL(encodeURIComponent(record.version) + "/html/" + targetPage, catalogURL);
@@ -70,7 +70,7 @@
         summary.focus();
       }
     });
-    sidebar.classList.add("route-ovs-has-version-switch");
+    sidebar.classList.add("lwns-has-version-switch");
     sidebar.appendChild(box);
   }
   function load() {

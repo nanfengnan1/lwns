@@ -17,9 +17,9 @@ if [[ -n $root ]]; then
 else
     ((EUID == 0)) || die 'Run with sudo.'
 fi
-prefix=$root/opt/route-ovs
-unit=$root/etc/systemd/system/route-ovs-web.service
-command=$root/usr/local/bin/route-ovs
+prefix=$root/opt/lwns
+unit=$root/etc/systemd/system/lwns-web.service
+command=$root/usr/local/bin/lwns
 for location in "$prefix" "${unit%/*}" "${command%/*}"; do
     cursor=$location
     while [[ $cursor != / ]]; do
@@ -30,7 +30,7 @@ done
 [[ -f $prefix/.directory-install-v1 ]] || die 'Not a directory-package installation.'
 [[ ! -L $unit ]] || die 'Service file is a symlink.'
 if [[ -e $unit ]]; then
-    grep -Fxq '# Managed by route-ovs directory installer v1' "$unit" || die 'Unmanaged service file.'
+    grep -Fxq '# Managed by lwns directory installer v1' "$unit" || die 'Unmanaged service file.'
     if [[ -z $root && $systemd == 0 ]]; then
         die 'A systemd service is registered; omit --no-systemd so it is stopped and disabled.'
     fi
@@ -39,7 +39,7 @@ if [[ -e $command || -L $command ]]; then
     [[ -L $command && $(readlink -- "$command") == "$prefix/current/run.sh" ]] || die 'Unmanaged command.'
 fi
 if ((systemd)) && [[ -e $unit ]]; then
-    systemctl disable --now route-ovs-web.service
+    systemctl disable --now lwns-web.service
 fi
 [[ ! -L $command ]] || rm -- "$command"
 if [[ -e $unit ]]; then rm -- "$unit"; fi

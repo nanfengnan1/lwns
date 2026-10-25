@@ -19,6 +19,8 @@ http.createServer(async (req,res) => {
     if (req.headers.authorization !== 'Bearer capture-ui-check') return json({error:'unauthorized'},401);
     let body = ''; for await (const chunk of req) body += chunk;
     if (pathname === '/api/bootstrap') return json({catalog,environment,labs:[{id:topology.id,name:topology.name,nodes:2,phase:'running'}],example:topology});
+    if (pathname === '/api/labs') return json([{id:topology.id,name:topology.name,nodes:2,phase:'running'}]);
+    if (pathname === '/api/labs/' + topology.id + '/open') return json({topology,runtime,busy:false});
     if (pathname === '/api/environment') return json(environment);
     if (pathname === '/api/capture/capabilities') return json({available:true,error:'',max_sessions:8,max_duration:3600});
     if (pathname === '/api/labs/' + topology.id) return json({topology,runtime,busy:false});
@@ -34,7 +36,7 @@ http.createServer(async (req,res) => {
     return json({error:'unknown fixture API'},404);
   }
   if (pathname === '/test/ready' && req.method === 'POST') {
-    const session=sessions[0]; session.state='ready';session.client={status:'launched',manual_auth:true,output_file:'C:\\Users\\Example\\route-ovs\\captures\\20261023-PC2-eth0\\capture.pcapng'};return json({ok:true});
+    const session=sessions[0]; session.state='ready';session.client={status:'launched',manual_auth:true,output_file:'C:\\Users\\Example\\lwns\\captures\\20261023-PC2-eth0\\capture.pcapng'};return json({ok:true});
   }
   if (pathname === '/test/connect' && req.method === 'POST') {
     const session=sessions[0]; session.state='running';session.bytes=4096;return json({ok:true});

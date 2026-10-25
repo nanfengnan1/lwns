@@ -27,7 +27,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--port", type=int, default=8106)
 parser.add_argument("--host", default="127.0.0.1", help="Bind address for this isolated FakeHost fixture")
 args = parser.parse_args()
-with tempfile.TemporaryDirectory(prefix="route-ovs-canvas-") as directory:
+with tempfile.TemporaryDirectory(prefix="lwns-canvas-") as directory:
     host = CanvasHost()
     manager = CanvasManager(directory, runner=host)
     images = ImageService(manager, command=host.command)

@@ -39,8 +39,8 @@ pdf:
 	$(MAKE) latex
 	$(MAKE) -C "$(PDFBUILDDIR)" all-pdf
 	mkdir -p "$(PDFDIR)/user" "$(PDFDIR)/developer"
-	cp "$(PDFBUILDDIR)/route-ovs-user.pdf" "$(PDFDIR)/user/route-ovs-user.pdf"
-	cp "$(PDFBUILDDIR)/route-ovs-dev.pdf" "$(PDFDIR)/developer/route-ovs-dev.pdf"
+	cp "$(PDFBUILDDIR)/lwns-user.pdf" "$(PDFDIR)/user/lwns-user.pdf"
+	cp "$(PDFBUILDDIR)/lwns-dev.pdf" "$(PDFDIR)/developer/lwns-dev.pdf"
 	$(PYTHON) $(VERSION_TOOL) record-pdf
 
 all: html pdf

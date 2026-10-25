@@ -1,6 +1,6 @@
 """Opt-in .rov image preparation using an existing base and isolated tags only.
 
-ROUTE_OVS_DEVICE_PACKAGE_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p test_device_package_docker.py -v
+LWNS_DEVICE_PACKAGE_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p test_device_package_docker.py -v
 No containers or networks are created; the existing base tag is never changed.
 """
 import copy
@@ -20,11 +20,11 @@ from lab_device_service import DevicePackageService
 from test_device_packages import descriptor
 
 
-@unittest.skipUnless(os.environ.get("ROUTE_OVS_DEVICE_PACKAGE_DOCKER_TESTS") == "1",
+@unittest.skipUnless(os.environ.get("LWNS_DEVICE_PACKAGE_DOCKER_TESTS") == "1",
                      "opt-in real .rov image export/load/build test")
 class DevicePackageDockerTests(unittest.TestCase):
     def test_local_export_offline_import_recipe_build_and_cli_import(self):
-        with tempfile.TemporaryDirectory(prefix="route-ovs-package-docker-", dir=os.environ.get("ROUTE_OVS_TEST_DIR")) as directory:
+        with tempfile.TemporaryDirectory(prefix="lwns-package-docker-", dir=os.environ.get("LWNS_TEST_DIR")) as directory:
             root = Path(directory)
             manager = LabManager(root / "data")
             service = DevicePackageService(manager)
@@ -35,8 +35,8 @@ class DevicePackageDockerTests(unittest.TestCase):
             base_id = base["Id"]
             initial_containers = set(manager.dock("ps", "-aq").split())
             token = uuid.uuid4().hex
-            archive_ref = "route-ovs-package-test:" + token + "-archive"
-            recipe_ref = "route-ovs-package-test:" + token + "-recipe"
+            archive_ref = "lwns-package-test:" + token + "-archive"
+            recipe_ref = "lwns-package-test:" + token + "-recipe"
             owned = []
 
             def require_missing(reference):

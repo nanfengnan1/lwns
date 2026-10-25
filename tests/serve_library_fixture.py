@@ -8,7 +8,7 @@ from test_images import ImageHost, ImageService, LabManager, create_app
 parser = argparse.ArgumentParser()
 parser.add_argument("--port", type=int, default=8107)
 args = parser.parse_args()
-with tempfile.TemporaryDirectory(prefix="route-ovs-library-") as directory:
+with tempfile.TemporaryDirectory(prefix="lwns-library-") as directory:
     host = ImageHost()
     manager = LabManager(directory, runner=host)
     images = ImageService(manager, command=host.command)

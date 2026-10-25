@@ -14,7 +14,7 @@ from lab_core import LabManager, LabError
 
 class CaptureDockerFixture:
     def __init__(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="route-ovs-capture-test-", dir=os.environ.get("ROUTE_OVS_TEST_DIR"))
+        self.temp = tempfile.TemporaryDirectory(prefix="lwns-capture-test-", dir=os.environ.get("LWNS_TEST_DIR"))
         self.manager = LabManager(self.temp.name)
         self.lab_id = "capture-test-" + uuid.uuid4().hex[:10]
         self.manager.authorize()
@@ -39,7 +39,7 @@ class CaptureDockerFixture:
             self.temp.cleanup()
 
 
-@unittest.skipUnless(os.environ.get("ROUTE_OVS_CAPTURE_DOCKER_TESTS") == "1", "opt-in real veth capture test")
+@unittest.skipUnless(os.environ.get("LWNS_CAPTURE_DOCKER_TESTS") == "1", "opt-in real veth capture test")
 class CaptureDockerTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_pcap_both_endpoints_filter_failure_and_stop(self):
         fixture = CaptureDockerFixture()

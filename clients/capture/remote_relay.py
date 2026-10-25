@@ -57,5 +57,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        print("route-ovs capture: " + str(error), file=sys.stderr)
+        print("lwns capture: " + str(error), file=sys.stderr)
         sys.exit(1)

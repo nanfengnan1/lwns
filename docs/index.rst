@@ -1,12 +1,12 @@
-route-ovs 文档
+lwns 文档
 ========================================
 
 .. container:: doc-lead
 
-   在浏览器中搭建、配置和验证网络实验。设备运行在 Linux Docker 宿主机，
+   lwns（Linux Web Network Simulator）让你在浏览器中搭建、配置和验证网络实验。设备运行在 Linux Docker 宿主机，
    用 veth 连接，通过网页终端操作，并可在本机 Wireshark 中查看报文。
 
-`源码仓库 <https://github.com/nanfengnan1/route-ovs>`_ · :ref:`下载与获取 <workbench-get-source>` ·
+`源码仓库 <https://github.com/nanfengnan1/lwns>`_ · :ref:`下载与获取 <workbench-get-source>` ·
 :doc:`故障排查 <user/troubleshooting>`
 
 .. container:: doc-cards

@@ -1,3 +1,4 @@
+.lwns-labs/
 .route-ovs-labs/
 __pycache__/
 *.pyc
@@ -9,6 +10,7 @@ web/.env.*.local
 clients/capture/dist/
 clients/capture/build/
 clients/capture/*.spec
+.lwns-tls/
 .route-ovs-tls/
 .venv-build/
 release/

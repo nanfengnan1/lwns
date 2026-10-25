@@ -52,7 +52,7 @@ describe("capture sessions", () => {
   });
   it("launch URL contains only the origin and a short-lived ticket", () => {
     const url = new URL(captureURL("http://host:8090", "ticket"));
-    expect(url.protocol).toBe("route-ovs:");
+    expect(url.protocol).toBe("lwns:");
     expect([...url.searchParams.keys()]).toEqual(["server", "ticket"]);
   });
   it("distinguishes manual authentication from a running capture", () => {
@@ -76,9 +76,7 @@ describe("capture sessions", () => {
       captures = useCapturesStore();
     lab.topology.id = "lab1";
     vi.mocked(api).mockResolvedValueOnce({ session, ticket: "test-ticket" });
-    expect(await captures.start("l1", "a", "icmp", 128)).toContain(
-      "route-ovs:",
-    );
+    expect(await captures.start("l1", "a", "icmp", 128)).toContain("lwns:");
     expect(captures.sessions[0]?.state).toBe("waiting");
     expect(api).toHaveBeenCalledWith("/api/labs/lab1/captures", "POST", {
       link: "l1",

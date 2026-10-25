@@ -24,6 +24,7 @@ from lab_device_schema import DESCRIPTOR_LIMIT, json_object, template_id, text, 
 MAX_PACKAGE = 16 * 1024 ** 3
 MAX_DOCKERFILE = 512 * 1024
 CHUNK = 1024 * 1024
+# The .rov v1 wire identifier is stable across the product rename to lwns.
 FORMAT = "route-ovs-device"
 
 

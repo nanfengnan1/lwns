@@ -28,7 +28,7 @@ class QuietFiles(SimpleHTTPRequestHandler):
 
 class ImageDockerFixture:
     def __init__(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="route-ovs-images-", dir=os.environ.get("ROUTE_OVS_TEST_DIR"))
+        self.temp = tempfile.TemporaryDirectory(prefix="lwns-images-", dir=os.environ.get("LWNS_TEST_DIR"))
         self.root = Path(self.temp.name)
         self.prefix = "rov-img-" + uuid.uuid4().hex[:12]
         self.manager = LabManager(self.root / "data")
@@ -95,7 +95,7 @@ class ImageDockerFixture:
         self.temp.cleanup()
 
 
-@unittest.skipUnless(os.environ.get("ROUTE_OVS_IMAGE_DOCKER_TESTS") == "1", "opt-in real image lifecycle test")
+@unittest.skipUnless(os.environ.get("LWNS_IMAGE_DOCKER_TESTS") == "1", "opt-in real image lifecycle test")
 class ImageDockerTests(unittest.TestCase):
     def test_existing_local_image_cannot_be_deleted_through_manager(self):
         fixture = ImageDockerFixture()

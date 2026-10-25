@@ -93,7 +93,7 @@ def main():
     parser.add_argument("--http3", action="store_true")
     args = parser.parse_args()
     processes = []
-    with tempfile.TemporaryDirectory(prefix="route-ovs-caddy-") as directory:
+    with tempfile.TemporaryDirectory(prefix="lwns-caddy-") as directory:
         temp = Path(directory)
         backend_port, tls_port = free_port(), free_port()
         base = f"https://127.0.0.1:{tls_port}"
@@ -103,8 +103,8 @@ def main():
             "\ttls internal", "\tbind 127.0.0.1\n\ttls internal")
         config_path = temp / "Caddyfile"
         config_path.write_text(config, encoding="utf-8")
-        env = {**os.environ, "ROUTE_OVS_SITE": base, "ROUTE_OVS_UPSTREAM": f"127.0.0.1:{backend_port}",
-               "ROUTE_OVS_TOKEN": "delivery-check", "XDG_DATA_HOME": str(temp / "data"),
+        env = {**os.environ, "LWNS_SITE": base, "LWNS_UPSTREAM": f"127.0.0.1:{backend_port}",
+               "LWNS_TOKEN": "delivery-check", "XDG_DATA_HOME": str(temp / "data"),
                "XDG_CONFIG_HOME": str(temp / "config")}
         with (temp / "processes.log").open("w+") as log:
             try:

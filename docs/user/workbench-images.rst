@@ -114,6 +114,6 @@ Web 镜像导入不自动解压，``.tar.gz``、``.tar.xz`` 等文件请先在�
   来源、镜像 ID 和是否存在，导入及删除成功后自动原子写入。使用 ``--data-dir`` 时随之改变。
 
 目录包安装时，运行清单位于所选数据目录的 ``images/registry.json``，默认根目录为
-``/var/lib/route-ovs``。只有模板和清单被管理，不会把整个 Docker 镜像库复制到项目目录。
+``/var/lib/lwns``。只有模板和清单被管理，不会把整个 Docker 镜像库复制到项目目录。
 
 下一步：按 :doc:`quickstart` 部署示例，或按 :doc:`workbench-editor` 自己组网。

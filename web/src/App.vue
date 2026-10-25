@@ -88,11 +88,16 @@ onMounted(async () => {
   }
   const url = new URL(location.href),
     fromURL = new URLSearchParams(url.hash.slice(1)).get("token");
-  setToken(fromURL || sessionStorage.getItem("route-ovs-token") || "");
+  setToken(
+    fromURL ||
+      sessionStorage.getItem("lwns-token") ||
+      sessionStorage.getItem("route-ovs-token") ||
+      "",
+  );
   if (fromURL) {
     url.hash = "";
     history.replaceState(null, "", url);
-    sessionStorage.setItem("route-ovs-token", getToken());
+    sessionStorage.setItem("lwns-token", getToken());
   }
   document.addEventListener("keydown", keydown);
   window.addEventListener("beforeunload", beforeUnload);
@@ -121,7 +126,11 @@ onBeforeUnmount(() => {
 
 <template>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Route OVS 工作台"
+    <a
+      class="brand"
+      href="/"
+      aria-label="lwns · Linux Web Network Simulator"
+      title="Linux Web Network Simulator"
       ><img
         class="brand-mark"
         :src="steppeWolf"
@@ -129,7 +138,7 @@ onBeforeUnmount(() => {
         width="36"
         height="36"
       />
-      <b>route<span>ovs</span></b
+      <b>lw<span>ns</span></b
       ><span class="brand-divider"></span
       ><span class="brand-caption">网络实验室</span></a
     >

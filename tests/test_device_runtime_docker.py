@@ -1,6 +1,6 @@
 """Opt-in root/Linux test of packaged native and FRR save/restore lifecycles.
 
-ROUTE_OVS_DEVICE_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p test_device_runtime_docker.py -v
+LWNS_DEVICE_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p test_device_runtime_docker.py -v
 Only uniquely named, isolated projects and their containers are created. Images
 are referenced by immutable ID and are never pulled, rebuilt, tagged or removed.
 """
@@ -18,10 +18,10 @@ from lab_device_packages import pack_device
 from test_device_runtime import descriptor, node
 
 
-@unittest.skipUnless(os.environ.get("ROUTE_OVS_DEVICE_DOCKER_TESTS") == "1", "opt-in real device package save/restore test")
+@unittest.skipUnless(os.environ.get("LWNS_DEVICE_DOCKER_TESTS") == "1", "opt-in real device package save/restore test")
 class DeviceRuntimeDockerTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="route-ovs-device-runtime-test-", dir=os.environ.get("ROUTE_OVS_TEST_DIR"))
+        self.temporary = tempfile.TemporaryDirectory(prefix="lwns-device-runtime-test-", dir=os.environ.get("LWNS_TEST_DIR"))
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
         self.manager = LabManager(self.directory / "data")

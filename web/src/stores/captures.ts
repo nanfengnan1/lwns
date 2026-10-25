@@ -35,12 +35,12 @@ export const captureActive = (session: CaptureSession) =>
   ["waiting", "ready", "starting", "running"].includes(session.state);
 export function captureURL(origin: string, ticket: string) {
   return (
-    "route-ovs://capture?" +
+    "lwns://capture?" +
     new URLSearchParams({ server: origin, ticket }).toString()
   );
 }
 export const configureCaptureURL = (origin: string) =>
-  "route-ovs://configure?" + new URLSearchParams({ server: origin }).toString();
+  "lwns://configure?" + new URLSearchParams({ server: origin }).toString();
 export function captureStatus(session: CaptureSession) {
   if (session.state === "ready" && session.client?.manual_auth)
     return "等待在 Wireshark 中认证";
@@ -146,7 +146,7 @@ export const useCapturesStore = defineStore("captures", () => {
     const url = URL.createObjectURL(await response.blob());
     const a = document.createElement("a");
     a.href = url;
-    a.download = "route-ovs-capture-client.zip";
+    a.download = "lwns-capture-client.zip";
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }

@@ -21,7 +21,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8110)
     args = parser.parse_args()
-    with tempfile.TemporaryDirectory(prefix="route-ovs-packages-browser-") as directory:
+    with tempfile.TemporaryDirectory(prefix="lwns-packages-browser-") as directory:
         host = PackageHost()
         manager = PackageManager(directory, runner=host)
         manager.authorize = lambda: None
