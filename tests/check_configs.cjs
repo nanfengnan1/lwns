@@ -1,3 +1,4 @@
+const { openSavedLab } = require('./browser_projects.cjs');
 /* Real Chromium + serve_config_fixture.py. Node 22+; isolated test lab only. */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -51,6 +52,7 @@ const [debugURL, appURL, outputDirectory] = process.argv.slice(2);
   await send('Emulation.setDeviceMetricsOverride', {width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false});
   try {
     await send('Page.navigate', {url: appURL});
+    await openSavedLab(evaluate, waitDOM, click);
     await waitDOM('document.querySelectorAll(".topology-node").length === 2');
     const bootstrap = await api('/api/bootstrap');
     const labId = bootstrap.labs[0].id;

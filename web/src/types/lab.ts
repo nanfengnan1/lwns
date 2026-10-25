@@ -90,7 +90,6 @@ export interface Bootstrap {
   catalog: DeviceTemplate[];
   environment: Environment;
   labs: LabSummary[];
-  example: Topology;
 }
 export interface CommandResult {
   code: number;

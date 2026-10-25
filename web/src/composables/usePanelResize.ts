@@ -26,10 +26,10 @@ export function usePanelResize(panel: Ref<HTMLElement | undefined>) {
     const root = panel.value,
       stage = root?.parentElement;
     const canvas = stage?.querySelector<HTMLElement>(".canvas-wrap");
-    const toolbarHeight = Array.from(
-      stage?.querySelectorAll<HTMLElement>(".lab-toolbar, .canvas-toolbar") ??
-        [],
-    ).reduce((sum, item) => sum + item.offsetHeight, 0);
+    // The layout tools and save/deploy buttons share one row inside this
+    // toolbar. Count its outer height once, including its horizontal scrollbar.
+    const toolbarHeight =
+      stage?.querySelector<HTMLElement>(".lab-toolbar")?.offsetHeight ?? 0;
     const tabs = root?.querySelector<HTMLElement>(".panel-tabs");
     const handle = root?.querySelector<HTMLElement>(".panel-resize-handle");
     if (!root || !stage || !canvas || !tabs || !handle) return;
@@ -37,7 +37,11 @@ export function usePanelResize(panel: Ref<HTMLElement | undefined>) {
       tabs.offsetHeight +
       parseFloat(getComputedStyle(handle).height) +
       parseFloat(getComputedStyle(root).borderTopWidth);
-    const canvasMinimum = parseFloat(getComputedStyle(canvas).minHeight) || 280;
+    const canvasStyle = getComputedStyle(canvas);
+    const canvasMinimum =
+      (parseFloat(canvasStyle.minHeight) || 280) +
+      (parseFloat(canvasStyle.marginTop) || 0) +
+      (parseFloat(canvasStyle.marginBottom) || 0);
     maxHeight.value = Math.max(
       MIN_HEIGHT,
       Math.floor(stage.clientHeight - toolbarHeight - canvasMinimum - chrome),
@@ -87,6 +91,10 @@ export function usePanelResize(panel: Ref<HTMLElement | undefined>) {
     persist();
   }
   function keyResize(event: KeyboardEvent) {
+    if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+    // ResizeObserver can run after a key event when the viewport has just
+    // changed. Refresh the limit before using End or adjusting the height.
+    measure();
     const values: Record<string, number> = {
       ArrowUp: height.value + 24,
       ArrowDown: height.value - 24,
@@ -112,7 +120,15 @@ export function usePanelResize(panel: Ref<HTMLElement | undefined>) {
     }
     measure();
     observer = new ResizeObserver(measure);
-    if (panel.value?.parentElement) observer.observe(panel.value.parentElement);
+    const stage = panel.value?.parentElement;
+    if (stage) {
+      observer.observe(stage);
+      // A title or scrollbar can change the toolbar without resizing the stage.
+      // Observing the outer toolbar also covers changes in its nested controls.
+      stage
+        .querySelectorAll(".lab-toolbar")
+        .forEach((toolbar) => observer!.observe(toolbar));
+    }
   });
   onBeforeUnmount(() => {
     endResize();

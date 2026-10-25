@@ -1,3 +1,4 @@
+const { openSavedLab } = require('./browser_projects.cjs');
 /* Chromium UI check against serve_capture_ui.cjs, simulated captures only. */
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
 const [debugURL, appURL, output] = process.argv.slice(2);
@@ -17,6 +18,7 @@ const [debugURL, appURL, output] = process.argv.slice(2);
   await send('Page.enable');await send('Runtime.enable');await send('Network.enable');await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   try{
     await send('Page.navigate',{url:appURL});
+    await openSavedLab(evaluate, wait, click);
     await wait('document.querySelectorAll(".topology-node").length === 2');
     assert.equal(requests.some(url=>/\/(DeviceTerminal|ImageManager|CaptureManager)-.*\.js/.test(url)),false);
     assert.equal(await evaluate('!!document.querySelector("#capture-manager")'),false);

@@ -1,3 +1,4 @@
+const { openSavedLab, experimentAction } = require('./browser_projects.cjs');
 /* Browser integration check using Chromium's DevTools protocol and Node 22+.
  * Use an isolated --preview data directory. This creates and deletes a test lab.
  * node tests/check_workbench.cjs http://127.0.0.1:9338 http://127.0.0.1:8097/#token=... OUTPUT_DIR
@@ -43,6 +44,20 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
     await send('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});
   };
   const screenshot=async filename=>{const shot=await send('Page.captureScreenshot');fs.writeFileSync(path.join(outputDirectory,filename),Buffer.from(shot.data,'base64'));};
+  const menuAction = selector => experimentAction(evaluate, waitFor, click, selector);
+  const importFile = async file => {
+    const doc = await send('DOM.getDocument');
+    const input = await send('DOM.querySelector', {nodeId:doc.root.nodeId,selector:'#import-file'});
+    await send('DOM.setFileInputFiles', {nodeId:input.nodeId,files:[path.resolve(file)]});
+    await waitFor('document.querySelector("#toast").textContent.includes("已导入")');
+  };
+  const importExample = () => importFile(path.join(__dirname,'../examples/basic-lab.json'));
+  const labList = async () => {
+    const url = new URL(appURL), token = new URLSearchParams(url.hash.slice(1)).get('token');
+    const response = await fetch(url.origin+'/api/labs',{headers:{Authorization:'Bearer '+token}});
+    assert.ok(response.ok); return response.json();
+  };
+
   await send('Page.enable');await send('Runtime.enable');await send('Network.enable');
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   const freshURL = new URL(appURL);
@@ -55,11 +70,16 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   await evaluate(`document.querySelector('#access-token').value=${JSON.stringify(accessToken)};document.querySelector('#access-token').dispatchEvent(new Event('input',{bubbles:true}))`);
   await click('#access-form button[type=submit]');
   await waitFor('!document.querySelector("#access-dialog").open');
+  await waitFor('document.querySelectorAll(".topology-node").length===0');
+  assert.equal(await evaluate('!!document.querySelector("#example") || !!document.querySelector("#empty-example")'),false,'no default experiment entry');
+  assert.equal(await evaluate('document.querySelector("#save-state").textContent.includes("有未保存修改")'),false,'empty startup is clean');
+  await screenshot('workbench-empty.png');
+  await importExample();
   await waitFor('document.querySelectorAll(".topology-node").length===5');
   await waitFor('document.querySelector(".brand-mark")?.naturalWidth > 0');
-  assert.equal(await evaluate('document.querySelector(".brand-mark").alt'),'北极熊头像');
+  assert.equal(await evaluate('document.querySelector(".brand-mark").alt'),'草原狼头像');
   assert.equal(await evaluate('document.querySelector(".brand").textContent.includes(">")'),false,'brand must not render stray markup');
-  assert.equal(await evaluate('fetch(document.querySelector("link[rel=icon]").href).then(async response=>response.ok&&(await response.text()).includes("北极熊"))'),true,'polar bear favicon is served');
+  assert.equal(await evaluate('fetch(document.querySelector("link[rel=icon]").href).then(async response=>response.ok&&(await response.text()).includes("草原狼"))'),true,'steppe wolf favicon is served');
   assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,'horizontal overflow');
   assert.equal(await evaluate('document.querySelector("#deploy").disabled'),true,'preview must disable deployment');
   await click('#refresh');
@@ -67,17 +87,19 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   await click('.topology-node[data-node=r1] .node-name');
   await evaluate('document.querySelector("#node-name").value="invalid name!";document.querySelector("#node-name").dispatchEvent(new Event("input",{bubbles:true}))');
   acceptNextDialog=false;
-  await click('#delete-current-lab');
+  await menuAction('#delete-current-lab');
   assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),5,'cancel deletion preserves unsaved lab');
   assert.equal(await evaluate('document.querySelector("#node-name").value'),'invalid name!','cancel preserves inspector draft');
-  await click('#delete-current-lab');
+  await menuAction('#delete-current-lab');
   await waitFor('document.querySelectorAll(".topology-node").length===0');
   assert.equal(deleteRequests,0,'discarding a draft does not call DELETE');
-  assert.equal(await evaluate('document.querySelector("#lab-select").selectedOptions[0].textContent'),'空白画布','deleted draft no longer appears as an unsaved experiment');
+  assert.ok(await evaluate('document.querySelector("#lab-name").textContent.includes("空白画布")'),'deleted draft returns to empty canvas');
   assert.equal(await evaluate('document.querySelector("#save-state").textContent'),'未保存','discard clears unsaved-change status');
+  await click('#menu-experiment');
   assert.equal(await evaluate('document.querySelector("#delete-current-lab").disabled'),true,'empty canvas is not a deletable draft');
+  await click('#menu-experiment');
   assert.equal(await evaluate('document.querySelector("#delete-lab").disabled'),true,'inspector deletion also reflects empty state');
-  await click('#new-lab');
+  await menuAction('#new-lab');
   await waitFor('document.querySelector("#project-name-dialog").open');
   await evaluate('document.querySelector("#project-name-input").value="待删除的新项目";document.querySelector("#project-name-input").dispatchEvent(new Event("input",{bubbles:true}))');
   await click('#confirm-project-name');
@@ -85,7 +107,7 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   await click('#delete-lab');
   await waitFor('document.querySelector("#delete-lab").disabled');
   assert.equal(deleteRequests,0,'inspector can discard a new unsaved experiment locally');
-  await click('#example');
+  await importExample();
   await waitFor('document.querySelectorAll(".topology-node").length===5');
   await screenshot('workbench.png');
 
@@ -183,6 +205,7 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   await click('#connect-tool'); await click('#select-tool');
   assert.equal(await evaluate('document.querySelectorAll("[data-resize]").length'),0);
 
+  await click('[data-category=host]');
   await click('.device-card.host');
   await waitFor('document.querySelectorAll(".topology-node").length===6');
   await evaluate('document.querySelector("#node-name").value="PC_TEST";document.querySelector("#node-name").dispatchEvent(new Event("input",{bubbles:true}))');
@@ -206,9 +229,9 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   await evaluate('document.querySelector("#node-name").value="PC_SAVED";document.querySelector("#node-name").dispatchEvent(new Event("input",{bubbles:true}))');
   await click('#save');
   await waitFor('document.querySelector("#save-state").textContent==="已保存"');
-  const savedId=await evaluate('document.querySelector("#lab-select").value');
+  const savedId=(await labList())[0].id;
   await send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:path.resolve(outputDirectory)});
-  await click('#export');
+  await menuAction('#export');
   const exported=path.join(outputDirectory,savedId+'.json');
   for(let i=0;i<50&&!fs.existsSync(exported);i++)await new Promise(resolve=>setTimeout(resolve,100));
   const saved=JSON.parse(fs.readFileSync(exported,'utf8'));
@@ -219,22 +242,19 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   assert.equal(saved.optimizeLinks,true);
   assert.equal(saved.annotations.length,1);
   assert.deepEqual(saved.annotations[0],{id:annotationId,text:'网段：10.10.1.0/24\nOSPF Area 0',...annotationPosition,fontSize:18,color:'#66521c',background:'#e8f1ff'});
-  assert.equal(await evaluate('[...document.querySelector("#lab-select").options].some(option=>option.value==="")'),false,'saved experiments do not show a phantom unsaved option');
-  const doc=await send('DOM.getDocument');
-  const input=await send('DOM.querySelector',{nodeId:doc.root.nodeId,selector:'#import-file'});
-  await send('DOM.setFileInputFiles',{nodeId:input.nodeId,files:[path.resolve(exported)]});
-  await waitFor('document.querySelector("#toast").textContent.includes("已导入")');
-  await click('#delete-current-lab');
+  assert.ok((await labList()).every(item=>item.id),'saved list has no phantom empty project');
+  await importFile(exported);
+  await menuAction('#delete-current-lab');
   await waitFor('document.querySelectorAll(".topology-node").length===0');
   assert.equal(deleteRequests,0,'discarding an imported same-ID draft preserves the saved experiment');
-  assert.equal(await evaluate(`!!document.querySelector('#lab-select option[value="${savedId}"]')`),true,'saved original stays in the list');
-  await evaluate(`document.querySelector('#lab-select').value=${JSON.stringify(savedId)};document.querySelector('#lab-select').dispatchEvent(new Event('change',{bubbles:true}))`);
+  assert.ok((await labList()).some(item=>item.id===savedId),'saved original stays in the list');
+  await openSavedLab(evaluate, waitFor, click, savedId);
   await waitFor('document.querySelectorAll(".topology-node").length===6');
   assert.deepEqual(await nodeBounds(),savedBounds,'saved original remains loadable after deleting its imported draft');
-  await send('DOM.setFileInputFiles',{nodeId:input.nodeId,files:[path.resolve(exported)]});
-  await waitFor('document.querySelector("#toast").textContent.includes("已导入")');
+  await importFile(exported);
   await click('#save');await waitFor('document.querySelector("#save-state").textContent==="已保存"');
   await send('Page.reload');
+  await openSavedLab(evaluate, waitFor, click, savedId);
   await waitFor('[...document.querySelectorAll(".node-name")].some(el=>el.textContent==="PC_SAVED")');
   assert.equal(await panelHeight(),preferredPanelHeight,'panel height survives reload');
   assert.equal(await evaluate('document.querySelectorAll(".edge").length'),5,'links survive reload');
@@ -246,12 +266,12 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   assert.equal(await evaluate('document.querySelectorAll(".topology-annotation").length'),0,'delete note only');
   assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),6);
 
-  // Delete the saved test lab through the same UI, leaving a fresh example.
+  // Delete only the saved test lab, then explicitly import a fixture for screenshots.
   await click('#delete-lab');
   await waitFor('document.querySelectorAll(".topology-node").length===0');
   assert.equal(deleteRequests,1,'only deleting the saved experiment reaches the server');
-  assert.equal(await evaluate(`!!document.querySelector('#lab-select option[value="${savedId}"]')`),false,'deleted saved experiment leaves the list');
-  await click('#empty-example');
+  assert.equal((await labList()).some(item=>item.id===savedId),false,'deleted saved experiment leaves the list');
+  await importExample();
   await waitFor('document.querySelectorAll(".topology-node").length===5');
   await evaluate('document.querySelector("#panel-resize-handle").dispatchEvent(new MouseEvent("dblclick",{bubbles:true}))');
   await click('#fit');
@@ -259,6 +279,6 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   await click('.topology-node[data-node=r1] .node-name');
   await screenshot('workbench-properties.png');
   assert.deepEqual(errors,[],'browser JavaScript errors');
-  console.log(JSON.stringify({ok:true,checks:['token authentication dialog','polar bear brand and favicon','initial topology','preview deployment disabled','environment refresh','cancel draft deletion preserves invalid properties','delete unsaved experiment from library','clear draft state without server deletion','delete unsaved experiment from inspector','no phantom unsaved option for saved experiments','discard imported draft without deleting same-ID saved experiment','resize output panel in both directions','keyboard resize and bounds','resize window preserves canvas','reset panel height','command output fills panel','collapse and expand preserve height','panel height survives reload','compact circular devices without resize handles','four automatic alignment modes','optimized wires retain actual named endpoints','annotation create multiline style and drag','invalid note draft preserved','annotation save export import reload and delete','add device','edit properties','drag device','stable Vue node while dragging','connect ports','reject occupied port','save pending inspector edits','export','import','reload persistence','delete saved lab and remove list entry'],screenshots:outputDirectory},null,2));
+  console.log(JSON.stringify({ok:true,checks:['token authentication dialog','steppe wolf brand and favicon','empty startup and explicit JSON import','preview deployment disabled','environment refresh','cancel draft deletion preserves invalid properties','delete unsaved experiment from menu','clear draft state without server deletion','delete unsaved experiment from inspector','no phantom unsaved option for saved experiments','discard imported draft without deleting same-ID saved experiment','resize output panel in both directions','keyboard resize and bounds','resize window preserves canvas','reset panel height','command output fills panel','collapse and expand preserve height','panel height survives reload','compact circular devices without resize handles','four automatic alignment modes','optimized wires retain actual named endpoints','annotation create multiline style and drag','invalid note draft preserved','annotation save export import reload and delete','add device','edit properties','drag device','stable Vue node while dragging','connect ports','reject occupied port','save pending inspector edits','export','import','reload persistence','delete saved lab and remove list entry'],screenshots:outputDirectory},null,2));
   ws.close();
 })().catch(error=>{console.error(error);process.exit(1);});

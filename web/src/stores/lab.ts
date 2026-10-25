@@ -27,14 +27,18 @@ import type {
 } from "../types/lab";
 import { alignDevices, type AlignMode } from "../domain/canvas";
 
-export const useLabStore = defineStore("lab", () => {
-  const topology = ref<Topology>({
+function emptyTopology(): Topology {
+  return {
     version: 1,
-    id: "new-lab",
-    name: "新建实验",
+    id: uniqueId("lab-"),
+    name: "空白画布",
     nodes: [],
     links: [],
-  });
+  };
+}
+
+export const useLabStore = defineStore("lab", () => {
+  const topology = ref<Topology>(emptyTopology());
   const runtime = ref<Runtime | null>(null);
   const configs = ref<Record<string, DeviceConfigStatus>>({});
   const catalog = ref<DeviceTemplate[]>([]),
@@ -45,7 +49,6 @@ export const useLabStore = defineStore("lab", () => {
     errors: [],
     images: [],
   });
-  const example = ref<Topology | null>(null);
   const saved = ref(false),
     dirty = ref(false),
     busy = ref(false);
@@ -199,11 +202,8 @@ export const useLabStore = defineStore("lab", () => {
       catalog.value = data.catalog;
       environment.value = data.environment;
       labs.value = data.labs;
-      example.value = data.example;
-      if (data.labs.length) {
-        const record = await api<LabRecord>(`/api/labs/${data.labs[0].id}`);
-        adopt(record.topology, record);
-      } else adopt(data.example);
+      // Loading the workbench only refreshes its catalog and experiment list.
+      // Opening a project is explicit; re-authentication must preserve drafts.
     } finally {
       operation.value = "";
     }
@@ -227,10 +227,6 @@ export const useLabStore = defineStore("lab", () => {
       nodes: [],
       links: [],
     });
-  }
-  function loadExample() {
-    if (operation.value || !example.value) return;
-    adopt({ ...clone(example.value), id: uniqueId("lab-") });
   }
   async function rename(value: string) {
     if (!canRename.value) throw Error("请等待当前操作完成后再重命名项目");
@@ -491,13 +487,7 @@ export const useLabStore = defineStore("lab", () => {
         await api(`/api/labs/${id}`, "DELETE");
         labs.value = labs.value.filter((item) => item.id !== id);
       }
-      adopt({
-        version: 1,
-        id: uniqueId("lab-"),
-        name: "未命名实验",
-        nodes: [],
-        links: [],
-      });
+      adopt(emptyTopology());
       dirty.value = false;
     } finally {
       operation.value = "";
@@ -510,7 +500,6 @@ export const useLabStore = defineStore("lab", () => {
     catalog,
     labs,
     environment,
-    example,
     saved,
     dirty,
     busy,
@@ -537,7 +526,6 @@ export const useLabStore = defineStore("lab", () => {
     bootstrap,
     load,
     newLab,
-    loadExample,
     rename,
     addNode,
     updateNode,

@@ -3,7 +3,7 @@ import { ref, watch } from "vue";
 import { getToken, setToken } from "../api/client";
 import { useLabStore } from "../stores/lab";
 import { useUiStore } from "../stores/ui";
-import polarBear from "../assets/polar-bear.svg";
+import steppeWolf from "../assets/steppe-wolf.svg";
 const lab = useLabStore(),
   ui = useUiStore();
 const accessDialog = ref<HTMLDialogElement>(),
@@ -57,8 +57,8 @@ async function connect() {
     <form id="access-form" @submit.prevent="connect">
       <img
         class="dialog-logo"
-        :src="polarBear"
-        alt="北极熊头像"
+        :src="steppeWolf"
+        alt="草原狼头像"
         width="52"
         height="52"
       />

@@ -4,6 +4,8 @@ import { useRetainedPanel } from "./composables/useRetainedPanel";
 import { useLayoutStore } from "./stores/layout";
 import SidebarPanel from "./components/SidebarPanel.vue";
 import ProjectNameDialog from "./components/ProjectNameDialog.vue";
+import LabOpenDialog from "./components/LabOpenDialog.vue";
+import WorkbenchMenu from "./components/WorkbenchMenu.vue";
 import { getToken, setToken } from "./api/client";
 import { useLabStore } from "./stores/lab";
 import { useEditorStore } from "./stores/editor";
@@ -14,7 +16,7 @@ import TopologyCanvas from "./components/TopologyCanvas.vue";
 import DeviceInspector from "./components/DeviceInspector.vue";
 import WorkbenchPanels from "./components/WorkbenchPanels.vue";
 import WorkbenchDialogs from "./components/WorkbenchDialogs.vue";
-import polarBear from "./assets/polar-bear.svg";
+import steppeWolf from "./assets/steppe-wolf.svg";
 
 const lab = useLabStore(),
   editor = useEditorStore(),
@@ -34,13 +36,15 @@ let layoutObserver: ResizeObserver | undefined;
 function keydown(event: KeyboardEvent) {
   if (
     (event.target as Element).closest(
-      "input,textarea,select,dialog,.device-terminal,#console",
+      "input,textarea,select,dialog,.device-terminal,#console,.workbench-menu",
     ) ||
     ui.accessOpen ||
     ui.infoOpen ||
     ui.imagesOpen ||
     ui.captureOpen ||
-    ui.labDialogMode
+    ui.labDialogMode ||
+    ui.labOpen ||
+    ui.menuOpen
   )
     return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -115,8 +119,8 @@ onBeforeUnmount(() => {
     <a class="brand" href="/" aria-label="Route OVS 工作台"
       ><img
         class="brand-mark"
-        :src="polarBear"
-        alt="北极熊头像"
+        :src="steppeWolf"
+        alt="草原狼头像"
         width="36"
         height="36"
       />
@@ -124,6 +128,7 @@ onBeforeUnmount(() => {
       ><span class="brand-divider"></span
       ><span class="brand-caption">网络实验室</span></a
     >
+    <WorkbenchMenu />
     <div class="top-actions">
       <span class="mode-pill">DOCKER / VETH</span
       ><button id="environment" class="quiet" @click="ui.infoOpen = true">
@@ -159,6 +164,7 @@ onBeforeUnmount(() => {
   </main>
   <WorkbenchDialogs />
   <ProjectNameDialog />
+  <LabOpenDialog />
   <ImageManager v-if="imagesLoaded" />
   <CaptureManager v-if="capturesLoaded" />
 </template>

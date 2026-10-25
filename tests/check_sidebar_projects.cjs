@@ -1,3 +1,4 @@
+const { openSavedLab, experimentAction } = require('./browser_projects.cjs');
 /* Browser integration: isolated --preview backend, Chromium CDP and Node 22+.
  * node tests/check_sidebar_projects.cjs DEBUG_URL APP_URL_WITH_TOKEN OUTPUT_DIR
  * Creates and deletes one named test project; does not deploy containers.
@@ -54,25 +55,24 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await send('Page.enable'); await send('Runtime.enable');
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     await send('Page.navigate',{url:appURL});
-    await wait('document.querySelectorAll(".topology-node").length===5');
+    await wait('!!document.querySelector("#empty-new-lab") && !document.querySelector("#access-dialog")?.open');
     await evaluate('localStorage.removeItem("route-ovs-sidebars")');
     for (const side of ['left','right']) await evaluate(`document.querySelector('#${side}-sidebar-resize').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`);
 
     // Cancel and invalid input must not replace the original canvas.
-    await click('#new-lab'); await wait('document.querySelector("#project-name-dialog").open');
+    await experimentAction(evaluate, wait, click, '#new-lab'); await wait('document.querySelector("#project-name-dialog").open');
     await click('.project-name-cancel'); await wait('!document.querySelector("#project-name-dialog").open');
-    assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),5);
-    await click('#new-lab'); await wait('document.querySelector("#project-name-dialog").open');
+    assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),0);
+    await experimentAction(evaluate, wait, click, '#new-lab'); await wait('document.querySelector("#project-name-dialog").open');
     await input('#project-name-input','   '); await click('#confirm-project-name');
     await wait('!!document.querySelector("#project-name-error")');
-    assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),5);
+    assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),0);
     await input('#project-name-input','  OSPF 中文项目  '); await click('#confirm-project-name');
     await wait('!document.querySelector("#project-name-dialog").open');
     assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),0);
     assert.ok(await evaluate('document.querySelector("#lab-name").textContent.includes("OSPF 中文项目")'));
-    assert.ok(await evaluate('document.querySelector("#lab-select").selectedOptions[0].textContent.includes("OSPF 中文项目")'));
-    await click('.device-card.router'); await click('#save'); await wait('document.querySelector("#save-state").textContent==="已保存"');
-    savedId=await evaluate('document.querySelector("#lab-select").value');
+    await click('[data-category=router]'); await click('.device-card.router'); await click('#save'); await wait('document.querySelector("#save-state").textContent==="已保存"');
+    savedId=(await api('/api/labs'))[0].id;
     assert.equal((await api('/api/labs/'+savedId)).topology.name,'OSPF 中文项目');
 
     // Sidebar operations do not mark a saved topology dirty.
@@ -100,11 +100,11 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     assert.equal((await api('/api/labs/'+savedId)).topology.nodes[0].name,'R1','rename does not save invalid property draft');
     await input('#node-name','R1'); await click('#save'); await wait('document.querySelector("#save-state").textContent==="已保存"');
     await click('#toggle-left-sidebar');
-    await send('Page.reload'); await wait('document.querySelectorAll(".topology-node").length===1');
+    await send('Page.reload'); await openSavedLab(evaluate, wait, click, savedId); await wait('document.querySelectorAll(".topology-node").length===1');
     assert.equal(await width('left'),36); assert.equal(await width('right'),370);
     assert.ok(await evaluate('document.querySelector("#lab-name").textContent.includes("已改名的实验")'));
     await click('#toggle-left-sidebar');assert.equal(await width('left'),330);
-    assert.equal(await evaluate('document.querySelector("#lab-select").value'),savedId);
+    assert.equal((await api('/api/labs'))[0].id,savedId);
 
     // Resizing the viewport constrains both sidebars without losing preferences.
     await send('Emulation.setDeviceMetricsOverride',{width:1000,height:768,deviceScaleFactor:1,mobile:false});

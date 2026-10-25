@@ -1,3 +1,4 @@
+const { openImageManager } = require('./browser_projects.cjs');
 /* Node 22+, Chromium CDP, serve_library_fixture.py; no real Docker mutations. */
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
 const [debugURL, appURL, output] = process.argv.slice(2);
@@ -43,10 +44,10 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await send('Page.enable'); await send('Runtime.enable'); await send('Network.enable');
     await send('Emulation.setDeviceMetricsOverride', {width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false});
     await send('Page.navigate', {url: appURL});
-    await wait('!!document.querySelector("#manage-images")');
+    await wait('!!document.querySelector("#menu-tools")');
     assert.equal(requests.some(url=>/\/(DeviceTerminal|ImageManager|CaptureManager)-.*\.js/.test(url)),false);
     assert.equal(await evaluate('!!document.querySelector("#image-manager")'),false);
-    await click('#manage-images'); await ready();
+    await openImageManager(evaluate,wait,click); await ready();
     assert.equal(await evaluate('document.querySelector("#image-manager").open'),true,'first async mount opens the dialog');
     assert.ok(requests.some(url=>/\/ImageManager-.*\.js/.test(url)));
     await evaluate('window.retainedImageDialog=document.querySelector("#image-manager")');
@@ -104,7 +105,7 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await click('[data-image-mode=archive]');
     assert.ok(await evaluate('(()=>{const e=document.querySelector("#image-manager");return e.scrollWidth<=e.clientWidth+1})()'), 'no modal horizontal overflow');
     await shot('managed-images-compact.png');
-    await click('#close-images'); await click('#manage-images'); await ready();
+    await click('#close-images'); await openImageManager(evaluate,wait,click); await ready();
     assert.equal(await evaluate('document.querySelector("#image-manager") === window.retainedImageDialog'),true,'dialog survives close/reopen');
     assert.equal(await evaluate('document.querySelector("[data-image-mode=archive]").classList.contains("active")'),true,'selected import mode is retained');
     assert.equal((await api('/api/images')).images.some(item => item.reference === 'system/protected:latest'), false);

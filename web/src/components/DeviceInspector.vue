@@ -272,7 +272,7 @@ function apply() {
           <h3>开始组网</h3>
           <div class="step">
             <span>1</span>
-            <div><b>添加设备</b><br />将设备拖入画布，或点击设备卡片。</div>
+            <div><b>添加设备</b><br />进入左侧分类，选择设备加入画布。</div>
           </div>
           <div class="step">
             <span>2</span>
@@ -285,10 +285,13 @@ function apply() {
         </div>
         <div class="property-section">
           <h3>快捷操作</h3>
-          <p class="inspector-help">
-            V　选择设备<br />C　连线模式<br />T　添加注释<br />Delete　删除所选设备
-            / 网线 / 注释<br />Esc　取消当前工具
-          </p>
+          <div class="shortcut-list">
+            <div><span>选择设备</span><kbd>V</kbd></div>
+            <div><span>连线模式</span><kbd>C</kbd></div>
+            <div><span>添加注释</span><kbd>T</kbd></div>
+            <div><span>删除选中项</span><kbd>Delete</kbd></div>
+            <div><span>取消当前工具</span><kbd>Esc</kbd></div>
+          </div>
         </div>
         <div class="property-section">
           <DeleteLabButton id="delete-lab" />

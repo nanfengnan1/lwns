@@ -1,3 +1,4 @@
+const { openSavedLab } = require('./browser_projects.cjs');
 /* Real Chromium + disposable Docker fixture. See serve_terminal_fixture.py. */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -58,6 +59,7 @@ const [debugURL, appURL, outputDirectory] = process.argv.slice(2);
   try {
     const freshURL=new URL(appURL);freshURL.searchParams.set('terminal_check',Date.now());
     await send('Page.navigate',{url:freshURL.toString()});
+    await openSavedLab(evaluate, waitDOM, click);
     await waitDOM('document.querySelectorAll(".topology-node").length===2');
     assert.equal(requests.some(url=>/\/(DeviceTerminal|ImageManager|CaptureManager)-.*\.js/.test(url)),false,'optional features are absent from initial requests');
     await evaluate('document.querySelector("#panel-resize-handle").dispatchEvent(new MouseEvent("dblclick",{bubbles:true}))');

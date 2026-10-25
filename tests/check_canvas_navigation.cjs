@@ -1,3 +1,4 @@
+const { openSavedLab } = require('./browser_projects.cjs');
 /* Requires serve_canvas_fixture.py (FakeHost only), Chromium CDP and Node 22+.
  * node tests/check_canvas_navigation.cjs DEBUG_URL APP_URL_WITH_TOKEN OUTPUT_DIR
  */
@@ -49,6 +50,7 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await send('Page.enable');await send('Runtime.enable');
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     await send('Page.navigate',{url:appURL});
+    await openSavedLab(evaluate, wait, click);
     await wait('document.querySelector("#phase")?.classList.contains("running")');
     await click('#fit');
     const original=await record();
@@ -106,7 +108,7 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     assert.notDeepEqual(saved.topology.annotations[0],original.topology.annotations[0]);
     assert.equal(saved.topology.annotations[0].text,original.topology.annotations[0].text);
     assert.equal(saved.topology.optimizeLinks,false);
-    await send('Page.reload');await wait('document.querySelector("#phase")?.classList.contains("running")');
+    await send('Page.reload');await openSavedLab(evaluate, wait, click);await wait('document.querySelector("#phase")?.classList.contains("running")');
     for(const node of saved.topology.nodes) assert.equal(await evaluate(`document.querySelector('.topology-node[data-node="${node.id}"]').getAttribute('transform')`),`translate(${node.x} ${node.y})`);
     const shot=await send('Page.captureScreenshot');fs.writeFileSync(path.join(output,'canvas-scroll-running.png'),Buffer.from(shot.data,'base64'));
     assert.deepEqual(errors,[]);

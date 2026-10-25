@@ -23,7 +23,7 @@ route-ovs 文档
 
       :doc:`完成第一次实验 <user/quickstart>`
 
-      已有工作台地址？加载双网段示例，让两台 PC 互通，再保存和清理。
+      已有工作台地址？导入双网段示例 JSON，让两台 PC 互通，再保存和清理。
 
       :doc:`打开入门教程 → <user/quickstart>`
 

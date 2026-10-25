@@ -2,6 +2,10 @@
 
 通过 Docker 图形组网工作台搭建和验证路由实验，也保留原有 OVS/FRR 命令行工具。
 
+Web 工作台以草原狼头像作为项目图标。顶部“实验 / 视图 / 工具”菜单集中提供新建、打开、
+保存及视图管理；启动后显示空白画布，从“打开实验”继续已有项目，或导入拓扑 JSON。
+“保存实验”写入宿主机，完整项目包导入导出仍未实现，详见[保存与恢复](docs/user/workbench-data.rst)。
+
 ## 获取代码或安装包
 
 源码仓库：[nanfengnan1/route-ovs](https://github.com/nanfengnan1/route-ovs)。在 Linux 宿主机准备存放源码的目录中执行：

@@ -310,7 +310,14 @@ onBeforeUnmount(() => {
           aria-label="选择工具"
           @click="editor.setMode('select')"
         >
-          ↖</button
+          <svg
+            class="button-icon"
+            viewBox="0 0 20 20"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path d="m4 3 4 13 3-5 5-3Z" />
+          </svg></button
         ><button
           id="connect-tool"
           :class="{ active: editor.mode === 'connect' }"
@@ -319,7 +326,16 @@ onBeforeUnmount(() => {
           aria-label="连线工具"
           @click="editor.setMode('connect')"
         >
-          ⌁
+          <svg
+            class="button-icon"
+            viewBox="0 0 20 20"
+            fill="none"
+            aria-hidden="true"
+          >
+            <rect x="2" y="3" width="5" height="5" rx="1.5" />
+            <rect x="13" y="12" width="5" height="5" rx="1.5" />
+            <path d="M4.5 8v6.5h8.5" />
+          </svg>
         </button>
       </div>
       <span class="control-divider"></span
@@ -334,7 +350,15 @@ onBeforeUnmount(() => {
       ><button id="zoom-in" title="放大" aria-label="放大" @click="zoom(1.2)">
         ＋</button
       ><button id="fit" title="适应画布" aria-label="适应画布" @click="fit">
-        ⛶
+        <svg
+          class="button-icon"
+          viewBox="0 0 20 20"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path d="M3 7V3h4m6 0h4v4m0 6v4h-4m-6 0H3v-4" />
+          <rect x="7" y="7" width="6" height="6" rx="1" />
+        </svg>
       </button>
     </div>
     <div id="phase" class="canvas-badge" :class="lab.phase">
@@ -450,16 +474,116 @@ onBeforeUnmount(() => {
         editor.mode === 'annotation'
       "
     >
-      <div>⌘</div>
-      <h2>从一台设备开始</h2>
-      <p>将左侧设备拖入画布，点击两个端口完成连线。</p>
-      <button
-        id="empty-example"
-        :disabled="!!lab.operation"
-        @click="editor.discardOK() && lab.loadExample()"
-      >
-        加载示例拓扑
-      </button>
+      <div aria-hidden="true">
+        <svg width="180" height="100" viewBox="0 0 180 100" fill="none">
+          <ellipse
+            cx="90"
+            cy="50"
+            rx="68"
+            ry="43"
+            fill="#eaf0fa"
+            fill-opacity=".6"
+          />
+          <path
+            d="M40 70V52h100v18M90 40v12"
+            stroke="#aabfdd"
+            stroke-width="1.5"
+          />
+          <circle
+            cx="90"
+            cy="52"
+            r="3"
+            fill="#6d90cb"
+            stroke="#f5f8fc"
+            stroke-width="2"
+          />
+          <rect
+            x="67"
+            y="7"
+            width="46"
+            height="37"
+            rx="11"
+            fill="#fff"
+            stroke="#c6d6ee"
+          />
+          <circle cx="90" cy="25" r="11" fill="#edf3ff" stroke="#7b9fd9" />
+          <path
+            d="M83 25h14m-7-7v14m-7-7 3-3m-3 3 3 3m11-3-3-3m3 3-3 3"
+            stroke="#5d83c3"
+            stroke-width="1.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <rect
+            x="18"
+            y="65"
+            width="44"
+            height="30"
+            rx="9"
+            fill="#fff"
+            stroke="#c6d6ee"
+          />
+          <rect
+            x="28"
+            y="73"
+            width="24"
+            height="10"
+            rx="3"
+            fill="#ecf7f2"
+            stroke="#80b4a1"
+          />
+          <path
+            d="M32 78h2m3 0h2m3 0h2m3 0h2"
+            stroke="#6e9e8e"
+            stroke-linecap="round"
+          />
+          <rect
+            x="118"
+            y="65"
+            width="44"
+            height="30"
+            rx="9"
+            fill="#fff"
+            stroke="#c6d6ee"
+          />
+          <rect
+            x="130"
+            y="71"
+            width="20"
+            height="13"
+            rx="3"
+            fill="#f1edfa"
+            stroke="#a294c3"
+          />
+          <path
+            d="M140 84v4m-6 0h12"
+            stroke="#a294c3"
+            stroke-width="1.2"
+            stroke-linecap="round"
+          />
+          <circle cx="51" cy="26" r="3" fill="#c9d8ef" />
+          <circle cx="135" cy="33" r="2" fill="#b5cbe8" />
+        </svg>
+      </div>
+      <h2>搭建你的网络实验</h2>
+      <p>选择左侧设备类别，构建你的第一张拓扑。</p>
+      <div class="empty-actions">
+        <button
+          id="empty-new-lab"
+          class="primary"
+          :disabled="!!lab.operation"
+          @click="ui.labDialogMode = 'new'"
+        >
+          新建实验
+        </button>
+        <button
+          id="empty-open-lab"
+          :disabled="!!lab.operation"
+          @click="ui.labOpen = true"
+        >
+          打开实验
+        </button>
+      </div>
     </div>
     <div class="canvas-footer">
       <span id="canvas-hint">{{ editor.hint }}</span

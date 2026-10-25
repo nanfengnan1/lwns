@@ -141,8 +141,7 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
         if method == "GET" and path == "/api/bootstrap":
             images.snapshot(refresh=True)
             return respond(200, {"catalog": images.catalog(), "environment": manager.environment(),
-                                 "labs": manager.list_labs(),
-                                 "example": json.loads((ROOT / "examples" / "basic-lab.json").read_text(encoding="utf-8"))})
+                                 "labs": manager.list_labs()})
         if method == "GET" and path == "/api/labs":
             return respond(200, manager.list_labs())
         if method == "GET" and path == "/api/environment":

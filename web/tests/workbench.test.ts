@@ -7,7 +7,12 @@ import { clone, parseTopology } from "../src/domain/topology";
 import { useLabStore } from "../src/stores/lab";
 import { useEditorStore } from "../src/stores/editor";
 import { useTerminalsStore } from "../src/stores/terminals";
-import type { LabRecord, Runtime } from "../src/types/lab";
+import type {
+  Bootstrap,
+  LabRecord,
+  LabSummary,
+  Runtime,
+} from "../src/types/lab";
 
 const idle = (): Runtime => ({ phase: "idle", nodes: {}, logs: [] });
 const response = (body: unknown, status = 200) =>
@@ -23,6 +28,129 @@ beforeEach(() => {
   setToken("test-token");
 });
 afterEach(() => vi.unstubAllGlobals());
+
+describe("explicit experiment opening", () => {
+  const metadata = (labs: LabSummary[] = []): Bootstrap => ({
+    catalog: [
+      {
+        kind: "router",
+        title: "FRR",
+        image: "alpine/frr:latest",
+        ports: 4,
+        prefix: "R",
+      },
+    ],
+    environment: { ready: false, preview: true, errors: [], images: [] },
+    labs,
+  });
+
+  it.each([false, true])(
+    "starts with a clean canvas without opening or creating an experiment (saved experiments: %s)",
+    async (hasSavedLabs) => {
+      const lab = useLabStore(),
+        editor = useEditorStore();
+      const data = metadata(
+        hasSavedLabs
+          ? [
+              {
+                id: "existing-lab",
+                name: "Existing",
+                nodes: 5,
+                phase: "running",
+              },
+            ]
+          : [],
+      );
+      const fetchMock = vi.fn().mockResolvedValue(response(data));
+      vi.stubGlobal("fetch", fetchMock);
+
+      expect(lab.topology.name).toBe("空白画布");
+      expect(editor.unsaved).toBe(false);
+      await lab.bootstrap();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][0]).toBe("/api/bootstrap");
+      expect(lab.catalog).toEqual(data.catalog);
+      expect(lab.environment).toEqual(data.environment);
+      expect(lab.labs).toEqual(data.labs);
+      expect(lab.topology.nodes).toEqual([]);
+      expect(lab.topology.links).toEqual([]);
+      expect(lab.saved).toBe(false);
+      expect(editor.unsaved).toBe(false);
+      expect(lab.runtime).toBe(null);
+      expect(lab.canDeploy).toBe(false);
+      expect(lab.operation).toBe("");
+    },
+  );
+
+  it("opens the chosen saved experiment only after an explicit load", async () => {
+    const lab = useLabStore(),
+      editor = useEditorStore();
+    const record: LabRecord = {
+      topology: parseTopology(example),
+      runtime: idle(),
+    };
+    const data = metadata([
+      {
+        id: record.topology.id,
+        name: record.topology.name,
+        nodes: record.topology.nodes.length,
+        phase: "idle",
+      },
+    ]);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(data))
+      .mockResolvedValueOnce(response(record));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await lab.bootstrap();
+    expect(lab.topology.nodes).toHaveLength(0);
+    await lab.load(record.topology.id);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/bootstrap",
+      `/api/labs/${record.topology.id}`,
+    ]);
+    expect(lab.topology).toEqual(record.topology);
+    expect(lab.saved).toBe(true);
+    expect(editor.unsaved).toBe(false);
+    expect(lab.runtime).toEqual(record.runtime);
+  });
+
+  it("preserves unsaved edits and selection when authentication refreshes metadata", async () => {
+    const { lab, editor } = setup();
+    editor.select({ type: "node", id: "r1" });
+    editor.draft!.name = "PENDING";
+    editor.touchDraft();
+    const topology = lab.topology,
+      documentVersion = lab.documentVersion;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(metadata())));
+
+    await lab.bootstrap();
+
+    expect(lab.topology).toBe(topology);
+    expect(lab.documentVersion).toBe(documentVersion);
+    expect(editor.selected).toEqual({ type: "node", id: "r1" });
+    expect(editor.draft!.name).toBe("PENDING");
+    expect(editor.draftDirty).toBe(true);
+    expect(editor.unsaved).toBe(true);
+  });
+
+  it("treats an explicitly created empty experiment as a draft", () => {
+    const lab = useLabStore(),
+      editor = useEditorStore();
+    const placeholderId = lab.topology.id;
+
+    lab.newLab("路由测试");
+
+    expect(lab.topology.id).not.toBe(placeholderId);
+    expect(lab.topology.name).toBe("路由测试");
+    expect(lab.topology.nodes).toEqual([]);
+    expect(lab.saved).toBe(false);
+    expect(editor.unsaved).toBe(true);
+  });
+});
 
 describe("editor and deployment state", () => {
   it("commits pending form input when selecting another device", () => {

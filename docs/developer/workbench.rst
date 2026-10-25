@@ -5,6 +5,30 @@ Vue 工作台开发
 Python 后端使用 FastAPI / Uvicorn，负责实验持久化、Docker 生命周期及 veth 操作。
 前后端通过 ``/api`` 通信，设备终端通过同端口 WebSocket 连接。
 
+菜单、空白启动与界面约定
+----------------------------------------
+
+工作台使用现有 Vue 3 + Pinia 与集中式 ``workbench.css``，未新增 UI 框架依赖。
+统一的颜色、边框、字号和控件样式覆盖设备库、画布、属性、日志与管理窗口；
+``--topbar-height`` 统一顶栏、工作区及底部放大面板的定位。
+``steppe-wolf.svg`` 是导航、登录窗口和 favicon 共用的草原狼品牌资源。
+
+``WorkbenchMenu`` 提供实验、视图、工具菜单；``LabOpenDialog`` 从 ``GET /api/labs``
+刷新并搜索已保存实验。``useProjectFiles`` 统一菜单和工具栏的保存、JSON 导入导出逻辑，
+导入在异步读取结束后核对文档版本，并确认放弃未保存修改；同 ID 导入语义沿用旧协议。
+打开窗口和菜单必须隔离画布快捷键，保留方向键、Esc、Tab 和焦点行为。
+菜单项只显示操作名称、勾选状态与分隔线，不显示按钮下方或菜单底部的解释文字。
+
+Store 初始为干净空白画布；``bootstrap`` 只更新环境、目录与实验列表，不自动打开首项。
+重新认证不替换当前草稿。后端不再返回 ``example``；``examples/basic-lab.json``
+保留作显式文件导入与测试夹具，不属于默认实验，也不能清理用户数据来达到“空白启动”。
+
+``LabToolbar`` 在唯一操作行中依次放置项目名称、排版/连线/注释、保存/配置/清理/部署；项目名称不再独占一行。
+操作行空间不足时在内部横向滚动，控件保持同一行，键盘 Tab 可将焦点控件滚入视口。
+``usePanelResize`` 观察工作区和外层工具栏尺寸，只计入外层工具栏总高度，避免重复扣除内部操作组。
+测试包括 ``project-files.test.ts``、空白启动用例与 ``check_project_menu.cjs``；
+已有浏览器夹具通过 ``browser_projects.cjs`` 显式打开已保存实验。
+
 按需加载与生产传输
 ----------------------------------------
 
@@ -204,7 +228,7 @@ Web 镜像管理中绑定，新增设备行为才需要注册模板及适配器�
 ``SidebarPanel.vue`` 包装左右侧边栏，使用 Pointer Events、捕获及键盘处理调整宽度。
 ``stores/layout.ts`` 保存首选宽度和收起状态，通过工作区 ResizeObserver 限制实际宽度，
 为中间区域保留 460px；窗口变宽后恢复首选值。收起时保留 36px 操作栏，
-内容使用 v-show 保留，避免丢失属性草稿和设备库筛选。
+内容使用 v-show 保留，避免丢失属性草稿和设备库子目录状态。
 拖动结束、失焦或卸载时释放捕获及光标。布局状态不参与拓扑脏标记及部署编辑锁。
 ``route-ovs-sidebars`` 本地存储读取时校验类型和范围；存储失效不影响当前会话操作。
 
@@ -298,8 +322,13 @@ API 提供 ``can_delete``，执行删除前重新同步并校验标签与归属 
 列表包含状态筛选与数量概览，四种来源入口及引用保护提示；日志可折叠，执行任务时展开，
 用户向上滚动后不再强制跟随输出。移出/删除后清理已失效的设置选择。
 刷新失败保留旧同步标记，下次轮询重试。``refreshCatalog`` 使用请求序号拒绝过期响应。
-``DeviceLibrary.vue`` 提供 router/switch/host/firewall 四组可折叠条目，每组每批 60 项，
-搜索名称/镜像时自动展开结果，清除后恢复折叠状态；没有“全部”平铺入口。
+``DeviceLibrary.vue`` 使用 router/switch/host/firewall 四个横向分类入口；初始 selected=null，
+只有进入子目录才渲染对应分类，双列圆形设备每批 60 项，不再提供搜索框或查询状态。
+分类入口和设备圆形背景通过 ``--device-color`` 使用 ``domain/topology.colors``，与画布共用类型配色；
+设备条目外层透明无方框，名称/镜像在圆形下方，悬停和键盘焦点以圆环提示。
+切换分类或返回时重置分页与滚动；返回按钮把焦点交回原分类，方向键与 Home/End 可切换分类。
+目录刷新保留当前类别，只更新卡片和数量；折叠侧栏保留状态，刷新页面回到分类首页。
+没有“全部”平铺列表、侧栏镜像管理按钮或底部连接提示；镜像管理统一从顶部“工具”菜单按需加载。
 ``domain/library.ts`` 统一分类和镜像类型选项。防火墙使用 ``linux-firewall`` 模板与既有 Linux 适配器，
 新增 kind、图标和 FW 命名前缀，不包含防火墙规则编排或持久化功能。
 ``ImageService.catalog`` 不再预先加入 CATALOG 固定卡片；CATALOG 仅定义设备适配能力。
@@ -496,7 +525,7 @@ Docker 拒绝归档时的错误提示和临时文件回收。
   node tests/check_images.cjs http://127.0.0.1:9344 \
     'http://127.0.0.1:8104/#token=image-browser-check' /tmp/image-check
 
-验证长设备列表、搜索分类、固定底栏、归档和 URL 导入、Dockerfile 构建、设置、删除及刷新恢复。
+验证长设备列表、分类切换、固定分类导航、归档和 URL 导入、Dockerfile 构建、设置、删除及刷新恢复。
 停止 fixture 后清理其专属镜像及临时文件，不操作现有实验。
 
 ``tests/serve_library_fixture.py`` 使用 ImageHost 模拟 200 个镜像条目及镜像任务，不执行宿主机命令。
@@ -505,8 +534,9 @@ Docker 拒绝归档时的错误提示和临时文件回收。
 
   node tests/check_managed_images.cjs http://127.0.0.1:9222 'http://127.0.0.1:8107/#token=library-check' /tmp/managed-images-check
 
-``tests/check_library_groups.cjs`` 验证分类折叠、搜索、分批加载、默认镜像删除、防火墙导入、
-改类型、取消绑定以及刷新后不恢复已删条目。每次验证启动新的 fixture::
+``tests/check_library_groups.cjs`` 验证横向分类入口、单分类子目录、双列卡片、搜索框已移除、
+返回与键盘导航、分批加载、默认镜像删除、防火墙导入、改类型、取消绑定及刷新后不恢复已删条目；
+同时检查窄窗口下画布引导不遮挡控件，日志面板最大高度不超出窗口。每次验证启动新的 fixture::
 
   .venv/bin/python tests/serve_library_fixture.py --port 8107
   node tests/check_library_groups.cjs http://127.0.0.1:9351 \

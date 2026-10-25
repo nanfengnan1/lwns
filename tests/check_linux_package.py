@@ -135,7 +135,8 @@ def main():
                 assert "immutable" in response.headers["Cache-Control"]
             with get("/api/bootstrap") as response:
                 bootstrap = json.load(response)
-                assert bootstrap["example"]["nodes"]
+                assert bootstrap["labs"] == []
+                assert "example" not in bootstrap
                 assert bootstrap["catalog"]
             with get("/api/capture/client") as response:
                 with zipfile.ZipFile(io.BytesIO(response.read())) as client:

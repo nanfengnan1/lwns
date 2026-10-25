@@ -5,21 +5,24 @@ import { useLabStore } from "../stores/lab";
 import { useEditorStore } from "../stores/editor";
 import { useUiStore } from "../stores/ui";
 import SaveConfigButton from "./SaveConfigButton.vue";
+import { useProjectFiles } from "../composables/useProjectFiles";
 const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore();
 const alignMode = ref<AlignMode>("layers");
+const { save } = useProjectFiles();
+function revealCommand(event: FocusEvent) {
+  const target = event.target;
+  if (target instanceof HTMLElement && target !== event.currentTarget) {
+    target.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+}
 function align() {
   editor.commitDraft();
   lab.autoAlign(alignMode.value);
   editor.pending = null;
   editor.fitRevision++;
   ui.notify("设备已自动对齐，注释保留原位置；保存后保留布局");
-}
-async function save() {
-  editor.commitDraft();
-  await lab.save();
-  ui.notify(lab.runtime?.deployment ? "布局已保存" : "拓扑已保存");
 }
 async function deploy() {
   editor.commitDraft();
@@ -41,100 +44,146 @@ async function destroy() {
 
 <template>
   <div class="lab-toolbar">
-    <div class="lab-title">
-      <span class="document-icon">▤</span>
-      <button
-        id="lab-name"
-        class="lab-name-button"
-        :title="`重命名项目：${lab.topology.name}`"
-        aria-label="重命名项目"
-        :disabled="!lab.canRename"
-        @click="ui.labDialogMode = 'rename'"
-      >
-        {{ lab.topology.name }}<small>✎</small>
-      </button>
-      <span id="save-state">{{
-        lab.operation === "save"
-          ? "保存中…"
-          : editor.unsaved
-            ? "有未保存修改"
-            : lab.saved
-              ? "已保存"
-              : "未保存"
-      }}</span>
+    <div
+      class="lab-command-scroll"
+      tabindex="0"
+      role="region"
+      @focusin="revealCommand"
+      aria-label="实验操作栏，空间不足时可横向滚动"
+      title="空间不足时可左右滚动查看全部操作"
+    >
+      <div class="lab-command-row">
+        <div class="lab-title">
+          <button
+            id="lab-name"
+            class="lab-name-button"
+            :title="`重命名项目：${lab.topology.name}`"
+            aria-label="重命名项目"
+            :disabled="!lab.canRename"
+            @click="ui.labDialogMode = 'rename'"
+          >
+            <span class="lab-name-text">{{ lab.topology.name }}</span
+            ><small aria-hidden="true">✎</small>
+          </button>
+          <span id="save-state" :class="{ dirty: editor.unsaved }">{{
+            lab.operation === "save"
+              ? "保存中…"
+              : editor.unsaved
+                ? "有未保存修改"
+                : lab.saved
+                  ? "已保存"
+                  : "未保存"
+          }}</span>
+        </div>
+        <div class="canvas-toolbar" role="group" aria-label="拓扑排版工具">
+          <select
+            id="align-mode"
+            v-model="alignMode"
+            :disabled="lab.layoutLocked"
+            aria-label="自动对齐方式"
+          >
+            <option value="layers">智能分层</option>
+            <option value="horizontal">水平排列</option>
+            <option value="vertical">垂直排列</option>
+            <option value="grid">网格排列</option>
+          </select>
+          <button
+            id="auto-align"
+            :disabled="lab.layoutLocked || lab.topology.nodes.length < 2"
+            @click="ui.run(align)"
+          >
+            <svg
+              class="button-icon"
+              viewBox="0 0 20 20"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path d="M3 3v14M6 5h10v4H6Zm0 7h7v4H6Z" /></svg
+            >自动对齐
+          </button>
+          <button
+            id="optimize-links"
+            :disabled="lab.layoutLocked"
+            :aria-pressed="lab.topology.optimizeLinks !== false"
+            :class="{ active: lab.topology.optimizeLinks !== false }"
+            title="就近选择图形端口并缩短连线，优先绕开设备；实际接口关系保持不变"
+            @click="
+              ui.run(() =>
+                lab.setLinkOptimization(lab.topology.optimizeLinks === false),
+              )
+            "
+          >
+            连线优化
+            {{ lab.topology.optimizeLinks !== false ? "已开启" : "已关闭" }}
+          </button>
+          <button
+            id="add-annotation"
+            :disabled="
+              lab.locked || (lab.topology.annotations?.length || 0) >= 100
+            "
+            :aria-pressed="editor.mode === 'annotation'"
+            :class="{ active: editor.mode === 'annotation' }"
+            @click="
+              editor.setMode(
+                editor.mode === 'annotation' ? 'select' : 'annotation',
+              )
+            "
+          >
+            <svg
+              class="button-icon"
+              viewBox="0 0 20 20"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path d="M3 3h14v10l-4 4H3Zm10 14v-4h4M6 7h8M6 10h5" /></svg
+            >添加注释
+          </button>
+        </div>
+        <div class="toolbar-actions" role="group" aria-label="实验保存与部署">
+          <button id="save" :disabled="lab.layoutLocked" @click="ui.run(save)">
+            <svg
+              class="button-icon"
+              viewBox="0 0 20 20"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path d="M4 3h10l3 3v11H3V3Zm2 0v5h7V3M6 17v-5h8v5" />
+            </svg>
+            {{ lab.runtime?.deployment ? "保存布局" : "保存实验" }}
+          </button>
+          <SaveConfigButton
+            v-if="lab.topology.nodes.some(lab.supportsConfig)"
+          />
+          <button
+            id="destroy"
+            class="danger-subtle"
+            :disabled="!lab.canDestroy"
+            @click="ui.run(destroy)"
+          >
+            <svg
+              class="button-icon"
+              viewBox="0 0 20 20"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path d="M3 5h14M7 5V3h6v2M5 5l1 12h8l1-12M8 8v6m4-6v6" /></svg
+            >清理设备
+          </button>
+          <button
+            id="deploy"
+            class="primary"
+            :disabled="!lab.canDeploy"
+            :title="
+              lab.environment.ready
+                ? '创建设备并连接网线'
+                : lab.environment.errors.join('；')
+            "
+            @click="ui.run(deploy)"
+          >
+            <span>▶</span> 部署实验
+          </button>
+        </div>
+      </div>
     </div>
-    <div class="toolbar-actions">
-      <button id="save" :disabled="lab.layoutLocked" @click="ui.run(save)">
-        {{ lab.runtime?.deployment ? "保存布局" : "保存" }}
-      </button>
-      <SaveConfigButton v-if="lab.topology.nodes.some(lab.supportsConfig)" />
-      <button
-        id="destroy"
-        class="danger-subtle"
-        :disabled="!lab.canDestroy"
-        @click="ui.run(destroy)"
-      >
-        清理设备
-      </button>
-      <button
-        id="deploy"
-        class="primary"
-        :disabled="!lab.canDeploy"
-        :title="
-          lab.environment.ready
-            ? '创建设备并连接网线'
-            : lab.environment.errors.join('；')
-        "
-        @click="ui.run(deploy)"
-      >
-        <span>▶</span> 部署实验
-      </button>
-    </div>
-  </div>
-  <div class="canvas-toolbar" aria-label="拓扑排版工具">
-    <label for="align-mode">排版</label>
-    <select
-      id="align-mode"
-      v-model="alignMode"
-      :disabled="lab.layoutLocked"
-      aria-label="自动对齐方式"
-    >
-      <option value="layers">智能分层</option>
-      <option value="horizontal">水平排列</option>
-      <option value="vertical">垂直排列</option>
-      <option value="grid">网格排列</option>
-    </select>
-    <button
-      id="auto-align"
-      :disabled="lab.layoutLocked || lab.topology.nodes.length < 2"
-      @click="ui.run(align)"
-    >
-      自动对齐
-    </button>
-    <button
-      id="optimize-links"
-      :disabled="lab.layoutLocked"
-      :aria-pressed="lab.topology.optimizeLinks !== false"
-      :class="{ active: lab.topology.optimizeLinks !== false }"
-      title="就近选择图形端口并缩短连线，优先绕开设备；实际接口关系保持不变"
-      @click="
-        ui.run(() =>
-          lab.setLinkOptimization(lab.topology.optimizeLinks === false),
-        )
-      "
-    >
-      连线优化 {{ lab.topology.optimizeLinks !== false ? "已开启" : "已关闭" }}
-    </button>
-    <button
-      id="add-annotation"
-      :disabled="lab.locked || (lab.topology.annotations?.length || 0) >= 100"
-      :aria-pressed="editor.mode === 'annotation'"
-      :class="{ active: editor.mode === 'annotation' }"
-      @click="
-        editor.setMode(editor.mode === 'annotation' ? 'select' : 'annotation')
-      "
-    >
-      ＋ 添加注释
-    </button>
   </div>
 </template>

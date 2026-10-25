@@ -13,6 +13,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -489,6 +490,31 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.request("/api/labs/first-lab", "PUT", example(), origin="http://untrusted.invalid")[0], 403)
         self.assertEqual(self.request("/../script/python/lab_core.py")[0], 404)
         self.assertFalse(self.manager.list_labs())
+
+    def test_bootstrap_does_not_load_or_create_a_default_experiment(self):
+        # Workbench startup must also work without a bundled example file.
+        with patch("lab_server.ROOT", Path(self.temp.name) / "no-examples"):
+            code, body = self.request("/api/bootstrap")
+        self.assertEqual(code, 200)
+        data = json.loads(body)
+        self.assertEqual(set(data), {"catalog", "environment", "labs"})
+        self.assertEqual(data["labs"], [])
+        self.assertIsInstance(data["catalog"], list)
+        self.assertTrue(data["environment"]["preview"])
+        self.assertEqual(self.manager.list_labs(), [])
+        self.assertEqual(list(Path(self.temp.name).glob("*.json")), [])
+
+    def test_bootstrap_lists_saved_experiments_without_replacing_them(self):
+        record = self.manager.save(example())
+        path = Path(self.temp.name) / (record["topology"]["id"] + ".json")
+        original = path.read_bytes()
+        for _ in range(2):
+            code, body = self.request("/api/bootstrap")
+            self.assertEqual(code, 200)
+            data = json.loads(body)
+            self.assertNotIn("example", data)
+            self.assertEqual([lab["id"] for lab in data["labs"]], [record["topology"]["id"]])
+            self.assertEqual(path.read_bytes(), original)
 
     def test_save_reload_and_preview_deploy_error(self):
         lab = example()
