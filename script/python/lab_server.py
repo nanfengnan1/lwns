@@ -58,7 +58,7 @@ def same_origin(connection, required=False):
 
 def join_jobs():
     for thread in threading.enumerate():
-        if thread.name.startswith("lab-job-"):
+        if thread.name.startswith(("lab-job-", "lab-update-")):
             thread.join()
 
 
@@ -204,6 +204,8 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
                     return respond(200, manager.rename(lab_id, payload["name"]))
                 if action == "configs":
                     return respond(200, manager.save_configs(lab_id, payload.get("node")))
+                if action == "update":
+                    return respond(202, manager.start_update(lab_id, payload))
                 if action in ("deploy", "destroy"):
                     return respond(202, manager.start_job(lab_id, action))
                 if action == "exec":
@@ -254,10 +256,12 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
                     if request.headers.get("content-type", "").split(";")[0] != "application/json":
                         raise LabError("请求需要 application/json")
                     body = bytearray()
+                    # Updates include both the edited topology and its base snapshot.
+                    limit = 2 * 1024 * 1024 if len(segments) == 4 and segments[:2] == ["api", "labs"] and segments[3] == "update" else 1024 * 1024
                     async for chunk in request.stream():
                         body.extend(chunk)
-                        if len(body) > 1024 * 1024:
-                            raise LabError("请求超过 1 MiB")
+                        if len(body) > limit:
+                            raise LabError(f"请求超过 {limit // (1024 * 1024)} MiB")
                     try:
                         payload = json.loads(body)
                         if not isinstance(payload, dict):
@@ -269,7 +273,7 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
                 await captures.close_lab(segments[2], segments[4])
                 return respond(200, {"ok": True})
             result = await run_in_threadpool(dispatch, request.method, path, payload)
-            if result.status_code == 202 and segments[-1] == "destroy":
+            if result.status_code == 202 and segments[-1] in ("destroy", "update"):
                 await captures.close_lab(segments[2])
                 await terminals.close_lab(segments[2])
             return result

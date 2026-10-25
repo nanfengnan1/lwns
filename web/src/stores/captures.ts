@@ -108,6 +108,8 @@ export const useCapturesStore = defineStore("captures", () => {
     snaplen: number,
   ) {
     if (submitting.value) throw Error("正在创建抓包会话");
+    if (!lab.canCapture(link))
+      throw Error("请先应用这条网线，等待设备运行就绪后再抓包");
     const id = lab.topology.id,
       current = ++revision;
     submitting.value = true;

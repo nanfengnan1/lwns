@@ -26,6 +26,7 @@ import type {
   Topology,
 } from "../types/lab";
 import { alignDevices } from "../domain/canvas";
+import { deploymentChanges, networkSignature } from "../domain/deployment";
 
 function emptyTopology(): Topology {
   return {
@@ -39,6 +40,8 @@ function emptyTopology(): Topology {
 
 export const useLabStore = defineStore("lab", () => {
   const topology = ref<Topology>(emptyTopology());
+  const savedTopology = ref<Topology>(clone(topology.value));
+  const terminalRevision = ref(0);
   const runtime = ref<Runtime | null>(null);
   const configs = ref<Record<string, DeviceConfigStatus>>({});
   const catalog = ref<DeviceTemplate[]>([]),
@@ -59,16 +62,36 @@ export const useLabStore = defineStore("lab", () => {
     () =>
       busy.value ||
       !!operation.value ||
-      ["deploying", "destroying"].includes(phase.value),
+      ["deploying", "updating", "destroying"].includes(phase.value),
   );
-  const locked = computed(
-    () => layoutLocked.value || !!runtime.value?.deployment,
+  const locked = computed(() => layoutLocked.value);
+  const pendingUpdate = computed(
+    () =>
+      !!runtime.value?.deployment &&
+      networkSignature(topology.value) !==
+        networkSignature(savedTopology.value),
+  );
+  const updateChanges = computed(() =>
+    deploymentChanges(savedTopology.value, topology.value),
+  );
+  const runningNodes = computed(() =>
+    savedTopology.value.nodes.filter(
+      (node) => !!runtime.value?.deployment && !!runtime.value.nodes[node.id],
+    ),
+  );
+  const canUpdate = computed(
+    () =>
+      saved.value &&
+      !!runtime.value?.deployment &&
+      phase.value === "running" &&
+      !layoutLocked.value &&
+      environment.value.ready,
   );
   const canRename = computed(
     () =>
       !busy.value &&
       !operation.value &&
-      !["deploying", "destroying"].includes(phase.value),
+      !["deploying", "updating", "destroying"].includes(phase.value),
   );
   const images = computed(() => [
     ...new Set([
@@ -79,6 +102,7 @@ export const useLabStore = defineStore("lab", () => {
   const canDeploy = computed(
     () =>
       !locked.value &&
+      !runtime.value?.deployment &&
       environment.value.ready &&
       topology.value.nodes.length > 0,
   );
@@ -87,21 +111,48 @@ export const useLabStore = defineStore("lab", () => {
       saved.value &&
       !!runtime.value?.deployment &&
       environment.value.ready &&
-      !busy.value &&
-      !operation.value,
+      !layoutLocked.value,
   );
   let refreshing = false;
   let runtimeRevision = 0;
   let catalogRevision = 0;
+  let updateTarget: Topology | null = null;
 
   function assertEditable() {
-    if (locked.value) throw Error("请等待操作完成，并清理设备后再编辑拓扑");
+    if (locked.value) throw Error("请等待当前操作完成后再编辑拓扑");
   }
   function assertLayoutEditable() {
     if (layoutLocked.value) throw Error("请等待当前操作完成后再调整布局");
   }
   function getNode(id: string) {
     return topology.value.nodes.find((node) => node.id === id);
+  }
+  function getRuntimeNode(id: string) {
+    return runningNodes.value.find((node) => node.id === id);
+  }
+  function canOpenTerminal(id: string) {
+    return (
+      !!getRuntimeNode(id) && environment.value.ready && !layoutLocked.value
+    );
+  }
+  function canCapture(linkId: string) {
+    const link = topology.value.links.find((item) => item.id === linkId);
+    const running = savedTopology.value.links.find(
+      (item) => item.id === linkId,
+    );
+    return !!(
+      saved.value &&
+      !layoutLocked.value &&
+      environment.value.ready &&
+      link &&
+      running &&
+      link.a.node === running.a.node &&
+      link.a.port === running.a.port &&
+      link.b.node === running.b.node &&
+      link.b.port === running.b.port &&
+      getRuntimeNode(link.a.node) &&
+      getRuntimeNode(link.b.node)
+    );
   }
   function getTemplate(node: Device) {
     const matches = catalog.value.filter((item) =>
@@ -124,8 +175,8 @@ export const useLabStore = defineStore("lab", () => {
       environment.value.ready &&
       !busy.value &&
       !operation.value &&
-      !["deploying", "destroying"].includes(phase.value) &&
-      topology.value.nodes.some(
+      !["deploying", "updating", "destroying"].includes(phase.value) &&
+      runningNodes.value.some(
         (node) =>
           (!nodeId || node.id === nodeId) &&
           supportsConfig(node) &&
@@ -134,7 +185,12 @@ export const useLabStore = defineStore("lab", () => {
     );
   }
   async function loadConfig(nodeId: string) {
-    if (!saved.value || operation.value) return;
+    if (
+      !saved.value ||
+      layoutLocked.value ||
+      !savedTopology.value.nodes.some((node) => node.id === nodeId)
+    )
+      return;
     const version = documentVersion.value,
       revision = runtimeRevision;
     const result = await api<Record<string, DeviceConfigStatus>>(
@@ -163,7 +219,15 @@ export const useLabStore = defineStore("lab", () => {
         if (!item.ok) continue;
         if (item.status) configs.value[item.node] = item.status;
         const node = getNode(item.node);
-        if (node && item.config !== undefined) node.config = item.config;
+        const original = savedTopology.value.nodes.find(
+          (node) => node.id === item.node,
+        );
+        if (original && item.config !== undefined) {
+          // Preserve an explicitly edited startup config in the local draft.
+          if (node && node.config === original.config)
+            node.config = item.config;
+          original.config = item.config;
+        }
       }
       const failures = result.results.filter((item) => !item.ok);
       if (failures.length)
@@ -186,6 +250,8 @@ export const useLabStore = defineStore("lab", () => {
   }
   function adopt(value: Topology, record?: LabRecord) {
     topology.value = parseTopology(value);
+    savedTopology.value = parseTopology(record?.topology || topology.value);
+    updateTarget = null;
     configs.value = {};
     runtimeRevision++;
     runtime.value = record?.runtime ?? null;
@@ -249,7 +315,10 @@ export const useLabStore = defineStore("lab", () => {
       );
       const item = labs.value.find((entry) => entry.id === id);
       if (item) item.name = result.name;
-      if (version === documentVersion.value) topology.value.name = result.name;
+      if (version === documentVersion.value) {
+        topology.value.name = result.name;
+        savedTopology.value.name = result.name;
+      }
       // Other unsaved topology edits and inspector drafts remain unsaved.
     } finally {
       operation.value = "";
@@ -267,7 +336,7 @@ export const useLabStore = defineStore("lab", () => {
       kind
     ];
     let i = 1;
-    while (getNode(prefix + i)) i++;
+    while (getNode(prefix + i) || getRuntimeNode(prefix + i)) i++;
     let number = 1;
     while (
       topology.value.nodes.some((n) => n.name === template.prefix + number)
@@ -393,9 +462,13 @@ export const useLabStore = defineStore("lab", () => {
     dirty.value = true;
   }
   async function save() {
-    if (runtime.value?.deployment) return saveLayout();
     assertEditable();
-    const payload = parseTopology(topology.value);
+    if (pendingUpdate.value)
+      throw Error(
+        "拓扑包含未应用的设备或连线修改，请点击“应用拓扑”；保存布局不会修改运行设备",
+      );
+    const payload = parseTopology(topology.value),
+      deployed = !!runtime.value?.deployment;
     runtimeRevision++;
     operation.value = "save";
     try {
@@ -404,49 +477,43 @@ export const useLabStore = defineStore("lab", () => {
         "PUT",
         payload,
       );
-      topology.value = record.topology;
-      runtime.value = record.runtime;
+      const normalized = parseTopology(record.topology);
+      savedTopology.value = clone(normalized);
+      topology.value = normalized;
+      if (!deployed) {
+        runtime.value = record.runtime;
+      }
       saved.value = true;
       dirty.value = false;
-      labs.value = await api<LabSummary[]>("/api/labs");
+      if (!deployed) labs.value = await api<LabSummary[]>("/api/labs");
     } finally {
       operation.value = "";
     }
   }
-  async function saveLayout() {
-    assertLayoutEditable();
-    if (!saved.value) throw Error("请先保存项目");
-    const id = topology.value.id,
-      version = documentVersion.value;
-    const position = ({ id, x, y }: { id: string } & Point) => ({ id, x, y });
-    const payload = {
-      nodes: topology.value.nodes.map(position),
-      annotations: (topology.value.annotations || []).map(position),
-      optimizeLinks: topology.value.optimizeLinks !== false,
-    };
-    operation.value = "save";
-    runtimeRevision++;
-    try {
-      await api(`/api/labs/${id}/layout`, "POST", payload);
-      if (documentVersion.value === version) dirty.value = false;
-    } finally {
-      operation.value = "";
-    }
-  }
-  async function startJob(action: "deploy" | "destroy") {
-    if (action === "deploy" ? !canDeploy.value : !canDestroy.value)
-      throw Error("当前状态不允许执行此操作");
+  async function startJob(action: "deploy" | "destroy" | "update") {
+    const allowed =
+      action === "deploy"
+        ? canDeploy.value
+        : action === "update"
+          ? canUpdate.value && pendingUpdate.value
+          : canDestroy.value;
+    if (!allowed) throw Error("当前状态不允许执行此操作");
     if (action === "deploy" && (!saved.value || dirty.value)) await save();
+    const target = action === "update" ? parseTopology(topology.value) : null;
     runtimeRevision++;
     operation.value = action;
     try {
       const record = await api<LabRecord>(
         `/api/labs/${topology.value.id}/${action}`,
         "POST",
-        {},
+        target ? { topology: target, base: clone(savedTopology.value) } : {},
       );
       runtime.value = record.runtime;
       busy.value = true;
+      if (target) {
+        updateTarget = target;
+        terminalRevision.value++;
+      }
     } finally {
       operation.value = "";
     }
@@ -465,8 +532,29 @@ export const useLabStore = defineStore("lab", () => {
         operation.value
       )
         return;
+      const wasBusy = layoutLocked.value;
       runtime.value = record.runtime;
       busy.value = !!record.busy;
+      if (updateTarget && !record.busy && record.runtime.phase !== "updating") {
+        if (
+          record.runtime.phase !== "error" &&
+          record.runtime.phase !== "degraded" &&
+          networkSignature(record.topology) === networkSignature(updateTarget)
+        ) {
+          const normalized = parseTopology(record.topology);
+          topology.value = normalized;
+          savedTopology.value = clone(normalized);
+          configs.value = {};
+          dirty.value = false;
+        }
+        // An error retains the editable local draft for export, cleanup and redeploy.
+        updateTarget = null;
+      } else if (wasBusy && !dirty.value && !updateTarget && !record.busy) {
+        const normalized = parseTopology(record.topology);
+        savedTopology.value = clone(normalized);
+        if (JSON.stringify(topology.value) !== JSON.stringify(normalized))
+          topology.value = normalized;
+      }
     } finally {
       refreshing = false;
     }
@@ -482,6 +570,7 @@ export const useLabStore = defineStore("lab", () => {
   }
   async function deleteLab() {
     assertEditable();
+    if (runtime.value?.deployment) throw Error("请先清理设备，再删除实验");
     runtimeRevision++;
     operation.value = "delete";
     try {
@@ -510,6 +599,11 @@ export const useLabStore = defineStore("lab", () => {
     busy,
     operation,
     documentVersion,
+    terminalRevision,
+    pendingUpdate,
+    updateChanges,
+    runningNodes,
+    canUpdate,
     locked,
     layoutLocked,
     phase,
@@ -520,6 +614,9 @@ export const useLabStore = defineStore("lab", () => {
     assertEditable,
     assertLayoutEditable,
     getNode,
+    getRuntimeNode,
+    canOpenTerminal,
+    canCapture,
     getTemplate,
     supportsConfig,
     canSaveConfig,

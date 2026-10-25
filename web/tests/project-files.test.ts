@@ -143,11 +143,15 @@ it("saves only layout for a deployed experiment and preserves its runtime identi
   });
   lab.moveNode("r1", { x: 700, y: 400 });
   const version = lab.documentVersion,
-    fetchMock = vi.fn().mockResolvedValue(response({ ok: true }));
+    fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        response({ topology: lab.topology, runtime: lab.runtime }),
+      );
   vi.stubGlobal("fetch", fetchMock);
   await useProjectFiles().save();
-  expect(fetchMock.mock.calls[0][0]).toBe(`/api/labs/${topology.id}/layout`);
-  expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+  expect(fetchMock.mock.calls[0][0]).toBe(`/api/labs/${topology.id}`);
+  expect(fetchMock.mock.calls[0][1].method).toBe("PUT");
   expect(lab.runtime?.deployment).toBe("existing-run");
   expect(lab.documentVersion).toBe(version);
   expect(lab.dirty).toBe(false);

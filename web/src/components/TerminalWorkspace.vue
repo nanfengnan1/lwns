@@ -19,13 +19,7 @@ const components = new Map<string, TerminalControls>();
 const current = computed(() =>
   terminals.tabs.find((tab) => tab.id === terminals.active),
 );
-const canOpen = computed(
-  () =>
-    !!lab.runtime?.nodes[nodeId.value] &&
-    lab.environment.ready &&
-    !lab.busy &&
-    !lab.operation,
-);
+const canOpen = computed(() => lab.canOpenTerminal(nodeId.value));
 const states = {
   connecting: "连接中",
   connected: "已连接",
@@ -34,11 +28,11 @@ const states = {
 watch(
   () => editor.node?.id,
   (id) => {
-    if (id) nodeId.value = id;
+    if (id && lab.getRuntimeNode(id)) nodeId.value = id;
   },
 );
 watch(
-  () => lab.topology.nodes.map((node) => node.id),
+  () => lab.runningNodes.map((node) => node.id),
   (ids) => {
     if (!ids.includes(nodeId.value)) nodeId.value = ids[0] || "";
   },
@@ -51,7 +45,7 @@ watch(
     <div class="terminal-toolbar">
       <select id="terminal-node" v-model="nodeId" aria-label="终端设备">
         <option
-          v-for="node in lab.topology.nodes"
+          v-for="node in lab.runningNodes"
           :key="node.id"
           :value="node.id"
         >
@@ -66,7 +60,7 @@ watch(
         打开终端
       </button>
       <button
-        v-if="lab.getNode(nodeId)?.kind === 'router'"
+        v-if="lab.getRuntimeNode(nodeId)?.kind === 'router'"
         :disabled="!canOpen"
         @click="ui.run(() => terminals.open(nodeId, 'shell'))"
       >

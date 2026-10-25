@@ -197,7 +197,7 @@ Node.js 20.20.2 满足当前 Vite 的运行要求，因此缺少 Linux 原生包
 ``annotationBox`` 负责多行排版、自动换行和适应画布边界。
 设备与注释拖动均使用 Pointer Events 和捕获，结束、失焦或卸载时释放。
 ``AnnotationInspector.vue`` 复用 editor 草稿提交机制，应用时保留最新拖动坐标；
-无效草稿阻止切换和保存。新增/删除注释及编辑内容仍遵循部署编辑锁。
+无效草稿阻止切换和保存。部署后也可增删和编辑注释，只有操作期间锁定编辑。
 
 画布滚动与运行中布局
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -210,19 +210,38 @@ ResizeObserver 读取容器 clientWidth/clientHeight，扣除滚动条后再计�
 滚轮处理支持像素、行、页三种 deltaMode；普通滚轮平移，Shift 横移，Ctrl 围绕鼠标缩放，
 取消画布区域的默认滚轮行为以避免页面缩放。视口变化不触发拓扑脏标记，不写入 JSON。
 
-``layoutLocked`` 在忙碌、部署/清理阶段或本地操作期间禁用位置修改；
-``locked`` 额外检查部署记录，继续禁止拓扑增删及属性编辑。
-运行中可移动设备和已有注释、自动对齐及切换连线优化；顶部“保存布局”使用::
+``layoutLocked`` 与 ``locked`` 在忙碌、本地操作或 deploying/updating/destroying 阶段禁用编辑，
+不因存在 deployment 而禁止草稿变化。前端保留已应用拓扑与当前草稿，区分视觉保存和网络应用；
+新设备在成功应用前不能打开终端，终端/抓包/配置操作须核对真实运行对象。
 
-  POST /api/labs/{id}/layout
-  {"nodes":[{"id":"r1","x":100,"y":200}],"annotations":[],"optimizeLinks":true}
+部署后的纯视觉保存通过 ``PUT /api/labs/{id}`` 提交完整拓扑。
+后端比较运行字段，只有节点身份及运行属性、端口和链路关系一致时才允许写入，
+从而支持位置、尺寸、连线显示、注释增删/内容/样式及项目名变化，保留 runtime。
+网络字段不同则拒绝普通保存，要求显式应用。兼容旧客户端的 ``POST /api/labs/{id}/layout``
+仍只接受完整节点/注释 ID 集合的 id/x/y 和 optimizeLinks，不允许其他字段。
+前端视觉保存保留 documentVersion、选中对象与终端，失败保留草稿。
 
-nodes/annotations 必须完整覆盖已保存项目的各自 ID 集合；只接受 id/x/y，
-禁止未知、重复、缺失 ID 和额外配置字段，坐标必须有限且范围 ±100000。
-``LabManager.save_layout`` 持锁读取最新记录并原子写回，不执行宿主机命令，
-保留非布局字段及 runtime。接口沿用 Bearer/Origin 检查，忙碌或部署/清理阶段拒绝写入。
-普通 PUT 仍拒绝修改已部署拓扑。前端仅在成功后清除脏标记，不替换设备对象、
-运行状态或 documentVersion，因此保留选中设备和终端连接；保存失败保留草稿。
+运行中网络修改通过后台任务提交::
+
+  POST /api/labs/{id}/update
+  {"topology": {"...": "修改后的完整拓扑"}, "base": {"...": "编辑所基于的已应用拓扑"}}
+
+``lab_updates.py`` 实现增量规划和资源更新；``LabManager.start_update`` 在锁内校验
+当前状态、归属、参数和完整规范化 base，拒绝旧页面覆盖更新后的拓扑。
+响应为任务接受时的记录，phase 为 updating；前端轮询状态，成功才替换已应用快照并清除待应用标记。
+任务成功前，持久化 topology 保留旧版本；失败时前端保留新草稿，后端记录 error 并尝试恢复受影响资源。
+发生失败后要求清理再部署，不能承诺原网络完全恢复或全程无中断。
+
+增删节点只操作本实验所属容器。name/image/kind/template/command/config 变化重建对应节点，
+未变化节点继续运行；端口、地址、网关及 veth 关系由运行环境增量同步。
+空闲端口不会额外创建接口，未连接端口地址和没有活动接口的网关不执行。
+容器和 veth 操作前复查标签、网络命名空间、接口 alias 与对端索引，避免删除非本实验资源。
+共享配置目录保留，重建前做文件快照；不会自动保存终端运行配置，需由用户提前保存。
+删除全部节点可得到 nodes 为空的部署记录，后续仍可应用新设备，清理后回到 idle。
+
+任务开始关闭本实验的终端和抓包会话，其他实验不受影响；应用完成后由用户重新打开。
+保存、改名、配置写入、更新、部署与清理遵循同一互斥约束。
+HTTP 接口沿用 Bearer/Origin 校验，接口响应与忙状态不能共享可变任务对象。
 
 设备由 ``lab_devices.py`` 的模板目录和适配器注册表描述；兼容现有模板的新镜像可直接在
 Web 镜像管理中绑定，新增设备行为才需要注册模板及适配器。
@@ -247,7 +266,7 @@ Web 镜像管理中绑定，新增设备行为才需要注册模板及适配器�
 
 响应为 ``{"id":"...","name":"..."}``，接口只接受 name 字段，沿用 Bearer 和 Origin 校验。
 ``LabManager.rename`` 持锁读取并原子写回当前记录，仅更新名称及更新时间；
-允许已有部署，拒绝正在部署/清理的项目，不放宽普通 PUT 拓扑的编辑锁。
+允许已有部署，拒绝正在部署/应用/清理的项目；只修改显示名称，不替代拓扑应用。
 前端更新名称和列表，不调用 adopt、不更新 documentVersion，不覆盖运行状态、属性草稿或终端标签。
 其他未保存的拓扑改动保持未保存，接口失败保留原名称。
 
@@ -276,7 +295,7 @@ FRR 持久化目录和备份布局见 :doc:`../user/workbench`。
 * ``POST /api/labs/{id}/configs``：``{}`` 保存所有支持的设备，``{"node":"r1"}`` 保存单台。
   响应为 ``{results:[{node,ok,status?,config?,error?}],runtime}``。
 
-保存复用部署锁，与部署、清理互斥，先检查所有启用进程可用；每台独立汇报错误，
+保存复用部署锁，与部署、拓扑应用、清理互斥，先检查所有启用进程可用；每台独立汇报错误，
 成功的配置立即同步拓扑并落盘。前端只更新成功设备及配置预览，不调用 ``adopt``，
 因此保留选中设备和终端连接，同时刷新属性草稿并拒绝旧的异步响应。
 当前 FRR 文本沿用每设备 32768 字符限制。备份目前不自动轮转，应按需归档。
@@ -301,7 +320,7 @@ FRR 持久化目录和备份布局见 :doc:`../user/workbench`。
   ``DELETE /api/images/{id}`` 创建后台任务，成功后才移除管理记录。
 * ``PUT /api/images/{id}``：修改显示名称和绑定模板。
 
-JSON 仍限制 1 MiB；大文件使用 ``request.stream()`` 分块写盘，不读入完整内存。
+普通 JSON 限制 1 MiB，拓扑更新的 topology/base 请求体限 2 MiB（单个拓扑仍限 1 MiB）；大文件使用 ``request.stream()`` 分块写盘，不读入完整内存。
 执行使用参数数组，不经过宿主机 shell。构建上下文拒绝路径逃逸、链接、特殊文件和解压超限。
 镜像归档仅支持未压缩 tar；前端及上传登记 API 对 archive 类型要求 ``.tar`` 扩展名。
 上传与 URL 下载共用 ``validate_load_archive``，通过 ``tarfile.open(..., "r:")`` 检查原始 tar 格式，
@@ -331,8 +350,10 @@ API 提供 ``can_delete``，执行删除前重新同步并校验标签与归属 
 ``DeviceLibrary.vue`` 使用 router/switch/host/firewall 四个横向分类入口；初始 selected=null，
 只有进入子目录才渲染对应分类，双列圆形设备每批 60 项，不再提供搜索框或查询状态。
 分类入口和设备圆形背景通过 ``--device-color`` 使用 ``domain/topology.colors``，与画布共用类型配色；
-设备条目外层透明无方框，名称/镜像在圆形下方，悬停和键盘焦点以圆环提示。
-切换分类或返回时重置分页与滚动；返回按钮把焦点交回原分类，方向键与 Home/End 可切换分类。
+设备条目外层透明无方框，圆形直径 40px、内部 SVG 25px，行列间距 4px；
+名称/镜像在圆形下方，悬停和键盘焦点以圆环提示。
+子分类标题不设返回按钮，点击顶部类别直接切换并重置分页与滚动；
+方向键与 Home/End 可切换分类，焦点停留在对应分类按钮。
 目录刷新保留当前类别，只更新卡片和数量；折叠侧栏保留状态，刷新页面回到分类首页。
 没有“全部”平铺列表、侧栏镜像管理按钮或底部连接提示；镜像管理统一从顶部“工具”菜单按需加载。
 ``domain/library.ts`` 统一分类和镜像类型选项。防火墙使用 ``linux-firewall`` 模板与既有 Linux 适配器，
@@ -421,7 +442,8 @@ Linux 目录包由 ``packaging/linux/build.py`` 构建，PyInstaller onedir 内�
 ----------------------------------------
 
 ``lab_server.py`` 提供 FastAPI 应用，阻塞的文件和 Docker 操作在线程中执行。
-``lab_core.py`` 继续管理拓扑和部署，``lab_terminal.py`` 管理交互会话。
+``lab_core.py`` 管理拓扑和部署，``lab_updates.py`` 负责运行中增量拓扑应用，
+``lab_terminal.py`` 管理交互会话。
 服务保持单进程运行，数据目录锁、后台部署任务、连接凭证和会话共享同一实例。
 Linux、Docker 和 root 权限要求保持不变，使用方法见 :doc:`../user/workbench`。
 
@@ -476,14 +498,27 @@ Linux、Docker 和 root 权限要求保持不变，使用方法见 :doc:`../user
 Docker/netns 行为测试使用模拟执行器，真实容器连通性仍须在 Linux 主机验收。
 
 ``tests/check_canvas_navigation.cjs`` 验证实际原生滚动条拖动、普通/Shift/Ctrl 滚轮、
-鼠标缩放锚点、运行中移动与对齐、保存后刷新恢复以及增删改限制。
-使用独立 FakeHost 服务提供运行中的实验，不操作 Docker；先启动专用 Chromium 调试端口，然后运行::
+鼠标缩放锚点、运行中移动与对齐、增改删注释纯保存，以及设备/连线草稿、
+应用期间编辑锁、应用后保留不变容器、地址更新和删除同步、刷新恢复。
+使用独立 ImageHost/FakeHost 服务提供运行中的实验，不操作 Docker；先启动专用 Chromium 调试端口，然后运行::
 
   .venv/bin/python tests/serve_canvas_fixture.py --port 8106
   node tests/check_canvas_navigation.cjs http://127.0.0.1:9350 \
     'http://127.0.0.1:8106/#token=canvas-scroll-check' /tmp/canvas-navigation-results
 
 每次验证使用新启动的 fixture 服务；停止服务即回收临时数据目录。
+
+运行中拓扑应用另有两组后端测试：
+
+* ``tests/test_topology_update.py`` 的 16 项测试覆盖增删容器和 veth、
+  属性重建、地址同步、保留未变化设备、资源归属、空部署和失败恢复。
+* ``tests/test_topology_update_api.py`` 的 5 项测试覆盖认证与 Origin、
+  JSON 请求体限制、base 版本校验、关闭相关终端/抓包会话和退出时等待任务。
+
+2026-10-25 验收：111 项前端测试通过；Python 共 135 项，其中 129 项通过，
+6 项需要显式启用的真实 Docker 测试跳过。主工作台及运行中画布浏览器回归通过；
+这些测试使用模拟执行器，未操作真实 Docker 或正式服务，不能替代真实容器连通性验收。
+
 
 ``tests/test_terminal.py`` 包含凭证、Origin 和归属检查，并提供显式启用的真实
 Docker 终端测试。浏览器终端测试可先运行 ``tests/serve_terminal_fixture.py``，
@@ -541,7 +576,7 @@ Docker 拒绝归档时的错误提示和临时文件回收。
   node tests/check_managed_images.cjs http://127.0.0.1:9222 'http://127.0.0.1:8107/#token=library-check' /tmp/managed-images-check
 
 ``tests/check_library_groups.cjs`` 验证横向分类入口、单分类子目录、双列卡片、搜索框已移除、
-返回与键盘导航、分批加载、默认镜像删除、防火墙导入、改类型、取消绑定及刷新后不恢复已删条目；
+无返回按钮及分类键盘导航、分批加载、默认镜像删除、防火墙导入、改类型、取消绑定及刷新后不恢复已删条目；
 同时检查窄窗口下画布引导不遮挡控件，日志面板最大高度不超出窗口。每次验证启动新的 fixture::
 
   .venv/bin/python tests/serve_library_fixture.py --port 8107

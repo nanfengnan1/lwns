@@ -58,9 +58,21 @@ const actions = computed<Record<MenuKey, MenuAction[]>>(() => ({
     {
       id: "menu-save",
       title: lab.runtime?.deployment ? "保存实验布局" : "保存实验",
-      disabled: lab.layoutLocked,
+      disabled: lab.layoutLocked || lab.pendingUpdate,
       run: files.save,
     },
+    ...(lab.runtime?.deployment
+      ? [
+          {
+            id: "menu-apply-topology",
+            title: "应用拓扑",
+            disabled:
+              !lab.canUpdate ||
+              (!lab.pendingUpdate && !(editor.draftDirty && editor.draft)),
+            run: files.applyTopology,
+          },
+        ]
+      : []),
     {
       id: "menu-rename",
       title: "重命名实验…",

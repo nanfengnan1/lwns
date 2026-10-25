@@ -31,9 +31,9 @@ async function remove() {
   <button
     type="button"
     class="delete-button"
-    :disabled="lab.locked || empty"
+    :disabled="lab.locked || !!lab.runtime?.deployment || empty"
     :title="
-      lab.locked
+      lab.locked || lab.runtime?.deployment
         ? '请等待操作完成，并清理设备后再删除实验'
         : empty
           ? '当前画布为空'

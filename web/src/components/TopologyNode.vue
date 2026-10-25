@@ -51,7 +51,11 @@ const ports = computed(() =>
       :cx="radius * 0.65"
       :cy="-radius * 0.65"
       r="3"
-      :fill="lab.phase === 'running' ? '#49b08c' : '#d4dce8'"
+      :fill="
+        lab.phase === 'running' && lab.getRuntimeNode(node.id)
+          ? '#49b08c'
+          : '#d4dce8'
+      "
     />
     <text class="node-name" :y="radius + 18">{{
       node.name.length > 14 ? node.name.slice(0, 13) + "…" : node.name

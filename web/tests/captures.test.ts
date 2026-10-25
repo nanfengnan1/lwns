@@ -9,6 +9,8 @@ import {
 } from "../src/stores/captures";
 import { useLabStore } from "../src/stores/lab";
 import { api } from "../src/api/client";
+import example from "../../examples/basic-lab.json";
+import { parseTopology } from "../src/domain/topology";
 vi.mock("../src/api/client", () => ({
   api: vi.fn(),
   getToken: () => "token",
@@ -29,6 +31,23 @@ describe("capture sessions", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.mocked(api).mockReset();
+    const lab = useLabStore(),
+      topology = parseTopology({ ...example, id: "lab1" });
+    lab.adopt(topology, {
+      topology,
+      runtime: {
+        phase: "running",
+        deployment: "run",
+        logs: [],
+        nodes: Object.fromEntries(
+          topology.nodes.map((node, i) => [
+            node.id,
+            { id: "container-" + node.id, name: node.name, pid: i + 1 },
+          ]),
+        ),
+      },
+    });
+    lab.environment.ready = true;
     vi.stubGlobal("location", { origin: "http://host:8090" });
   });
   it("launch URL contains only the origin and a short-lived ticket", () => {

@@ -65,9 +65,8 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     assert.equal(await evaluate('document.querySelectorAll(".device-card").length'),hostCount);
     assert.equal(await evaluate('document.querySelectorAll("[data-device-group=router]").length'),0,'switching category removes the previous category');
     assert.equal(await evaluate('document.querySelector("#device-library").scrollTop'),0,'changing category resets list scroll');
-    await click('#library-back');
-    await wait('!!document.querySelector("#library-home")');
-    assert.equal(await evaluate('document.activeElement.dataset.category'),'host','back returns focus to the category');
+    assert.equal(await evaluate('!!document.querySelector("#library-back")'),false,'subcategories have no back button');
+    assert.equal(await evaluate('document.activeElement.dataset.category'),'host','category remains focused for keyboard navigation');
     for (const key of ['ArrowRight','Home','End','ArrowLeft']) {
       await send('Input.dispatchKeyEvent',{type:'keyDown',key});await send('Input.dispatchKeyEvent',{type:'keyUp',key});
       const selected=key==='ArrowRight'||key==='End'?'firewall':key==='Home'?'router':'host';
@@ -140,6 +139,6 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     assert.ok(await evaluate('document.querySelector(".bottom-panel").getBoundingClientRect().bottom<=innerHeight+1'),'maximum output height includes the canvas margins');
     await shot('device-grid-1000.png');
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({ok:true,checks:['horizontal categories; devices hidden until entry','two-column cards; complete pagination; fixed category navigation','no category search; back and keyboard navigation; narrow viewport','default image deletion removes sidebar card across all pages','firewall import and canvas device','type change moves card to PC','unbinding removes only its card','existing canvas preserved','deleted entries stay gone after reload'],screenshots:output},null,2));
+    console.log(JSON.stringify({ok:true,checks:['horizontal categories; devices hidden until entry','two-column cards; complete pagination; fixed category navigation','no category search or back button; keyboard category navigation; narrow viewport','default image deletion removes sidebar card across all pages','firewall import and canvas device','type change moves card to PC','unbinding removes only its card','existing canvas preserved','deleted entries stay gone after reload'],screenshots:output},null,2));
   }catch(error){await shot('failed.png');throw error;}finally{ws.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -46,7 +46,13 @@ export interface Topology {
   optimizeLinks?: boolean;
 }
 export type Phase =
-  "idle" | "running" | "deploying" | "destroying" | "error" | "degraded";
+  | "idle"
+  | "running"
+  | "deploying"
+  | "updating"
+  | "destroying"
+  | "error"
+  | "degraded";
 export interface Runtime {
   phase: Phase;
   deployment?: string;

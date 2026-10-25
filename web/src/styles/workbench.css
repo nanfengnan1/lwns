@@ -334,7 +334,7 @@ button.quiet {
   flex-shrink: 0;
   gap: 3px;
   border-bottom: 1px solid #e2e8f0;
-  padding: 0 0 14px;
+  padding: 0 0 8px;
 }
 .category-tile {
   display: flex;
@@ -406,23 +406,7 @@ button.quiet {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 16px 0 10px;
-  flex-shrink: 0;
-}
-.library-breadcrumb button {
-  display: grid;
-  place-items: center;
-  padding: 4px;
-  background: transparent;
-  border-color: transparent;
-}
-.library-breadcrumb svg {
-  width: 17px;
-  height: 17px;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  padding: 10px 0 6px;
   flex-shrink: 0;
 }
 .library-breadcrumb b {
@@ -441,12 +425,12 @@ button.quiet {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 2px;
-  margin-top: 6px;
+  margin-top: 2px;
 }
 .device-group-items {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 4px;
 }
 .device-card {
   position: relative;
@@ -455,9 +439,9 @@ button.quiet {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   text-align: center;
-  padding: 8px 4px 10px;
+  padding: 6px 2px;
   border: 0;
   background: transparent;
   cursor: grab;
@@ -482,8 +466,8 @@ button.quiet {
 .device-card .device-icon {
   display: grid;
   place-items: center;
-  width: 60px;
-  height: 60px;
+  width: 40px;
+  height: 40px;
   flex-shrink: 0;
   border-radius: 50%;
   background: var(--device-color, var(--blue));
@@ -491,8 +475,8 @@ button.quiet {
   transition: box-shadow 0.15s;
 }
 .device-card svg {
-  width: 34px;
-  height: 34px;
+  width: 25px;
+  height: 25px;
 }
 .device-card-label {
   min-width: 0;
@@ -508,7 +492,7 @@ button.quiet {
   display: block;
   font-size: 10px;
   color: #8592a6;
-  margin-top: 5px;
+  margin-top: 2px;
 }
 .device-card-label b,
 .device-card-label small {
@@ -522,7 +506,7 @@ button.quiet {
   background: #fbf5e9;
   padding: 2px 5px;
   border-radius: 4px;
-  margin-top: -5px;
+  margin-top: 0;
 }
 .library-home,
 .library-empty {

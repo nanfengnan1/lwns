@@ -17,6 +17,33 @@ export function useProjectFiles() {
     );
   }
 
+  async function applyTopology() {
+    editor.commitDraft();
+    if (!lab.pendingUpdate) {
+      ui.notify("没有需要应用的设备或连线修改，可点击保存布局");
+      return;
+    }
+    if (!lab.canUpdate)
+      throw Error("请等待设备运行就绪；应用失败后请先清理再部署");
+    const { added, removed, rebuilt } = lab.updateChanges;
+    const affected = [...removed, ...rebuilt].map((node) => node.name);
+    const message = [
+      `应用当前拓扑到运行设备？新增 ${added.length} 台，删除 ${removed.length} 台，重建 ${rebuilt.length} 台。`,
+      ...(affected.length
+        ? [
+            `删除或重建设备：${affected.join("、")}。`,
+            "这些设备未保存的终端配置可能丢失，建议先保存设备配置。",
+          ]
+        : []),
+      "变更会同步到容器和网线，本实验的现有终端与抓包会断开。",
+    ].join("\n");
+    if (!window.confirm(message)) return;
+    await lab.startJob("update");
+    editor.pending = null;
+    ui.showPanel("logs");
+    ui.notify("正在应用拓扑，请查看部署日志");
+  }
+
   async function importFile(file: Pick<File, "size" | "text">) {
     if (lab.operation) throw Error("请等待当前操作完成后再打开拓扑文件");
     if (file.size > 1024 * 1024) throw Error("拓扑文件不能超过 1 MiB");
@@ -48,5 +75,5 @@ export function useProjectFiles() {
     ui.notify("拓扑 JSON 已导出；设备共享目录与镜像不包含在文件中");
   }
 
-  return { save, importFile, exportFile };
+  return { save, applyTopology, importFile, exportFile };
 }

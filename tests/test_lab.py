@@ -31,6 +31,7 @@ class FakeHost:
         self.containers = {}
         self.calls = []
         self.interfaces = {}
+        self.routes = {}
         self.counter = 0
         self.ifindex = 10
         self.fail_link = False
@@ -69,6 +70,7 @@ class FakeHost:
                 self.containers[cid]["Mounts"] = mounts
                 self.running_configs[cid] = "!\n"
                 self.interfaces[cid] = {"lo": {"ifname": "lo", "ifindex": 1, "flags": ["UP"]}}
+                self.routes[cid] = []
                 output = cid
             elif args[0] == "start":
                 self.containers[args[1]]["State"]["Running"] = True
@@ -87,6 +89,7 @@ class FakeHost:
                 removed = set(row["ifindex"] for row in self.interfaces[cid].values() if row["ifname"] != "lo")
                 del self.containers[cid]
                 del self.interfaces[cid]
+                self.routes.pop(cid, None)
                 for interfaces in self.interfaces.values():
                     for name in list(interfaces):
                         if interfaces[name].get("link_index") in removed:
@@ -153,8 +156,34 @@ class FakeHost:
                     interface["flags"] = ["UP"]
                 if "master" in args:
                     interface["master"] = args[-1]
-            elif args[:2] in (["addr", "add"], ["addr", "replace"]) or args[0] in ("-4", "-6"):
-                pass
+            elif args[:2] == ["link", "delete"]:
+                name = args[-1]
+                row = self.interfaces[cid].pop(name)
+                for peer, rows in self.interfaces.items():
+                    for peer_name, other in list(rows.items()):
+                        if other.get("link_index") == row["ifindex"]:
+                            del rows[peer_name]
+                            self.routes[peer] = [r for r in self.routes.get(peer, []) if r.get("dev") != peer_name]
+                self.routes[cid] = [r for r in self.routes.get(cid, []) if r.get("dev") != name]
+            elif args[:3] == ["-j", "addr", "show"]:
+                output = json.dumps([self.interfaces[cid][args[-1]]])
+            elif args[:2] in (["addr", "add"], ["addr", "replace"], ["addr", "del"]):
+                address, prefix = args[2].split("/")
+                values = self.interfaces[cid][args[-1]].setdefault("addr_info", [])
+                values[:] = [value for value in values if value["local"] != address]
+                if args[1] != "del":
+                    values.append({"local": address, "prefixlen": int(prefix)})
+            elif args[0] in ("-4", "-6"):
+                if args[1:4] == ["-j", "route", "show"]:
+                    output = json.dumps([r for r in self.routes.get(cid, []) if r["family"] == args[0]])
+                else:
+                    gateway = args[args.index("via") + 1]
+                    device = args[args.index("dev") + 1] if "dev" in args else None
+                    if args[2] == "del":
+                        self.routes[cid] = [r for r in self.routes[cid] if (r["gateway"], r["dev"]) != (gateway, device)]
+                    else:
+                        self.routes[cid] = [r for r in self.routes[cid] if r["family"] != args[0]]
+                        self.routes[cid].append({"dst": "default", "gateway": gateway, "dev": device, "family": args[0]})
             else:
                 raise AssertionError("Unexpected namespace command: " + repr(args))
         else:
@@ -300,12 +329,14 @@ class DeploymentTests(unittest.TestCase):
         with self.assertRaisesRegex(LabError, "不存在"):
             self.manager.rename("missing-lab", "新名称")
 
-    def test_rename_does_not_relax_deployed_topology_lock(self):
+    def test_rename_allows_visual_save_but_running_settings_require_update(self):
         self.manager.deploy(self.record)
         self.manager.rename("first-lab", "运行中")
         changed = self.manager.read("first-lab")["topology"]
         changed["nodes"][0]["x"] = 999
-        with self.assertRaisesRegex(LabError, "已经部署"):
+        self.manager.save(changed)
+        changed["nodes"][0]["name"] = "RENAMED"
+        with self.assertRaisesRegex(LabError, "应用拓扑"):
             self.manager.save(changed)
 
     def test_running_layout_save_preserves_settings_runtime_and_host(self):
@@ -325,7 +356,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertFalse(after["topology"]["optimizeLinks"])
         self.assertEqual(len(self.host.calls), calls)
         self.assertEqual(LabManager(self.temp.name, runner=self.host).read("first-lab"), after)
-        with self.assertRaises(LabError): self.manager.save(after["topology"])
+        self.assertEqual(self.manager.save(after["topology"])["runtime"], after["runtime"])
 
     def test_layout_rejects_invalid_ids_settings_and_busy_without_writing(self):
         payload = {"nodes": [{key: n[key] for key in ("id", "x", "y")} for n in self.record["topology"]["nodes"]],
@@ -344,15 +375,15 @@ class DeploymentTests(unittest.TestCase):
         with self.assertRaisesRegex(LabError, "等待"): self.manager.save_layout("first-lab", payload)
         self.assertEqual(self.manager.path("first-lab").read_bytes(), before)
 
-    def test_missing_image_or_unconnected_address_has_no_side_effects(self):
+    def test_missing_image_fails_and_unconnected_addresses_stay_as_drafts(self):
         self.host.missing_image = True
         with self.assertRaisesRegex(LabError, "镜像"): self.manager.deploy(self.record)
         self.assertFalse(self.host.containers)
         self.host.missing_image = False
         self.record["topology"]["links"] = []
-        before = len(self.host.calls)
-        with self.assertRaisesRegex(LabError, "网线"): self.manager.deploy(self.record)
-        self.assertEqual(len(self.host.calls), before)
+        self.manager.deploy(self.record)
+        self.assertEqual(len(self.host.containers), 5)
+        self.assertFalse(any("addr" in args or "default" in args for args, _ in self.host.calls))
 
     def test_name_collision_preserves_existing_container(self):
         foreign = {"Id": "foreign", "Name": "/rov-first-lab-r1", "Config": {"Labels": {}}, "State": {"Pid": 9000}}
@@ -395,9 +426,10 @@ class DeploymentTests(unittest.TestCase):
         self.host.interfaces[cid]["eth0"]["flags"] = []
         self.assertEqual(self.manager.status("first-lab")["runtime"]["phase"], "degraded")
 
-    def test_edit_and_delete_blocked_until_cleanup(self):
+    def test_runtime_edits_and_delete_require_update_or_cleanup(self):
         self.manager.deploy(self.record)
-        with self.assertRaises(LabError): self.manager.save(example())
+        changed = example(); changed["nodes"][0]["image"] = "changed:latest"
+        with self.assertRaises(LabError): self.manager.save(changed)
         with self.assertRaises(LabError): self.manager.delete("first-lab")
         self.manager.destroy(self.record)
         self.manager.save(example())

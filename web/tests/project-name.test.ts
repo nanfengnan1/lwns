@@ -80,7 +80,7 @@ it("preserves deployed runtime, selection and terminal tabs during metadata-only
       .fn()
       .mockResolvedValue(response({ id: lab.topology.id, name: "运行中改名" })),
   );
-  expect(lab.locked).toBe(true);
+  expect(lab.locked).toBe(false);
   expect(lab.canRename).toBe(true);
   await lab.rename("运行中改名");
   await nextTick();

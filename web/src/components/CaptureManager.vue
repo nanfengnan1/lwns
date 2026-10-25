@@ -30,10 +30,7 @@ const pending = computed(() =>
 const canStart = computed(
   () =>
     !!link.value &&
-    lab.saved &&
-    !!lab.runtime?.deployment &&
-    !lab.busy &&
-    !lab.operation &&
+    lab.canCapture(link.value.id) &&
     captures.capabilities.available &&
     !captures.submitting &&
     !pending.value,

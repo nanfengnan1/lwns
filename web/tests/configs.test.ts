@@ -55,7 +55,7 @@ it("saves configuration without closing terminals or leaving an old inspector dr
       }),
     ),
   );
-  expect(lab.locked).toBe(true);
+  expect(lab.locked).toBe(false);
   expect(lab.canSaveConfig("r1")).toBe(true);
   await lab.saveConfigs("r1");
   await nextTick();

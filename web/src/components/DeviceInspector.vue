@@ -14,7 +14,11 @@ const lab = useLabStore(),
   ui = useUiStore();
 function apply() {
   editor.commitDraft();
-  ui.notify("设备设置已应用，保存后部署生效");
+  ui.notify(
+    lab.runtime?.deployment
+      ? "设备设置已写入草稿，点击顶部“应用拓扑”后生效"
+      : "设备设置已应用，保存后部署生效",
+  );
 }
 </script>
 
@@ -45,7 +49,11 @@ function apply() {
           </div>
         </div>
         <div v-if="lab.runtime?.deployment" class="readonly-note">
-          设备已部署。修改拓扑或地址前，请先清理设备。可打开终端查看和配置运行中的设备。
+          {{
+            lab.getRuntimeNode(editor.node.id)
+              ? "设备正在运行。修改先保留在草稿中，点击顶部“应用拓扑”后生效。"
+              : "此设备尚未部署，点击顶部“应用拓扑”后才能打开终端。"
+          }}
         </div>
         <form
           id="node-form"
@@ -157,8 +165,9 @@ function apply() {
                 :disabled="lab.locked"
               ></textarea
               ><small
-                >首次部署用于初始化配置。手动修改后，下次部署会备份并替换磁盘配置；Web
-                保存设备配置会同步此文本。</small
+                >首次部署用于初始化配置。部署后修改此文本，应用拓扑时会重建设备并备份、替换磁盘配置。
+                请先保存需要保留的运行配置；Web
+                保存设备配置会同步未手动修改的文本。</small
               ></label
             >
           </details>
@@ -177,28 +186,29 @@ function apply() {
           </div>
         </form>
         <DeviceConfigPanel
-          v-if="lab.supportsConfig(editor.node)"
-          :node="editor.node"
+          v-if="
+            lab.supportsConfig(
+              lab.getRuntimeNode(editor.node.id) || editor.node,
+            )
+          "
+          :node="lab.getRuntimeNode(editor.node.id) || editor.node"
         />
         <div class="property-section">
           <h3>设备终端</h3>
           <button
             id="inspect-console"
-            :disabled="
-              !lab.runtime?.nodes[editor.node.id] ||
-              !lab.environment.ready ||
-              lab.busy ||
-              !!lab.operation
-            "
+            :disabled="!lab.canOpenTerminal(editor.node.id)"
             @click="ui.run(() => terminals.open(editor.node!.id))"
           >
             打开交互终端 ↗
           </button>
-          <code v-if="lab.runtime?.nodes[editor.node.id]" class="code-line"
-            >docker exec -it {{ lab.runtime.nodes[editor.node.id].name }}
+          <code v-if="lab.getRuntimeNode(editor.node.id)" class="code-line"
+            >docker exec -it {{ lab.runtime!.nodes[editor.node.id].name }}
             {{
-              lab.getTemplate(editor.node)?.console ||
-              (editor.node.kind === "router" ? "vtysh" : "sh")
+              lab.getTemplate(lab.getRuntimeNode(editor.node.id)!)?.console ||
+              (lab.getRuntimeNode(editor.node.id)!.kind === "router"
+                ? "vtysh"
+                : "sh")
             }}</code
           >
           <p v-else class="inspector-help">
@@ -226,12 +236,7 @@ function apply() {
         <button
           id="capture-link"
           class="primary"
-          :disabled="
-            !lab.saved ||
-            !lab.runtime?.deployment ||
-            lab.busy ||
-            !!lab.operation
-          "
+          :disabled="!lab.canCapture(editor.link.id)"
           @click="
             ui.captureLink = editor.link.id;
             ui.captureOpen = true;

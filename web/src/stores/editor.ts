@@ -165,8 +165,14 @@ export const useEditorStore = defineStore("editor", () => {
   });
   watch(
     () => node.value?.config,
-    () => {
+    (value, previous) => {
       if (!draftDirty.value) resetDraft();
+      else if (
+        draft.value &&
+        draft.value.config === previous &&
+        value !== undefined
+      )
+        draft.value.config = value;
     },
   );
   return {

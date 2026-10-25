@@ -339,7 +339,7 @@ describe("annotations", () => {
     expect(lab.topology.nodes).toHaveLength(5);
     expect(lab.topology.links).toHaveLength(4);
   });
-  it("keeps invalid annotation drafts selected and prevents changes when deployed", () => {
+  it("keeps invalid annotation drafts selected and permits annotation changes when deployed", () => {
     const lab = useLabStore(),
       editor = useEditorStore();
     lab.adopt(parseTopology(example));
@@ -354,8 +354,8 @@ describe("annotations", () => {
     expect(editor.annotation).toMatchObject({ x: 5, y: 5 });
     expect(() =>
       lab.updateAnnotation({ ...editor.annotation!, text: "changed" }),
-    ).toThrow();
-    expect(() => lab.remove("annotation", id)).toThrow();
+    ).not.toThrow();
+    expect(() => lab.remove("annotation", id)).not.toThrow();
   });
 });
 describe("scrollable workspace", () => {

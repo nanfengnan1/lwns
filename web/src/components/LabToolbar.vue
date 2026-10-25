@@ -7,7 +7,7 @@ import { useProjectFiles } from "../composables/useProjectFiles";
 const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore();
-const { save } = useProjectFiles();
+const { save, applyTopology } = useProjectFiles();
 function revealCommand(event: FocusEvent) {
   const target = event.target;
   if (target instanceof HTMLElement && target !== event.currentTarget) {
@@ -68,11 +68,20 @@ async function destroy() {
           <span id="save-state" :class="{ dirty: editor.unsaved }">{{
             lab.operation === "save"
               ? "保存中…"
-              : editor.unsaved
-                ? "有未保存修改"
-                : lab.saved
-                  ? "已保存"
-                  : "未保存"
+              : lab.operation === "update" || lab.phase === "updating"
+                ? "正在应用…"
+                : lab.runtime?.deployment && lab.phase === "error"
+                  ? "操作失败，需清理"
+                  : lab.pendingUpdate ||
+                      (lab.runtime?.deployment &&
+                        editor.draftDirty &&
+                        editor.draft)
+                    ? "拓扑待应用"
+                    : editor.unsaved
+                      ? "有未保存修改"
+                      : lab.saved
+                        ? "已保存"
+                        : "未保存"
           }}</span>
         </div>
         <div class="canvas-toolbar" role="group" aria-label="拓扑排版工具">
@@ -130,7 +139,16 @@ async function destroy() {
           </button>
         </div>
         <div class="toolbar-actions" role="group" aria-label="实验保存与部署">
-          <button id="save" :disabled="lab.layoutLocked" @click="ui.run(save)">
+          <button
+            id="save"
+            :disabled="lab.layoutLocked || lab.pendingUpdate"
+            :title="
+              lab.pendingUpdate
+                ? '设备或连线已修改，请点击应用拓扑'
+                : '保存项目布局与注释'
+            "
+            @click="ui.run(save)"
+          >
             <svg
               class="button-icon"
               viewBox="0 0 20 20"
@@ -142,7 +160,10 @@ async function destroy() {
             {{ lab.runtime?.deployment ? "保存布局" : "保存实验" }}
           </button>
           <SaveConfigButton
-            v-if="lab.topology.nodes.some(lab.supportsConfig)"
+            v-if="
+              lab.topology.nodes.some(lab.supportsConfig) ||
+              lab.runningNodes.some(lab.supportsConfig)
+            "
           />
           <button
             id="destroy"
@@ -160,6 +181,20 @@ async function destroy() {
             >清理设备
           </button>
           <button
+            v-if="lab.runtime?.deployment"
+            id="apply-topology"
+            class="primary"
+            :disabled="
+              !lab.canUpdate ||
+              (!lab.pendingUpdate && !(editor.draftDirty && editor.draft))
+            "
+            title="将设备和连线修改同步到运行中的实验"
+            @click="ui.run(applyTopology)"
+          >
+            应用拓扑
+          </button>
+          <button
+            v-else
             id="deploy"
             class="primary"
             :disabled="!lab.canDeploy"

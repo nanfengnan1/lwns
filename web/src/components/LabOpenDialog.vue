@@ -28,6 +28,7 @@ const labels: Record<Phase, string> = {
   idle: "未部署",
   running: "运行中",
   deploying: "部署中",
+  updating: "应用拓扑中",
   destroying: "清理中",
   error: "需要检查",
   degraded: "状态异常",

@@ -24,6 +24,7 @@ export const phases: Record<Phase, string> = {
   idle: "设计中",
   running: "运行中",
   deploying: "正在部署",
+  updating: "正在应用拓扑",
   destroying: "正在清理",
   error: "操作失败",
   degraded: "需要检查",

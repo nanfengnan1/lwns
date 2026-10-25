@@ -19,17 +19,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
   const tabs = ref<TerminalTab[]>([]);
   const active = ref("");
   function open(nodeId: string, mode: "default" | "shell" = "default") {
-    const node = lab.getNode(nodeId),
+    const node = lab.getRuntimeNode(nodeId),
       deployment = lab.runtime?.deployment;
-    if (
-      !node ||
-      !deployment ||
-      !lab.runtime?.nodes[nodeId] ||
-      !lab.environment.ready ||
-      lab.busy ||
-      ["deploying", "destroying"].includes(lab.phase) ||
-      lab.operation
-    )
+    if (!node || !deployment || !lab.canOpenTerminal(nodeId))
       throw Error("请先部署设备，运行就绪后再打开终端");
     if (
       (lab.getTemplate(node)?.console ||
@@ -62,7 +54,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
         tabs.value[Math.min(index, tabs.value.length - 1)]?.id || "";
   }
   watch(
-    () => lab.documentVersion,
+    () => [lab.documentVersion, lab.terminalRevision],
     () => {
       tabs.value = [];
       active.value = "";
@@ -79,7 +71,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
         if (
           tab.deployment !== lab.runtime?.deployment ||
           !lab.runtime?.nodes[tab.node] ||
-          lab.phase === "destroying"
+          ["destroying", "updating"].includes(lab.phase)
         )
           close(tab.id);
       }

@@ -21,6 +21,7 @@ import threading
 import uuid
 
 from lab_devices import CATALOG, LabError, adapter_for, device_root, template_for
+from lab_updates import apply_update, gateway_port, plan_update, runtime_signature
 
 
 LABEL = "io.route-ovs.lab"
@@ -254,8 +255,10 @@ class LabManager:
         with self.lock:
             if self.path(topology["id"]).exists():
                 record = self.read(topology["id"])
-                if self.busy == topology["id"] or record["runtime"].get("deployment"):
-                    raise LabError("设备已经部署或正在操作，请先清理设备再修改拓扑")
+                if self.busy == topology["id"] or record["runtime"].get("phase") in ("deploying", "destroying", "updating"):
+                    raise LabError("请等待当前操作完成后再保存")
+                if record["runtime"].get("deployment") and runtime_signature(topology) != runtime_signature(validate_topology(record["topology"])):
+                    raise LabError("设备已经部署，运行配置变化请使用应用拓扑")
                 record["topology"] = topology
             else:
                 record = {"topology": topology, "runtime": {"phase": "idle", "nodes": {}, "logs": []}}
@@ -266,7 +269,7 @@ class LabManager:
         name = string(name, "项目名称", 80)
         with self.lock:
             record = self.read(lab_id)
-            if self.busy == lab_id or record["runtime"].get("phase") in ("deploying", "destroying"):
+            if self.busy == lab_id or record["runtime"].get("phase") in ("deploying", "destroying", "updating"):
                 raise LabError("请等待部署或清理完成后再重命名项目")
             # Display metadata only: preserve container ownership, config paths and runtime.
             record["topology"]["name"] = name
@@ -280,7 +283,7 @@ class LabManager:
             raise LabError("连线优化选项必须为布尔值")
         with self.lock:
             record = self.read(lab_id)
-            if self.busy == lab_id or record["runtime"].get("phase") in ("deploying", "destroying"):
+            if self.busy == lab_id or record["runtime"].get("phase") in ("deploying", "destroying", "updating"):
                 raise LabError("请等待当前操作完成后再保存布局")
             for key in ("nodes", "annotations"):
                 items = payload[key]
@@ -417,6 +420,8 @@ class LabManager:
     def live(self, record, node_id):
         saved = record["runtime"]["nodes"][node_id]
         item = self.owned(record, self.inspect(saved["id"]))
+        if (item.get("Config", {}).get("Labels") or {}).get(LABEL + ".node") != node_id:
+            raise LabError("设备节点归属不匹配，拒绝操作: " + node_id)
         state = item["State"]
         if not state.get("Running") or state.get("Paused") or state.get("Restarting") or state.get("Pid", 0) <= 0:
             raise LabError("设备未正常运行: " + saved["name"])
@@ -450,6 +455,46 @@ class LabManager:
             threading.Thread(target=self._job, args=(record, action), name="lab-job-" + lab_id, daemon=False).start()
         return response
 
+    def start_update(self, lab_id, payload):
+        identifier(lab_id)
+        if not isinstance(payload, dict) or set(payload) != {"topology", "base"}:
+            raise LabError("应用拓扑需要 topology 和 base")
+        target, base = validate_topology(payload["topology"]), validate_topology(payload["base"])
+        if target["id"] != lab_id or base["id"] != lab_id:
+            raise LabError("拓扑 ID 与实验不一致")
+        with self.lock:
+            if self.busy is not None or self.image_busy:
+                raise LabError("另一个部署、更新、清理或镜像任务正在执行，请稍后重试")
+            record = self.read(lab_id)
+            if not record["runtime"].get("deployment") or record["runtime"].get("phase") != "running":
+                raise LabError("仅正常运行的实验可应用拓扑；故障实验请清理后重新部署")
+            if base != validate_topology(record["topology"]):
+                raise LabError("实验已经变化，请重新加载后再应用拓扑")
+            self.authorize()
+            plan_update(self, record, target)
+            self.busy = lab_id
+            record["runtime"].update(phase="updating", error="")
+            self.write(record)
+            response = copy.deepcopy(record)
+            threading.Thread(target=self._update_job, args=(record, target), name="lab-update-" + lab_id, daemon=False).start()
+            return response
+
+    def _update_job(self, record, topology):
+        try:
+            self.update(record, topology)
+        except Exception as exc:
+            record["runtime"].update(phase="error", error=str(exc))
+            self.note(record, "应用拓扑失败: " + str(exc))
+        finally:
+            with self.lock:
+                self.busy = None
+
+    def update(self, record, topology):
+        target = validate_topology(topology)
+        if target["id"] != record["topology"]["id"]:
+            raise LabError("拓扑 ID 与实验不一致")
+        apply_update(self, record, target)
+
     def _job(self, record, action):
         try:
             if action == "deploy":
@@ -469,10 +514,6 @@ class LabManager:
         if not topology["nodes"]:
             raise LabError("请先添加至少一台设备")
         connected = {(link[side]["node"], link[side]["port"]) for link in topology["links"] for side in ("a", "b")}
-        for node in topology["nodes"]:
-            for port in node["ports"]:
-                if port["address"] and (node["id"], port["name"]) not in connected:
-                    raise LabError(node["name"] + "." + port["name"] + " 配置了地址但尚未连接网线")
         # Check every image before creating any resource. Never silently pull.
         for image in sorted({node["image"] for node in topology["nodes"]}):
             try:
@@ -523,9 +564,10 @@ class LabManager:
                         self.ns(record, node["id"], "ip", "link", "set", "dev", port["name"], "master", "br0")
                     elif port["address"]:
                         self.ns(record, node["id"], "ip", "addr", "replace", port["address"], "dev", port["name"])
-                if node["gateway"]:
+                gateway_device = gateway_port(node, connected)
+                if gateway_device:
                     family = "-6" if ":" in node["gateway"] else "-4"
-                    self.ns(record, node["id"], "ip", family, "route", "replace", "default", "via", node["gateway"])
+                    self.ns(record, node["id"], "ip", family, "route", "replace", "default", "via", node["gateway"], "dev", gateway_device)
                 adapter_for(node).linked(self, record, node)
             for node in topology["nodes"]:
                 self.live(record, node["id"])
@@ -564,7 +606,7 @@ class LabManager:
             record = self.read(lab_id)
             record["busy"] = self.busy == lab_id
         runtime = record["runtime"]
-        if runtime["phase"] in ("deploying", "destroying") and not record["busy"]:
+        if runtime["phase"] in ("deploying", "destroying", "updating") and not record["busy"]:
             runtime.update(phase="error", error="上次操作被中断，请清理设备后重新部署")
         if runtime["phase"] == "running" and not record["busy"]:
             try:
@@ -614,7 +656,7 @@ class LabManager:
             raise LabError("未知终端类型")
         with self.lock:
             record = self.read(lab_id)
-            if self.busy == lab_id or record["runtime"]["phase"] in ("deploying", "destroying"):
+            if self.busy == lab_id or record["runtime"]["phase"] in ("deploying", "destroying", "updating"):
                 raise LabError("设备正在部署或清理，请稍后连接")
             if node_id not in record["runtime"].get("nodes", {}):
                 raise LabError("设备尚未部署")
@@ -635,7 +677,7 @@ class LabManager:
             raise LabError("请选择连线端点 a 或 b")
         with self.lock:
             record = self.read(lab_id)
-            if self.busy == lab_id or record["runtime"]["phase"] in ("deploying", "destroying"):
+            if self.busy == lab_id or record["runtime"]["phase"] in ("deploying", "destroying", "updating"):
                 raise LabError("设备正在部署或清理，请稍后抓包")
             link = next((link for link in record["topology"]["links"] if link["id"] == link_id), None)
             if not link or not record["runtime"].get("deployment"):

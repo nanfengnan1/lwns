@@ -33,7 +33,7 @@ watch(selected, async () => {
   await nextTick();
   if (list.value) list.value.scrollTop = 0;
 });
-function enter(kind: DeviceKind | null) {
+function enter(kind: DeviceKind) {
   selected.value = kind;
 }
 function navigate(event: KeyboardEvent, index: number) {
@@ -52,11 +52,6 @@ function navigate(event: KeyboardEvent, index: number) {
   event.preventDefault();
   categoryButtons.value[next]?.focus();
   enter(groups.value[next]!.id);
-}
-function back() {
-  const index = groups.value.findIndex((group) => group.id === selected.value);
-  enter(null);
-  categoryButtons.value[index]?.focus();
 }
 function drag(event: DragEvent, kind: string) {
   if (event.dataTransfer) {
@@ -93,16 +88,6 @@ function drag(event: DragEvent, kind: string) {
     </nav>
     <template v-if="current">
       <div class="library-breadcrumb">
-        <button
-          id="library-back"
-          title="返回设备分类"
-          aria-label="返回设备分类"
-          @click="back"
-        >
-          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <path d="m11 5-5 5 5 5M6 10h10" />
-          </svg>
-        </button>
         <b>{{ current.title }}</b
         ><span>{{ current.count }} 个设备</span>
       </div>

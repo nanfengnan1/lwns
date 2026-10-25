@@ -183,21 +183,22 @@ describe("editor and deployment state", () => {
     editor.commitDraft();
     expect(lab.getNode("r1")).toMatchObject({ name: "ROUTER", x: 600, y: 400 });
   });
-  it("allows layout changes while deployed but keeps topology settings locked", () => {
+  it("allows deployed topology edits but retains the deployment guard", async () => {
     const { lab } = setup();
     lab.runtime = { ...idle(), phase: "running", deployment: "owned" };
-    expect(() => lab.remove("node", "r1")).toThrow();
     expect(() => lab.moveNode("r1", { x: 1, y: 1 })).not.toThrow();
     expect(() => lab.autoAlign()).not.toThrow();
-    expect(() => lab.addAnnotation({ x: 0, y: 0 })).toThrow();
+    expect(() => lab.addAnnotation({ x: 0, y: 0 })).not.toThrow();
     expect(() => lab.setLinkOptimization(false)).not.toThrow();
     expect(() =>
       lab.updateNode({ ...lab.getNode("r1")!, name: "CHANGED" }),
-    ).toThrow();
+    ).not.toThrow();
     expect(() =>
       lab.connect({ node: "r1", port: "eth2" }, { node: "sw1", port: "eth2" }),
-    ).toThrow();
+    ).not.toThrow();
+    expect(() => lab.remove("node", "r1")).not.toThrow();
     expect(lab.canDeploy).toBe(false);
+    await expect(lab.deleteLab()).rejects.toThrow("清理");
   });
   it("saves deployed layout without replacing devices, runtime, selection or terminal state", async () => {
     const { lab, editor } = setup();
@@ -221,21 +222,19 @@ describe("editor and deployment state", () => {
       version = lab.documentVersion;
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(response({ id: lab.topology.id }));
+      .mockResolvedValue(
+        response({ topology: clone(lab.topology), runtime: lab.runtime }),
+      );
     vi.stubGlobal("fetch", fetchMock);
     await lab.save();
     await nextTick();
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe(`/api/labs/${lab.topology.id}/layout`);
-    expect(init.method).toBe("POST");
+    expect(url).toBe(`/api/labs/${lab.topology.id}`);
+    expect(init.method).toBe("PUT");
     const payload = JSON.parse(init.body);
-    expect(Object.keys(payload).sort()).toEqual([
-      "annotations",
-      "nodes",
-      "optimizeLinks",
-    ]);
-    expect(payload.nodes[0]).toEqual({ id: "r1", x: -300, y: 900 });
-    expect(lab.getNode("r1")).toBe(node);
+    expect(payload).toEqual(lab.topology);
+    expect(payload.nodes[0]).toMatchObject({ id: "r1", x: -300, y: 900 });
+    expect(lab.getNode("r1")).toEqual(node);
     expect(lab.runtime).toBe(runtime);
     expect(lab.documentVersion).toBe(version);
     expect(terminals.tabs).toHaveLength(1);
@@ -252,7 +251,7 @@ describe("editor and deployment state", () => {
   });
   it("blocks layout changes and saving during deployment, cleanup and pending operations", async () => {
     const { lab } = setup();
-    for (const phase of ["deploying", "destroying"] as const) {
+    for (const phase of ["deploying", "updating", "destroying"] as const) {
       lab.runtime = { ...idle(), phase, deployment: "owned" };
       expect(() => lab.moveNode("r1", { x: 1, y: 2 })).toThrow();
       expect(() => lab.autoAlign()).toThrow();
@@ -447,7 +446,9 @@ describe("editor and deployment state", () => {
     );
     const refresh = lab.refresh();
     await lab.startJob("deploy");
-    release(response({ runtime: idle(), busy: false }));
+    release(
+      response({ topology: clone(lab.topology), runtime: idle(), busy: false }),
+    );
     await refresh;
     expect(lab.runtime?.deployment).toBe("new-run");
     expect(lab.busy).toBe(true);
@@ -489,6 +490,7 @@ describe("editor and deployment state", () => {
       .mockResolvedValueOnce(
         response({
           runtime: { ...idle(), phase: "running", deployment: "run" },
+          topology: clone(lab.topology),
           busy: false,
         }),
       )
@@ -497,7 +499,13 @@ describe("editor and deployment state", () => {
           runtime: { ...idle(), phase: "destroying", deployment: "run" },
         }),
       )
-      .mockResolvedValueOnce(response({ runtime: idle(), busy: false }));
+      .mockResolvedValueOnce(
+        response({
+          topology: clone(lab.topology),
+          runtime: idle(),
+          busy: false,
+        }),
+      );
     vi.stubGlobal("fetch", fetchMock);
     await lab.startJob("deploy");
     expect(lab.busy).toBe(true);
