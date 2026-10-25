@@ -188,7 +188,7 @@ describe("editor and deployment state", () => {
     lab.runtime = { ...idle(), phase: "running", deployment: "owned" };
     expect(() => lab.remove("node", "r1")).toThrow();
     expect(() => lab.moveNode("r1", { x: 1, y: 1 })).not.toThrow();
-    expect(() => lab.autoAlign("grid")).not.toThrow();
+    expect(() => lab.autoAlign()).not.toThrow();
     expect(() => lab.addAnnotation({ x: 0, y: 0 })).toThrow();
     expect(() => lab.setLinkOptimization(false)).not.toThrow();
     expect(() =>
@@ -255,7 +255,7 @@ describe("editor and deployment state", () => {
     for (const phase of ["deploying", "destroying"] as const) {
       lab.runtime = { ...idle(), phase, deployment: "owned" };
       expect(() => lab.moveNode("r1", { x: 1, y: 2 })).toThrow();
-      expect(() => lab.autoAlign("grid")).toThrow();
+      expect(() => lab.autoAlign()).toThrow();
       await expect(lab.save()).rejects.toThrow();
     }
     lab.runtime = { ...idle(), phase: "running", deployment: "owned" };

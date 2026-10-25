@@ -97,7 +97,6 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await drag(await point('.annotation-body'),45,35);
     assert.notEqual(await evaluate('document.querySelector(".topology-annotation").getAttribute("transform")'),noteBefore);
     assert.ok(await evaluate('document.querySelector("#annotation-text").matches(":disabled")&&document.querySelector("#delete-annotation").disabled'));
-    await evaluate('document.querySelector("#align-mode").value="grid";document.querySelector("#align-mode").dispatchEvent(new Event("change",{bubbles:true}))');
     await click('#auto-align');await click('#optimize-links');
     await click('#save');await wait('document.querySelector("#save-state").textContent==="已保存"');
     const saved=await record();

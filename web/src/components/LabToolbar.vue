@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import type { AlignMode } from "../domain/canvas";
 import { useLabStore } from "../stores/lab";
 import { useEditorStore } from "../stores/editor";
 import { useUiStore } from "../stores/ui";
@@ -9,7 +7,6 @@ import { useProjectFiles } from "../composables/useProjectFiles";
 const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore();
-const alignMode = ref<AlignMode>("layers");
 const { save } = useProjectFiles();
 function revealCommand(event: FocusEvent) {
   const target = event.target;
@@ -19,10 +16,13 @@ function revealCommand(event: FocusEvent) {
 }
 function align() {
   editor.commitDraft();
-  lab.autoAlign(alignMode.value);
+  const moved = lab.autoAlign();
   editor.pending = null;
-  editor.fitRevision++;
-  ui.notify("设备已自动对齐，注释保留原位置；保存后保留布局");
+  ui.notify(
+    moved
+      ? `已自动对齐 ${moved} 台设备，保存后保留布局`
+      : "自动对齐完成，没有需要调整的相邻行列",
+  );
 }
 async function deploy() {
   editor.commitDraft();
@@ -76,20 +76,10 @@ async function destroy() {
           }}</span>
         </div>
         <div class="canvas-toolbar" role="group" aria-label="拓扑排版工具">
-          <select
-            id="align-mode"
-            v-model="alignMode"
-            :disabled="lab.layoutLocked"
-            aria-label="自动对齐方式"
-          >
-            <option value="layers">智能分层</option>
-            <option value="horizontal">水平排列</option>
-            <option value="vertical">垂直排列</option>
-            <option value="grid">网格排列</option>
-          </select>
           <button
             id="auto-align"
             :disabled="lab.layoutLocked || lab.topology.nodes.length < 2"
+            title="将位置接近的设备对齐到同一行或列，保留整体布局"
             @click="ui.run(align)"
           >
             <svg

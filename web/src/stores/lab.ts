@@ -25,7 +25,7 @@ import type {
   Runtime,
   Topology,
 } from "../types/lab";
-import { alignDevices, type AlignMode } from "../domain/canvas";
+import { alignDevices } from "../domain/canvas";
 
 function emptyTopology(): Topology {
   return {
@@ -319,14 +319,19 @@ export const useLabStore = defineStore("lab", () => {
     topology.value.links.push({ id: uniqueId("l"), a: { ...a }, b: { ...b } });
     dirty.value = true;
   }
-  function autoAlign(mode: AlignMode) {
+  function autoAlign() {
     assertLayoutEditable();
-    if (!["layers", "horizontal", "vertical", "grid"].includes(mode))
-      throw Error("未知对齐方式");
-    const positions = alignDevices(topology.value, mode);
-    for (const node of topology.value.nodes)
-      Object.assign(node, positions[node.id]);
-    if (topology.value.nodes.length) dirty.value = true;
+    const positions = alignDevices(topology.value);
+    let moved = 0;
+    for (const node of topology.value.nodes) {
+      const point = positions[node.id];
+      if (node.x !== point.x || node.y !== point.y) {
+        Object.assign(node, point);
+        moved++;
+      }
+    }
+    if (moved) dirty.value = true;
+    return moved;
   }
   function setLinkOptimization(enabled: boolean) {
     assertLayoutEditable();

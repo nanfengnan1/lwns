@@ -1,6 +1,6 @@
 import type { Annotation, Device, Link, Point, Topology } from "../types/lab";
 
-export type AlignMode = "layers" | "horizontal" | "vertical" | "grid";
+export const ALIGN_TOLERANCE = 24;
 export type Anchor = Point & { dx: number; dy: number };
 export const nodeRadius = (node: Device) =>
   Math.max(32, Math.ceil((node.ports.length * 9) / (2 * Math.PI)));
@@ -252,106 +252,60 @@ export function routeLink(
   };
 }
 
-/** Deterministic arrangement; only x/y are changed. Disconnected groups stay separate. */
-export function alignDevices(
-  topology: Topology,
-  mode: AlignMode,
-): Record<string, Point> {
-  const nodes = [...topology.nodes];
-  if (!nodes.length) return {};
-  const sorted = [...nodes].sort(
-    (a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id),
+/** Snap nearby rows/columns without rebuilding the user's layout. */
+export function alignDevices(topology: Topology): Record<string, Point> {
+  const nodes = topology.nodes;
+  const positions: Record<string, Point> = Object.fromEntries(
+    nodes.map((node) => [node.id, { x: node.x, y: node.y }]),
   );
-  const positions: Record<string, Point> = {};
-  if (mode !== "layers") {
-    const columns =
-      mode === "horizontal"
-        ? nodes.length
-        : mode === "vertical"
-          ? 1
-          : Math.ceil(Math.sqrt(nodes.length));
-    sorted.forEach(
-      (node, i) =>
-        (positions[node.id] = {
-          x: (i % columns) * 168,
-          y: Math.floor(i / columns) * 144,
-        }),
+  for (const axis of ["x", "y"] as const) {
+    const sorted = [...nodes].sort(
+      (a, b) => a[axis] - b[axis] || a.id.localeCompare(b.id),
     );
-  } else {
-    const adjacency = new Map(
-      nodes.map((node) => [node.id, new Set<string>()]),
-    );
-    for (const link of topology.links) {
-      adjacency.get(link.a.node)!.add(link.b.node);
-      adjacency.get(link.b.node)!.add(link.a.node);
-    }
-    const ranks = { router: 0, firewall: 1, switch: 2, host: 3 };
-    const roots = [...nodes].sort(
-      (a, b) =>
-        ranks[a.kind] - ranks[b.kind] ||
-        adjacency.get(b.id)!.size - adjacency.get(a.id)!.size ||
-        a.id.localeCompare(b.id),
-    );
-    const seen = new Set<string>();
-    let offset = 0;
-    for (const root of roots) {
-      if (seen.has(root.id)) continue;
-      const levels: string[][] = [[root.id]];
-      seen.add(root.id);
-      for (let i = 0; i < levels.length; i++) {
-        const next: string[] = [];
-        for (const id of levels[i])
-          for (const peer of [...adjacency.get(id)!].sort()) {
-            if (!seen.has(peer)) {
-              seen.add(peer);
-              next.push(peer);
-            }
-          }
-        if (next.length) levels.push(next);
-      }
-      const width = Math.max(...levels.map((row) => row.length)) * 168;
-      levels.forEach((row, level) =>
-        row.forEach(
-          (id, i) =>
-            (positions[id] = {
-              x: offset + (width - (row.length - 1) * 168) / 2 + i * 168,
-              y: level * 144,
-            }),
-        ),
-      );
-      offset += width + 168;
+    let anchor: number | undefined;
+    for (const node of sorted) {
+      // Bound the whole group, not just adjacent gaps. Keep an existing anchor
+      // so repeated clicks cannot gradually merge rows or columns.
+      if (anchor === undefined || node[axis] - anchor > ALIGN_TOLERANCE)
+        anchor = node[axis];
+      positions[node.id][axis] = anchor;
     }
   }
-  const values = Object.values(positions);
-  const centerX =
-    (Math.min(...values.map((p) => p.x)) +
-      Math.max(...values.map((p) => p.x))) /
-    2;
-  const centerY =
-    (Math.min(...values.map((p) => p.y)) +
-      Math.max(...values.map((p) => p.y))) /
-    2;
-  const halfX = Math.max(...values.map((p) => p.x)) - centerX,
-    halfY = Math.max(...values.map((p) => p.y)) - centerY;
-  const targetX = Math.max(
-    -100000 + halfX,
-    Math.min(
-      100000 - halfX,
-      Math.round(nodes.reduce((sum, n) => sum + n.x, 0) / nodes.length / 12) *
-        12,
-    ),
+
+  // Cancel conflicting moves together, independent of node order. Recheck
+  // after restoring positions, since a restored node may block another move.
+  const moving = new Set(
+    nodes
+      .filter((n) => n.x !== positions[n.id].x || n.y !== positions[n.id].y)
+      .map((n) => n.id),
   );
-  const targetY = Math.max(
-    -100000 + halfY,
-    Math.min(
-      100000 - halfY,
-      Math.round(nodes.reduce((sum, n) => sum + n.y, 0) / nodes.length / 12) *
-        12,
-    ),
-  );
-  for (const point of values) {
-    point.x += targetX - centerX;
-    point.y += targetY - centerY;
+  while (moving.size) {
+    const blocked = new Set<string>();
+    const boxes = nodes.map((node) =>
+      nodeBox({ ...node, ...positions[node.id] }),
+    );
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        if (!moving.has(nodes[i].id) && !moving.has(nodes[j].id)) continue;
+        const a = boxes[i],
+          b = boxes[j];
+        if (
+          a.left < b.right &&
+          a.right > b.left &&
+          a.top < b.bottom &&
+          a.bottom > b.top
+        ) {
+          if (moving.has(nodes[i].id)) blocked.add(nodes[i].id);
+          if (moving.has(nodes[j].id)) blocked.add(nodes[j].id);
+        }
+      }
+    }
+    if (!blocked.size) break;
+    for (const node of nodes) {
+      if (!blocked.has(node.id)) continue;
+      positions[node.id] = { x: node.x, y: node.y };
+      moving.delete(node.id);
+    }
   }
   return positions;
 }

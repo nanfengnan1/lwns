@@ -11,11 +11,10 @@ import {
   portAnchors,
   routeLink,
   scrollBounds,
-  type AlignMode,
 } from "../src/domain/canvas";
 import { useLabStore } from "../src/stores/lab";
 import { useEditorStore } from "../src/stores/editor";
-import type { Annotation } from "../src/types/lab";
+import type { Annotation, Point } from "../src/types/lab";
 
 const note = (): Annotation => ({
   id: "note-1",
@@ -114,60 +113,163 @@ describe("compact devices and visual routing", () => {
   });
 });
 describe("automatic alignment", () => {
-  it.each<AlignMode>(["layers", "horizontal", "vertical", "grid"])(
-    "aligns %s without overlap or changing device settings and links",
-    (mode) => {
-      const lab = useLabStore();
-      lab.adopt(parseTopology(example));
-      lab.addAnnotation({ x: 10, y: 30 });
-      const original = clone(lab.topology),
-        positions = alignDevices(lab.topology, mode);
-      lab.autoAlign(mode);
-      expect(new Set(lab.topology.nodes.map((n) => `${n.x}:${n.y}`)).size).toBe(
-        5,
-      );
-      for (const node of lab.topology.nodes) {
-        expect(node).toEqual({
-          ...original.nodes.find((n) => n.id === node.id),
-          ...positions[node.id],
-        });
-        for (const other of lab.topology.nodes)
-          if (other.id !== node.id)
-            expect(
-              Math.hypot(node.x - other.x, node.y - other.y),
-            ).toBeGreaterThanOrEqual(144);
+  function layout(points: Point[]) {
+    const topology = parseTopology(example);
+    topology.nodes = topology.nodes.slice(0, points.length);
+    topology.nodes.forEach((node, i) => Object.assign(node, points[i]));
+    topology.links = topology.links.filter((link) =>
+      [link.a.node, link.b.node].every((id) =>
+        topology.nodes.some((n) => n.id === id),
+      ),
+    );
+    return topology;
+  }
+  const nearbyGrid = () =>
+    layout([
+      { x: 100, y: 100 },
+      { x: 300, y: 112 },
+      { x: 118, y: 300 },
+      { x: 312, y: 324 },
+      { x: 600, y: 600 },
+    ]);
+
+  it("aligns nearby rows and columns while preserving settings, links, notes and viewport", () => {
+    const lab = useLabStore(),
+      editor = useEditorStore();
+    lab.adopt(nearbyGrid());
+    lab.addAnnotation({ x: 10, y: 30 });
+    lab.dirty = false;
+    const original = clone(lab.topology),
+      view = clone(editor.view);
+    expect(lab.autoAlign()).toBe(3);
+    expect(lab.topology.nodes.map(({ x, y }) => ({ x, y }))).toEqual([
+      { x: 100, y: 100 },
+      { x: 300, y: 100 },
+      { x: 100, y: 300 },
+      { x: 300, y: 300 },
+      { x: 600, y: 600 },
+    ]);
+    for (const node of lab.topology.nodes) {
+      expect(node).toEqual({
+        ...original.nodes.find((n) => n.id === node.id),
+        x: node.x,
+        y: node.y,
+      });
+    }
+    expect(lab.topology.links).toEqual(original.links);
+    expect(lab.topology.annotations).toEqual(original.annotations);
+    expect(editor.view).toEqual(view);
+    expect(lab.dirty).toBe(true);
+    lab.dirty = false;
+    expect(lab.autoAlign()).toBe(0);
+    expect(lab.dirty).toBe(false);
+  });
+
+  it.each([23, 24, 25])(
+    "only snaps coordinates within 24 canvas units (gap %s)",
+    (gap) => {
+      for (const axis of ["x", "y"] as const) {
+        const other = axis === "x" ? "y" : "x";
+        const topology = layout([
+          { x: 100, y: 100 },
+          { x: 100, y: 100 },
+        ]);
+        topology.nodes[1][axis] += gap;
+        topology.nodes[1][other] += 200;
+        const positions = alignDevices(topology);
+        expect(positions.sw1[axis]).toBe(gap <= 24 ? 100 : 100 + gap);
+        expect(positions.sw1[other]).toBe(300);
       }
-      expect(lab.topology.links).toEqual(original.links);
-      expect(lab.topology.annotations).toEqual(original.annotations);
-      if (mode === "horizontal")
-        expect(new Set(lab.topology.nodes.map((n) => n.y)).size).toBe(1);
-      if (mode === "vertical")
-        expect(new Set(lab.topology.nodes.map((n) => n.x)).size).toBe(1);
-      expect(lab.dirty).toBe(true);
     },
   );
-  it("handles cycles, isolated nodes and coordinate boundaries deterministically", () => {
-    const topology = parseTopology(example);
-    topology.links.push({
-      id: "cycle",
-      a: { node: "sw1", port: "eth2" },
-      b: { node: "sw2", port: "eth2" },
+
+  it("bounds each whole group instead of chaining distant devices together", () => {
+    const topology = layout([
+      { x: 0, y: 0 },
+      { x: 23, y: 200 },
+      { x: 25, y: 400 },
+    ]);
+    const positions = alignDevices(topology);
+    expect(positions).toEqual({
+      r1: { x: 0, y: 0 },
+      sw1: { x: 0, y: 200 },
+      sw2: { x: 25, y: 400 },
     });
-    topology.links = topology.links.filter((l) => l.b.node !== "pc2");
-    for (const n of topology.nodes) {
-      n.x = 99999;
-      n.y = -99999;
+    topology.nodes.forEach((n) => Object.assign(n, positions[n.id]));
+    expect(alignDevices(topology)).toEqual(positions);
+  });
+
+  it("is independent of input order and connections, leaves input unchanged and is idempotent", () => {
+    const topology = nearbyGrid(),
+      original = clone(topology);
+    const positions = alignDevices(topology);
+    expect(topology).toEqual(original);
+    expect(
+      alignDevices({
+        ...topology,
+        nodes: [...topology.nodes].reverse(),
+        links: [],
+      }),
+    ).toEqual(positions);
+    topology.nodes.forEach((n) => Object.assign(n, positions[n.id]));
+    expect(alignDevices(topology)).toEqual(positions);
+  });
+
+  it("skips moves that overlap devices or their name area while aligning safe devices", () => {
+    const topology = layout([
+      { x: 0, y: 0 },
+      { x: 0, y: 200 },
+      { x: 60, y: 292 },
+      { x: 200, y: 280 },
+      { x: 212, y: 600 },
+    ]);
+    const positions = alignDevices(topology);
+    expect(positions.sw2).toEqual({ x: 60, y: 292 });
+    expect(positions.pc2).toEqual({ x: 200, y: 600 });
+    topology.nodes.forEach((n) => Object.assign(n, positions[n.id]));
+    expect(alignDevices(topology)).toEqual(positions);
+  });
+
+  it("does not collapse nearly coincident devices", () => {
+    const topology = layout([
+      { x: 0, y: 0 },
+      { x: 10, y: 12 },
+    ]);
+    expect(alignDevices(topology)).toEqual({
+      r1: { x: 0, y: 0 },
+      sw1: { x: 10, y: 12 },
+    });
+  });
+
+  it("accounts for the larger circles on 32-port devices", () => {
+    const topology = layout([
+      { x: 0, y: 0 },
+      { x: 85, y: 120 },
+      { x: 300, y: 100 },
+    ]);
+    topology.nodes.slice(0, 2).forEach((node) => {
+      node.ports = resizedPorts(node, 32, topology);
+    });
+    expect(alignDevices(topology).sw1).toEqual({ x: 85, y: 120 });
+  });
+
+  it("preserves separated, single and empty layouts without making the project dirty", () => {
+    for (const points of [
+      [],
+      [{ x: 0, y: 0 }],
+      [
+        { x: -100000, y: -100000 },
+        { x: 100000, y: 100000 },
+      ],
+    ]) {
+      const lab = useLabStore();
+      lab.adopt(layout(points));
+      lab.dirty = false;
+      const original = clone(lab.topology);
+      expect(lab.autoAlign()).toBe(0);
+      expect(lab.topology).toEqual(original);
+      expect(lab.dirty).toBe(false);
     }
-    const positions = alignDevices(topology, "layers");
-    expect(alignDevices(topology, "layers")).toEqual(positions);
-    expect(Object.keys(positions)).toHaveLength(5);
-    for (const p of Object.values(positions)) {
-      expect(Math.abs(p.x)).toBeLessThanOrEqual(100000);
-      expect(Math.abs(p.y)).toBeLessThanOrEqual(100000);
-    }
-    expect(alignDevices({ ...topology, nodes: [], links: [] }, "grid")).toEqual(
-      {},
-    );
   });
 });
 describe("annotations", () => {

@@ -159,15 +159,27 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   assert.equal((await nodeBounds()).r,32,'compact default radius');
   assert.equal(await evaluate('document.querySelectorAll("[data-resize]").length'),0,'device resize handles removed');
   assert.equal(await evaluate('!!document.querySelector("#reset-node-size")'),false,'obsolete size inspector removed');
-  for(const mode of ['horizontal','vertical','grid','layers']) {
-    await evaluate("document.querySelector('#align-mode').value="+JSON.stringify(mode)+";document.querySelector('#align-mode').dispatchEvent(new Event('change',{bubbles:true}))");
-    await click('#auto-align');
-    await waitFor('document.querySelector("#toast").textContent.includes("自动对齐")');
-    const positions=await evaluate("[...document.querySelectorAll('.topology-node')].map(n=>{const m=n.transform.baseVal.consolidate().matrix;return{x:m.e,y:m.f}})");
-    assert.equal(new Set(positions.map(p=>p.x+':'+p.y)).size,5);
-    if(mode==='horizontal')assert.equal(new Set(positions.map(p=>p.y)).size,1);
-    if(mode==='vertical')assert.equal(new Set(positions.map(p=>p.x)).size,1);
-  }
+  assert.equal(await evaluate('!!document.querySelector("#align-mode")'),false,'only one alignment button');
+  const nearRows = JSON.parse(fs.readFileSync(path.join(__dirname,'../examples/basic-lab.json'),'utf8'));
+  nearRows.nodes.find(n=>n.id==='pc1').x+=18;
+  const nearSwitch=nearRows.nodes.find(n=>n.id==='sw2');nearSwitch.x+=12;nearSwitch.y+=12;
+  nearRows.nodes.find(n=>n.id==='pc2').y+=24;
+  const alignmentFile=path.join(outputDirectory,'nearby-alignment.json');
+  fs.writeFileSync(alignmentFile,JSON.stringify(nearRows));
+  await importFile(alignmentFile);
+  await waitFor('document.querySelector(".topology-node[data-node=pc1]").transform.baseVal.consolidate().matrix.e===308');
+  await click('#zoom-in');
+  const viewportBefore=await evaluate('document.querySelector("#viewport").getAttribute("transform")');
+  const readPositions=()=>evaluate("Object.fromEntries([...document.querySelectorAll('.topology-node')].map(n=>{const m=n.transform.baseVal.consolidate().matrix;return[n.dataset.node,{x:m.e,y:m.f}]}))");
+  await click('#auto-align');
+  await waitFor('document.querySelector("#toast").textContent.includes("已自动对齐 3 台")');
+  const positions=await readPositions();
+  assert.deepEqual(positions,{r1:{x:500,y:150},sw1:{x:290,y:310},sw2:{x:710,y:310},pc1:{x:290,y:485},pc2:{x:710,y:485}},'nearby rows and columns align, distant router stays put');
+  assert.equal(await evaluate('document.querySelector("#viewport").getAttribute("transform")'),viewportBefore,'alignment preserves zoom and pan');
+  await click('#auto-align');
+  await waitFor('document.querySelector("#toast").textContent.includes("没有需要调整")');
+  assert.deepEqual(await readPositions(),positions,'repeated clicks do not drift');
+  await click('#fit');
   assert.equal(await evaluate('document.querySelector("#optimize-links").getAttribute("aria-pressed")'),'true');
   await click('#optimize-links');
   assert.equal(await evaluate('document.querySelector(".wire").getAttribute("d").includes(" C ")'),true);
@@ -279,6 +291,6 @@ if (!debugURL || !appURL || !outputDirectory) throw Error('Expected DEBUG_URL AP
   await click('.topology-node[data-node=r1] .node-name');
   await screenshot('workbench-properties.png');
   assert.deepEqual(errors,[],'browser JavaScript errors');
-  console.log(JSON.stringify({ok:true,checks:['token authentication dialog','steppe wolf brand and favicon','empty startup and explicit JSON import','preview deployment disabled','environment refresh','cancel draft deletion preserves invalid properties','delete unsaved experiment from menu','clear draft state without server deletion','delete unsaved experiment from inspector','no phantom unsaved option for saved experiments','discard imported draft without deleting same-ID saved experiment','resize output panel in both directions','keyboard resize and bounds','resize window preserves canvas','reset panel height','command output fills panel','collapse and expand preserve height','panel height survives reload','compact circular devices without resize handles','four automatic alignment modes','optimized wires retain actual named endpoints','annotation create multiline style and drag','invalid note draft preserved','annotation save export import reload and delete','add device','edit properties','drag device','stable Vue node while dragging','connect ports','reject occupied port','save pending inspector edits','export','import','reload persistence','delete saved lab and remove list entry'],screenshots:outputDirectory},null,2));
+  console.log(JSON.stringify({ok:true,checks:['token authentication dialog','steppe wolf brand and favicon','empty startup and explicit JSON import','preview deployment disabled','environment refresh','cancel draft deletion preserves invalid properties','delete unsaved experiment from menu','clear draft state without server deletion','delete unsaved experiment from inspector','no phantom unsaved option for saved experiments','discard imported draft without deleting same-ID saved experiment','resize output panel in both directions','keyboard resize and bounds','resize window preserves canvas','reset panel height','command output fills panel','collapse and expand preserve height','panel height survives reload','compact circular devices without resize handles','single-button nearby row and column alignment without viewport changes','optimized wires retain actual named endpoints','annotation create multiline style and drag','invalid note draft preserved','annotation save export import reload and delete','add device','edit properties','drag device','stable Vue node while dragging','connect ports','reject occupied port','save pending inspector edits','export','import','reload persistence','delete saved lab and remove list entry'],screenshots:outputDirectory},null,2));
   ws.close();
 })().catch(error=>{console.error(error);process.exit(1);});
