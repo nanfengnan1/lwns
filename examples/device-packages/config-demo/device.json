@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "id": "route-ovs-config-demo",
+  "version": "1.0.0",
+  "name": "通用配置保存示例",
+  "description": "演示原生文件保存与恢复；在终端修改 /run/route-ovs-demo/running.conf 后保存。此示例不自动保存 Linux 网络运行状态。",
+  "category": "host",
+  "image": "route-ovs/config-demo:1.0.0",
+  "source": { "type": "dockerfile", "path": "Dockerfile" },
+  "profile": "generic",
+  "console": ["sh", "-i"],
+  "persistent_dirs": [
+    {
+      "id": "config",
+      "target": "/etc/route-ovs-demo",
+      "initialize_from": "image",
+      "owner": "root:root",
+      "mode": "rw",
+      "permissions": "0750"
+    }
+  ],
+  "startup": {
+    "phase": "after_links",
+    "service": { "exec": ["/usr/local/bin/route-ovs-demo-start"] },
+    "config_files": ["/etc/route-ovs-demo/startup.conf"],
+    "ready": {
+      "exec": ["test", "-s", "/run/route-ovs-demo/running.conf"],
+      "timeout_seconds": 15,
+      "interval_seconds": 0.5
+    }
+  },
+  "actions": {
+    "save_config": {
+      "exec": ["cp", "/run/route-ovs-demo/running.conf", "/etc/route-ovs-demo/startup.conf"],
+      "timeout_seconds": 10,
+      "expected_files": ["/etc/route-ovs-demo/startup.conf"]
+    }
+  }
+}

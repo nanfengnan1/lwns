@@ -252,8 +252,9 @@ ResizeObserver 读取容器 clientWidth/clientHeight，扣除滚动条后再计�
 保存、改名、配置写入、更新、部署与清理遵循同一互斥约束。
 HTTP 接口沿用 Bearer/Origin 校验，接口响应与忙状态不能共享可变任务对象。
 
-设备由 ``lab_devices.py`` 的模板目录和适配器注册表描述；兼容现有模板的新镜像可直接在
-Web 镜像管理中绑定，新增设备行为才需要注册模板及适配器。
+设备兼容 ``lab_devices.py`` 的内置模板，同时支持导入 ``device.json`` 描述的 ``.rov`` 设备包。
+普通设备通过声明启动、保存与持久化规则接入，复杂命令可由 Dockerfile 生成镜像内脚本；
+不要求每个新镜像都编写 Python 适配器。
 前端校验用于及时反馈，Python 后端仍是 IP、网关和部署约束的最终校验方。
 
 侧边栏与项目命名
@@ -286,7 +287,8 @@ Web 镜像管理中绑定，新增设备行为才需要注册模板及适配器�
 端口默认值、``console`` / ``console_command`` 和 ``capabilities``。
 拓扑仍为版本 1，节点新增可选 ``template``；旧节点按 ``kind`` 映射到默认模板。
 模板名称、镜像和画布类型分开：前端按模板 ID 创建节点，按能力显示保存按钮。
-模板注册来自后端代码，拓扑不能指定宿主机路径或任意适配器实现。
+内置模板来自后端代码，设备包模板来自当前数据目录中的已安装设备定义。
+拓扑不能内嵌任意描述、指定宿主机路径或选择未注册的执行器。
 
 适配器接口为 ``prepare``（准备目录并返回 Docker 参数）、``command``、
 ``started``、``linked``、``config_status`` 和 ``save_config``。
@@ -309,6 +311,78 @@ FRR 持久化目录和备份布局见 :doc:`../user/workbench`。
 因此保留选中设备和终端连接，同时刷新属性草稿并拒绝旧的异步响应。
 当前 FRR 文本沿用每设备 32768 字符限制。备份目前不自动轮转，应按需归档。
 完整迁移需复制数据目录；Compose/YAML 项目迁移属于后续阶段。
+
+.rov 设备包与通用配置生命周期
+----------------------------------------
+
+``lab_device_schema.py`` 使用标准库校验并规范化 ``device.json``，拒绝未知字段、
+重复 JSON 键及无效路径；当前 ``schema_version`` 为 1。
+完整示例位于 ``examples/device-packages/frr/`` 与 ``examples/device-packages/config-demo/``，
+每个目录只有设备描述和 Dockerfile。后者仅演示原生文件保存，不宣称能保存全部 Linux 网络状态。
+用户操作见 :doc:`../user/workbench-devices`。
+
+当前 Docker 生命周期入口要求镜像提供 ``/bin/sh``、``sleep``、``tr`` 和 ``grep``；
+解析非数字属主还需要 ``id`` / ``awk``。Alpine BusyBox 可提供这些工具。
+服务命令应保持前台运行，默认配置或 prepare 步骤需在首次服务启动前准备好声明的配置文件。
+当前不支持缺少这些运行工具的极简无 Shell 镜像。
+
+描述中必需的 ``actions.save_config`` 包含 ``exec`` 参数数组、超时和保存结果文件检查。
+``persistent_dirs`` 描述容器内目录、首次默认文件来源及属主权限；宿主机路径由平台生成。
+``startup`` 描述准备步骤、服务进程、配置文件及就绪检查；通用 profile 必须提供 ready，
+FRR profile 使用已有协议进程检查。分类不参与选择 FRR 或 Linux bridge 行为。
+保存动作在对应容器执行，不提供宿主机命令入口；阶段和有界日志写入部署日志。
+
+``lab_device_packages.py`` 负责规范化、确定性打包、完整性检查和版本库。
+包内有 ``device.json``、工具生成的 ``manifest.json``，以及来源需要的 ``image.tar`` 或 Dockerfile。
+校验资源大小、SHA256、重复成员、路径、文件类型和 ZIP 内容；检查包不会执行设备动作。
+镜像归档需为未压缩 Docker save 格式，并包含描述指定的镜像；
+设备包的清单与 Docker 镜像内部的 ``manifest.json`` 是两层不同的文件。
+
+``DeviceLibrary`` 位于每个 ``LabManager`` 的数据目录，不修改进程级全局 ``CATALOG``。
+定义 ID＋版本生成长度兼容现有拓扑的 ``rov-...`` 模板键；
+目录条目记录原始包校验值、显示别名和实际镜像 ID。
+拓扑节点保存模板键和固定镜像 ID，禁止覆盖托管设备的镜像或启动命令。
+每个新建节点使用独立实例 ID；旧节点仍可读取，显示名称与配置目录分离。
+``manager.template`` / ``manager.adapter`` / ``manager.validate`` 是部署、保存、终端及增量拓扑的统一解析入口。
+
+``lab_device_runtime.py`` 执行声明式生命周期：
+
+* 首次暂存默认配置并验证文件树、属主和权限，再创建 RW 挂载；后续只重用原实例目录。
+* 使用 Docker init 与只读 bootstrap 启动入口等待平台信号；接口准备完成后 exec 声明的服务，
+  等待实际进程替换及设备 ready 检查。不能把长期服务放到无监督的 detached exec 中。
+* ``container`` 阶段允许提前启动；``after_links`` 阶段在接线后启动。
+  ``after_links`` 动作与 ``after_link_added`` 动作用于接线后的配置，未变设备不重启。
+* 保存前检查归属和 RW 挂载、就绪状态，备份后执行动作并校验必要文件，再写入保存时间。
+  通用状态返回 ``paths`` 和 ``files: [{path, size}]``；不把所有文件内容放入拓扑 JSON。
+* ``profile: frr`` 复用已有 FRR 默认配置、权限、协议进程、内容检查和备份机制，
+  保留内置 FRR 模板的数据格式。配置记录追加设备定义身份，不能把另一版本强行应用到旧实例目录。
+
+``lab_device_service.py`` 将公共包模块接入流式上传和后台任务，使用独立的
+``device-packages/uploads``、``jobs``、``artifacts`` 目录。
+注册设备前先验证并准备镜像；失败不会生成可部署卡片，上传可重试。
+与镜像任务及部署共享互斥标志，旧镜像删除也检查设备定义引用。
+删除库条目不删除实例配置或 Docker 镜像，项目引用的版本禁止删除。
+
+HTTP 接口沿用 Bearer、同源与请求大小校验：
+
+* ``GET /api/device-packages``、``POST /api/device-packages/refresh``：设备版本及任务状态。
+* ``POST /api/device-packages/uploads``：``{name,size,kind:"package"|"archive"}``；
+  ``PUT /api/device-packages/uploads/{id}`` 上传二进制，``DELETE`` 回收未使用资源。
+* ``POST /api/device-packages/inspect``：``{upload_id}``，只检查设备包。
+* ``POST /api/device-packages/jobs``：``mode=pack`` 制作，``mode=import`` 导入，返回 202。
+* ``GET /api/device-packages/artifacts/{job_id}``：经过认证下载制作完成的包。
+* ``PATCH /api/device-packages/{id}``：``{name}`` 修改库显示名；``DELETE`` 删除未引用的定义。
+
+``lab_device_cli.py`` 与 Web 使用同一套包模块，源码入口为
+``python3 script/python/lab_server.py device ...``，冻结入口为 ``route-ovs device ...``。
+pack/inspect 在导入 Web 依赖前分流，能够独立运行；import 使用与后端相同的数据目录锁，
+防止 CLI 与运行中的服务竞争清单。目录包启动脚本将 device 子命令直接交给可执行文件。
+
+测试入口为 ``test_device_packages.py``、``test_device_package_api.py`` 和
+``test_device_runtime.py``；真实 Docker 恢复测试需要显式启用
+``ROUTE_OVS_DEVICE_DOCKER_TESTS=1`` 并以 root 执行 ``test_device_runtime_docker.py``。
+浏览器验证使用 ``serve_device_package_fixture.py`` 的模拟 Docker，
+``check_device_packages.cjs`` 覆盖制作、下载、导入、名称、引用保护及设备库同步。
 
 镜像服务与设备库
 ----------------------------------------

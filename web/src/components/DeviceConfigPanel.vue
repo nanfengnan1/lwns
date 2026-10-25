@@ -41,10 +41,23 @@ watch(
     <details v-if="status?.persisted">
       <summary>查看磁盘配置</summary>
       <code class="code-line">{{ status.path }}</code>
+      <code
+        v-for="path in status.paths?.filter((path) => path !== status.path)"
+        :key="path"
+        class="code-line"
+        >{{ path }}</code
+      >
+      <ul v-if="status.files?.length" class="config-files">
+        <li v-for="file in status.files" :key="file.path">
+          <code>{{ file.path }}</code
+          ><span v-if="file.size !== undefined">{{ file.size }} B</span>
+        </li>
+      </ul>
       <p v-if="status.modified_at" class="inspector-help">
         文件更新：{{ new Date(status.modified_at * 1000).toLocaleString() }}
       </p>
       <textarea
+        v-if="status.content"
         id="saved-device-config"
         :value="status.content"
         rows="9"
@@ -72,5 +85,23 @@ textarea {
 .code-line {
   overflow-wrap: anywhere;
   white-space: normal;
+}
+.config-files {
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+}
+.config-files li {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 5px 0;
+}
+.config-files code {
+  overflow-wrap: anywhere;
+}
+.config-files span {
+  flex-shrink: 0;
+  color: #78869a;
 }
 </style>

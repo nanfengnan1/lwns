@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "id": "route-ovs-frr",
+  "version": "1.0.0",
+  "name": "FRR 路由器",
+  "category": "router",
+  "image": "route-ovs/frr:1.0.0",
+  "source": { "type": "dockerfile", "path": "Dockerfile" },
+  "profile": "frr",
+  "console": ["vtysh"],
+  "persistent_dirs": [
+    {
+      "id": "frr",
+      "target": "/etc/frr",
+      "initialize_from": "image",
+      "owner": "frr:frr",
+      "mode": "rw",
+      "permissions": "0750"
+    }
+  ],
+  "startup": {
+    "phase": "after_links",
+    "prepare": [],
+    "service": { "exec": ["/usr/lib/frr/docker-start"] },
+    "config_files": ["/etc/frr/daemons", "/etc/frr/frr.conf", "/etc/frr/vtysh.conf"]
+  },
+  "actions": {
+    "save_config": {
+      "exec": ["vtysh", "-w"],
+      "user": "0",
+      "timeout_seconds": 30,
+      "expected_files": ["/etc/frr/daemons", "/etc/frr/frr.conf", "/etc/frr/vtysh.conf"]
+    }
+  }
+}

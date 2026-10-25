@@ -185,11 +185,11 @@ it("supports the four sidebar groups and uses the firewall Linux template", () =
   ];
   const node = lab.addNode("img-fw", { x: 10, y: 20 });
   expect(node).toMatchObject({
-    id: "fw1",
     name: "FW1",
     kind: "firewall",
     template: "linux-firewall",
   });
+  expect(node.id).toMatch(/^[a-f0-9]{32}$/);
   expect(parseTopology(lab.topology).nodes[0]).toEqual(node);
   expect(lab.supportsConfig(node)).toBe(false);
 });

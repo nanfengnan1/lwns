@@ -11,7 +11,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from lab_devices import LabError, adapter_for, device_root
+from lab_devices import LabError, device_root
 
 
 def runtime_signature(topology):
@@ -90,7 +90,7 @@ def create_node(manager, record, node, journal):
             "--label", LABEL + ".deployment=" + record["runtime"]["deployment"],
             "--label", LABEL + ".node=" + node["id"],
             "--cap-add", "NET_ADMIN", "--cap-add", "NET_RAW"]
-    adapter = adapter_for(node)
+    adapter = manager.adapter(node)
     args += adapter.prepare(manager, record, node)
     cid = manager.dock(*(args + [node["image"]] + adapter.command(node)))
     record["runtime"]["nodes"][node["id"]] = {"id": cid, "name": name, "pid": 0}
@@ -168,7 +168,7 @@ def sync_network(manager, record, old_topology, new_topology, fresh):
                 continue
             if pair not in fresh and previous.get(port["name"], "") == port["address"]:
                 continue
-            if node["kind"] == "switch":
+            if manager.template(node).get("adapter") == "linux-bridge":
                 manager.ns(record, nid, "ip", "link", "set", "dev", port["name"], "master", "br0")
             else:
                 old_address = previous.get(port["name"], "") if pair not in fresh else ""
@@ -237,7 +237,9 @@ def apply_update(manager, record, target):
             fresh = {(link[s]["node"], link[s]["port"]) for link in plan["add_links"] for s in ("a", "b")}
             sync_network(manager, record, old_topology, target, fresh)
             for nid in added_nodes:
-                adapter_for(plan["new"][nid]).linked(manager, record, plan["new"][nid])
+                manager.adapter(plan["new"][nid]).linked(manager, record, plan["new"][nid])
+            for nid in sorted({nid for nid, _ in fresh} - set(added_nodes)):
+                manager.adapter(plan["new"][nid]).link_added(manager, record, plan["new"][nid])
             for nid in plan["new"]:
                 manager.live(record, nid)
             for link in target["links"]:
@@ -274,6 +276,6 @@ def apply_update(manager, record, target):
             fresh = {(link[s]["node"], link[s]["port"]) for link in removed_links for s in ("a", "b")}
             recover(lambda: sync_network(manager, record, target, old_topology, fresh))
             for nid in removed_nodes:
-                recover(lambda nid=nid: adapter_for(plan["old"][nid]).linked(manager, record, plan["old"][nid]))
+                recover(lambda nid=nid: manager.adapter(plan["old"][nid]).linked(manager, record, plan["old"][nid]))
             message = str(exc) + ("；恢复未完成: " + "；".join(errors) if errors else "；已尝试恢复原设备和网线")
             raise LabError(message + "。原拓扑保留，请清理后重新部署；未保存的运行状态不能保证恢复") from exc

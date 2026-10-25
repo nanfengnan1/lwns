@@ -117,15 +117,16 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     for(const node of saved.topology.nodes) assert.equal(await evaluate(`document.querySelector('.topology-node[data-node="${node.id}"]').getAttribute('transform')`),`translate(${node.x} ${node.y})`);
     await click('[data-category=host]');
     await click('.device-card.host');
-    await wait('!!document.querySelector(".topology-node[data-node=pc3]")');
+    await wait('document.querySelectorAll(".topology-node").length===6');
+    const addedNodeId=await evaluate('(()=>{const node=document.querySelector(".topology-node.selected");node.setAttribute("data-test-added-pc", "");return node.dataset.node;})()');
     assert.equal(await evaluate('document.querySelector("#inspect-console").disabled'),true,'new draft device has no running terminal');
     await evaluate('document.querySelector("[data-address=eth0]").value="10.10.1.30/24";document.querySelector("[data-address=eth0]").dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#node-gateway").value="10.10.1.1";document.querySelector("#node-gateway").dispatchEvent(new Event("input",{bubbles:true}))');
     await click('#node-form button[type=submit]');
     await click('#fit');
-    await drag(await point('.topology-node[data-node=pc3] .node-body'),-180,100);
+    await drag(await point('.topology-node[data-test-added-pc] .node-body'),-180,100);
     await click('#fit');
     await click('.topology-node[data-node=sw1] .port[data-port=eth2]');
-    await click('.topology-node[data-node=pc3] .port[data-port=eth0]');
+    await click('.topology-node[data-test-added-pc] .port[data-port=eth0]');
     await wait('document.querySelectorAll(".edge").length===5');
     const draft=await record();
     assert.deepEqual(draft.topology,saved.topology,'editing the canvas does not prematurely replace deployed topology');
@@ -139,17 +140,17 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     assert.equal(applied.topology.nodes.length,6);assert.equal(applied.topology.links.length,5);
     assert.equal(applied.runtime.deployment,original.runtime.deployment);
     for(const [id,node] of Object.entries(original.runtime.nodes))assert.equal(applied.runtime.nodes[id].id,node.id,'unchanged container '+id+' is preserved');
-    assert.ok(applied.runtime.nodes.pc3?.id);
-    assert.equal(applied.topology.nodes.find(n=>n.id==='pc3').ports[0].address,'10.10.1.30/24');
-    await click('.topology-node[data-node=pc3] .node-name');
+    assert.ok(applied.runtime.nodes[addedNodeId]?.id);
+    assert.equal(applied.topology.nodes.find(n=>n.id===addedNodeId).ports[0].address,'10.10.1.30/24');
+    await click('.topology-node[data-test-added-pc] .node-name');
     assert.equal(await evaluate('document.querySelector("#inspect-console").disabled'),false,'new device becomes available after application');
     // Address-only edits keep the existing container identity.
     await evaluate('document.querySelector("[data-address=eth0]").value="10.10.1.31/24";document.querySelector("[data-address=eth0]").dispatchEvent(new Event("input",{bubbles:true}))');
     await click('#node-form button[type=submit]');await click('#apply-topology');
     await wait(savedState+'&&document.querySelector("#phase").classList.contains("running")');
     const readdressed=await record();
-    assert.equal(readdressed.runtime.nodes.pc3.id,applied.runtime.nodes.pc3.id);
-    assert.equal(readdressed.topology.nodes.find(n=>n.id==='pc3').ports[0].address,'10.10.1.31/24');
+    assert.equal(readdressed.runtime.nodes[addedNodeId].id,applied.runtime.nodes[addedNodeId].id);
+    assert.equal(readdressed.topology.nodes.find(n=>n.id===addedNodeId).ports[0].address,'10.10.1.31/24');
     // Adding and deleting notes are visual saves, including after deployment.
     await click('#add-annotation');
     const notePoint=await evaluate('(()=>{const r=document.querySelector("#canvas").getBoundingClientRect();return{x:r.left+65,y:r.top+120}})()');
@@ -161,12 +162,12 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await click('#delete-annotation');await click('#save');await wait(savedState);
     const withoutNote=await record();assert.equal(withoutNote.topology.annotations.some(n=>n.id===newNote),false);sameDeployment(withoutNote.runtime,noted.runtime);
     // Deleting the device removes its cable in the draft; application removes owned resources.
-    await click('.topology-node[data-node=pc3] .node-name');await click('#delete-selection');
+    await click('.topology-node[data-test-added-pc] .node-name');await click('#delete-selection');
     await wait('document.querySelectorAll(".topology-node").length===5&&document.querySelectorAll(".edge").length===4');
-    assert.ok((await record()).runtime.nodes.pc3,'delete remains a draft before application');
+    assert.ok((await record()).runtime.nodes[addedNodeId],'delete remains a draft before application');
     await click('#apply-topology');
     await wait(savedState+'&&document.querySelector("#phase").classList.contains("running")');
-    const removed=await record();assert.equal(removed.runtime.nodes.pc3,undefined);assert.equal(removed.topology.nodes.length,5);assert.equal(removed.topology.links.length,4);
+    const removed=await record();assert.equal(removed.runtime.nodes[addedNodeId],undefined);assert.equal(removed.topology.nodes.length,5);assert.equal(removed.topology.links.length,4);
     for(const [id,node] of Object.entries(original.runtime.nodes))assert.equal(removed.runtime.nodes[id].id,node.id);
     await send('Page.reload');await openSavedLab(evaluate,wait,click);await wait('document.querySelector("#phase").classList.contains("running")');
     assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),5);assert.equal(await evaluate('document.querySelectorAll(".edge").length'),4);

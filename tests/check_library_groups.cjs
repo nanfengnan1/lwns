@@ -96,7 +96,8 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await wait('document.querySelectorAll("[data-device-group=firewall] .device-card").length===1');
     assert.equal(await evaluate(`document.querySelector(${JSON.stringify(card('fixture/firewall:latest'))})?.querySelector('b').textContent`),'边界防火墙');
     await click(card('fixture/firewall:latest'));
-    await wait('!!document.querySelector(".topology-node[data-node=fw1]")');
+    await wait('[...document.querySelectorAll(".node-name")].some(node=>node.textContent==="FW1")');
+    await evaluate('document.querySelector(".topology-node.selected").setAttribute("data-test-added-fw", "")');
     await openImages();await input('#image-search','fixture/firewall:latest');
     await click('.image-entry[data-image="fixture/firewall:latest"] .image-settings');
     await input('#edit-image-template','linux-host');await input('#edit-image-title','测试 PC');await click('#save-image-settings');
@@ -112,7 +113,7 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await input('#edit-image-template','');await click('#save-image-settings');await wait('!document.querySelector("#image-edit-form")');
     await click('#close-images');await wait(`document.querySelectorAll('.device-card').length===${hostCount}`);
     assert.equal(await evaluate(`document.querySelectorAll(${JSON.stringify(card('fixture/firewall:latest'))}).length`),0,'unbinding removes only its own card');
-    assert.ok(await evaluate('!!document.querySelector(".topology-node[data-node=fw1]")'),'library changes preserve existing canvas devices');
+    assert.ok(await evaluate('!!document.querySelector(".topology-node[data-test-added-fw]")'),'library changes preserve existing canvas devices');
     await openImages();await click('.image-entry[data-image="fixture/firewall:latest"] .image-delete');
     await wait(`!document.querySelector('.image-entry[data-image="fixture/firewall:latest"]')`);await jobDone();await click('#close-images');
     await evaluate('window.__libraryBeforeReload=true');

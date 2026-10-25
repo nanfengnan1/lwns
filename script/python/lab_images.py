@@ -398,7 +398,7 @@ class ImageService:
         else:
             raise LabError("未知镜像操作")
         with self.manager.lock, self.lock:
-            if self.active or self.manager.busy:
+            if self.active or self.manager.busy or self.manager.image_busy:
                 raise LabError("已有镜像或部署任务执行中，请稍后重试")
             if mode in ("delete", "forget"):
                 spec["reference"] = self.entry(spec["item_id"])["reference"]
@@ -487,6 +487,10 @@ class ImageService:
             raise LabError("下载归档为空或不完整")
 
     def ensure_unused(self, ref, image_id):
+        library = getattr(self.manager, "device_library", None)
+        if library is not None and any(entry.get("image") == ref or entry.get("image_id") == image_id
+                                       for entry in library.entries()):
+            raise LabError("镜像被设备库版本引用，请先移除相应设备定义")
         for path in self.manager.directory.glob("*.json"):
             record = self.manager.read(path.stem)
             if any(reference(node["image"]) in (ref, image_id) for node in record["topology"]["nodes"]):

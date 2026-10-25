@@ -6,6 +6,11 @@ Web 工作台以草原狼头像作为项目图标。顶部“实验 / 视图 / �
 保存及视图管理；启动后显示空白画布，从“打开项目”继续已有项目，或导入拓扑 JSON。
 “保存项目”写入宿主机，完整项目包导入导出仍未实现，详见[保存与恢复](docs/user/workbench-data.rst)。
 
+支持通过 Web 或 CLI 制作 `.rov` 设备包，导入时设置设备库名称，按设备描述自动准备镜像、
+启动服务并保存原生配置。入口为 **工具 → 设备管理**，操作见[设备包教程](docs/user/workbench-devices.rst)。
+教程包含完整 FRR `device.json`、从已有 `alpine/frr:latest` 制作离线 `frr.rov` 的命令，
+以及 Web 制作、上传导入、拖入画布和部署步骤。
+
 ## 获取代码或安装包
 
 源码仓库：[nanfengnan1/route-ovs](https://github.com/nanfengnan1/route-ovs)。在 Linux 宿主机准备存放源码的目录中执行：
@@ -27,7 +32,7 @@ cd route-ovs
 | --- | --- |
 | 首次安装 | [获取代码与环境准备](docs/user/deployment.rst) → [部署与启动](docs/user/workbench-start.rst) |
 | 已有地址，开始实验 | [第一次实验：让两台 PC 互通](docs/user/quickstart.rst) |
-| 导入设备并绘图 | [镜像与设备库](docs/user/workbench-images.rst) · [项目与画布](docs/user/workbench-editor.rst) |
+| 导入设备并绘图 | [.rov 设备包制作与导入](docs/user/workbench-devices.rst) · [镜像管理（兼容）](docs/user/workbench-images.rst) · [项目与画布](docs/user/workbench-editor.rst) |
 | 配置设备、保存和抓包 | [设备终端](docs/user/workbench-terminal.rst) · [配置保存与恢复](docs/user/workbench-data.rst) · [Wireshark 抓包](docs/user/workbench-capture.rst) |
 | 安装目录包或启用 HTTPS | [目录包安装](docs/user/workbench-install.rst) · [HTTPS / HTTP/2 / HTTP/3](docs/user/workbench-https.rst) |
 | 排查错误 | [故障排查](docs/user/troubleshooting.rst) |

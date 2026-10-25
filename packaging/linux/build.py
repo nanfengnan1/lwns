@@ -58,7 +58,8 @@ def main():
                    "--hidden-import", "anyio._backends._asyncio"]
         resources = [(ROOT / "web/dist", "web/dist"),
                      (ROOT / "config/images.defaults.json", "config"),
-                     (ROOT / "examples/basic-lab.json", "examples")]
+                     (ROOT / "examples/basic-lab.json", "examples"),
+                     (ROOT / "examples/device-packages", "examples/device-packages")]
         for filename in ("launcher.py", "remote_relay.py", "configure.ps1", "install.ps1", "install.sh", "README.md"):
             resources.append((ROOT / "clients/capture" / filename, "clients/capture"))
         for source, destination in resources:

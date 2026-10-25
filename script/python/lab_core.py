@@ -48,7 +48,7 @@ def string(value, label, maximum=128, empty=False):
     return value
 
 
-def validate_topology(raw):
+def validate_topology(raw, resolver=None):
     if not isinstance(raw, dict) or raw.get("version") != 1:
         raise LabError("拓扑文件需要 version: 1")
     result = {"version": 1, "id": identifier(raw.get("id")),
@@ -75,7 +75,9 @@ def validate_topology(raw):
         node = {"id": nid, "name": name, "kind": kind, "image": image, "ports": []}
         if "template" in raw_node:
             node["template"] = identifier(raw_node["template"])
-        template = template_for(node)
+        template = (resolver or template_for)(node)
+        if template.get("adapter") == "descriptor" and image != template["image"]:
+            raise LabError("设备包镜像已固定，不能在项目中覆盖；请导入新的设备版本")
         for axis in ("x", "y"):
             value = raw_node.get(axis, 0)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or abs(value) > 100000:
@@ -107,7 +109,7 @@ def validate_topology(raw):
                     parsed = ipaddress.ip_interface(address)
                 except ValueError:
                     raise LabError("地址需要 CIDR 格式，例如 10.0.0.1/24")
-                if kind == "switch":
+                if template.get("adapter") == "linux-bridge":
                     raise LabError("二层交换机端口不配置 IP 地址")
                 addresses.append(parsed)
                 address = str(parsed)
@@ -119,13 +121,15 @@ def validate_topology(raw):
                 parsed_gateway = ipaddress.ip_address(gateway)
             except ValueError:
                 raise LabError("默认网关必须是 IP 地址")
-            if kind == "switch" or not any(parsed_gateway.version == addr.version and parsed_gateway in addr.network and parsed_gateway != addr.ip for addr in addresses):
+            if template.get("adapter") == "linux-bridge" or not any(parsed_gateway.version == addr.version and parsed_gateway in addr.network and parsed_gateway != addr.ip for addr in addresses):
                 raise LabError("默认网关必须位于本设备的某个端口子网内，且不能是本机地址")
         node["gateway"] = gateway
         command = raw_node.get("command", [])
         if not isinstance(command, list) or len(command) > 64 or any(not isinstance(arg, str) or not arg or len(arg) > 4096 or "\x00" in arg for arg in command):
             raise LabError("启动命令必须是字符串数组")
         node["command"] = command
+        if command and template.get("adapter") == "descriptor":
+            raise LabError("设备包启动流程已固定，不能在项目中覆盖启动命令")
         config = string(raw_node.get("config", ""), "FRR 配置", 32768, empty=True)
         if config and not template["capabilities"]["startup_config"]:
             raise LabError("该设备模板不支持启动配置")
@@ -231,6 +235,22 @@ class LabManager:
         self.lock = threading.RLock()
         self.busy = None
         self.image_busy = False
+        from lab_device_packages import DeviceLibrary
+        self.device_library = DeviceLibrary(self.directory)
+
+    def template(self, node):
+        if str(node.get("template", "")).startswith("rov-"):
+            template = self.device_library.resolve(node["template"])
+            if template["kind"] != node["kind"]:
+                raise LabError("设备模板不存在或与设备类型不匹配")
+            return template
+        return template_for(node)
+
+    def adapter(self, node):
+        return adapter_for(node, self.template(node))
+
+    def validate(self, topology):
+        return validate_topology(topology, self.template)
 
     def path(self, lab_id):
         return self.directory / (identifier(lab_id) + ".json")
@@ -238,7 +258,7 @@ class LabManager:
     def read(self, lab_id):
         try:
             value = json.loads(self.path(lab_id).read_text(encoding="utf-8"))
-            validate_topology(value["topology"])
+            self.validate(value["topology"])
             return value
         except FileNotFoundError:
             raise LabError("实验不存在")
@@ -251,13 +271,15 @@ class LabManager:
             atomic_json(self.path(record["topology"]["id"]), record)
 
     def save(self, topology):
-        topology = validate_topology(topology)
         with self.lock:
+            # Definition deletion also holds this lock. Resolve and persist as
+            # one operation so a new project cannot retain a removed template.
+            topology = self.validate(topology)
             if self.path(topology["id"]).exists():
                 record = self.read(topology["id"])
                 if self.busy == topology["id"] or record["runtime"].get("phase") in ("deploying", "destroying", "updating"):
                     raise LabError("请等待当前操作完成后再保存")
-                if record["runtime"].get("deployment") and runtime_signature(topology) != runtime_signature(validate_topology(record["topology"])):
+                if record["runtime"].get("deployment") and runtime_signature(topology) != runtime_signature(self.validate(record["topology"])):
                     raise LabError("设备已经部署，运行配置变化请使用应用拓扑")
                 record["topology"] = topology
             else:
@@ -285,15 +307,15 @@ class LabManager:
 
     def save_project(self, topology):
         """Persist topology and supported running configs, reporting partial saves."""
-        topology = validate_topology(topology)
         with self.lock:
-            if self.busy is not None:
-                raise LabError("部署或清理任务进行中，请稍后保存项目")
+            topology = self.validate(topology)
+            if self.busy is not None or self.image_busy:
+                raise LabError("部署、清理或镜像任务进行中，请稍后保存项目")
             record = self.save(topology)
             results = []
             if record["runtime"].get("deployment"):
                 supported = [node for node in record["topology"]["nodes"]
-                             if template_for(node)["capabilities"]["save_config"]]
+                             if self.template(node)["capabilities"]["save_config"]]
                 if supported:
                     try:
                         results.extend(self.save_configs(topology["id"])["results"])
@@ -305,7 +327,7 @@ class LabManager:
                 results.extend({"node": node["id"], "ok": False, "skipped": True,
                                 "error": "该设备模板暂不支持保存运行配置；拓扑配置已保存"}
                                for node in record["topology"]["nodes"]
-                               if not template_for(node)["capabilities"]["save_config"])
+                               if not self.template(node)["capabilities"]["save_config"])
             saved = self.read(topology["id"])
             saved["busy"] = False
             return {"record": saved, "results": results, "topology_saved": True}
@@ -381,13 +403,13 @@ class LabManager:
                 nodes = [node for node in nodes if node["id"] == node_id]
                 if not nodes:
                     raise LabError("设备不存在")
-            return {node["id"]: adapter_for(node).config_status(self, record, node) for node in nodes}
+            return {node["id"]: self.adapter(node).config_status(self, record, node) for node in nodes}
 
     def save_configs(self, lab_id, node_id=None):
         self.authorize()
         with self.lock:
-            if self.busy is not None:
-                raise LabError("部署或清理任务进行中，请稍后保存配置")
+            if self.busy is not None or self.image_busy:
+                raise LabError("部署、清理或镜像任务进行中，请稍后保存配置")
             record = self.read(lab_id)
             if not record["runtime"].get("deployment"):
                 raise LabError("设备尚未部署")
@@ -398,13 +420,13 @@ class LabManager:
                 if not nodes:
                     raise LabError("设备不存在")
             else:
-                nodes = [node for node in nodes if template_for(node)["capabilities"]["save_config"]]
+                nodes = [node for node in nodes if self.template(node)["capabilities"]["save_config"]]
             if not nodes:
                 raise LabError("当前实验没有支持保存配置的设备")
             results = []
             for node in nodes:
                 try:
-                    status = adapter_for(node).save_config(self, record, node)
+                    status = self.adapter(node).save_config(self, record, node)
                     self.note(record, "已保存设备配置: " + node["name"])
                     results.append({"node": node["id"], "ok": True, "status": status, "config": node["config"]})
                 except (LabError, OSError, ValueError) as exc:
@@ -504,16 +526,19 @@ class LabManager:
         identifier(lab_id)
         if not isinstance(payload, dict) or set(payload) != {"topology", "base"}:
             raise LabError("应用拓扑需要 topology 和 base")
-        target, base = validate_topology(payload["topology"]), validate_topology(payload["base"])
+        target, base = self.validate(payload["topology"]), self.validate(payload["base"])
         if target["id"] != lab_id or base["id"] != lab_id:
             raise LabError("拓扑 ID 与实验不一致")
         with self.lock:
             if self.busy is not None or self.image_busy:
                 raise LabError("另一个部署、更新、清理或镜像任务正在执行，请稍后重试")
+            # A newly introduced definition could have been removed while this
+            # request was waiting for the manager lock.
+            target, base = self.validate(target), self.validate(base)
             record = self.read(lab_id)
             if not record["runtime"].get("deployment") or record["runtime"].get("phase") != "running":
                 raise LabError("仅正常运行的实验可应用拓扑；故障实验请清理后重新部署")
-            if base != validate_topology(record["topology"]):
+            if base != self.validate(record["topology"]):
                 raise LabError("实验已经变化，请重新加载后再应用拓扑")
             self.authorize()
             plan_update(self, record, target)
@@ -535,7 +560,7 @@ class LabManager:
                 self.busy = None
 
     def update(self, record, topology):
-        target = validate_topology(topology)
+        target = self.validate(topology)
         if target["id"] != record["topology"]["id"]:
             raise LabError("拓扑 ID 与实验不一致")
         apply_update(self, record, target)
@@ -555,7 +580,7 @@ class LabManager:
                 self.busy = None
 
     def deploy(self, record):
-        topology = validate_topology(record["topology"])
+        topology = self.validate(record["topology"])
         if not topology["nodes"]:
             raise LabError("请先添加至少一台设备")
         connected = {(link[side]["node"], link[side]["port"]) for link in topology["links"] for side in ("a", "b")}
@@ -570,7 +595,7 @@ class LabManager:
         self.note(record, "开始部署：所有设备使用独立网络命名空间，网线使用 veth")
         try:
             for node in topology["nodes"]:
-                adapter = adapter_for(node)
+                adapter = self.adapter(node)
                 name = "rov-{}-{}".format(topology["id"], node["id"])
                 args = ["create", "--name", name, "--hostname", node["name"], "--network", "none",
                         "--label", LABEL + "=" + topology["id"],
@@ -605,7 +630,7 @@ class LabManager:
                 for port in node["ports"]:
                     if (node["id"], port["name"]) not in connected:
                         continue
-                    if node["kind"] == "switch":
+                    if self.template(node).get("adapter") == "linux-bridge":
                         self.ns(record, node["id"], "ip", "link", "set", "dev", port["name"], "master", "br0")
                     elif port["address"]:
                         self.ns(record, node["id"], "ip", "addr", "replace", port["address"], "dev", port["name"])
@@ -613,7 +638,7 @@ class LabManager:
                 if gateway_device:
                     family = "-6" if ":" in node["gateway"] else "-4"
                     self.ns(record, node["id"], "ip", family, "route", "replace", "default", "via", node["gateway"], "dev", gateway_device)
-                adapter_for(node).linked(self, record, node)
+                self.adapter(node).linked(self, record, node)
             for node in topology["nodes"]:
                 self.live(record, node["id"])
             runtime["phase"] = "running"
@@ -709,8 +734,8 @@ class LabManager:
             node = next(n for n in record["topology"]["nodes"] if n["id"] == node_id)
             target = {"lab": lab_id, "node": node_id, "mode": mode,
                       "deployment": record["runtime"].get("deployment"), "container": item["Id"],
-                      "program": template_for(node)["console"] if mode == "default" else "sh",
-                      "argv": template_for(node)["console_command"] if mode == "default" else ["sh", "-i"]}
+                      "program": self.template(node)["console"] if mode == "default" else "sh",
+                      "argv": self.template(node)["console_command"] if mode == "default" else ["sh", "-i"]}
             if expected is not None and target != expected:
                 raise LabError("设备部署已变化，请重新连接终端")
             return target

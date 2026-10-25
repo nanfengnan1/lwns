@@ -7,6 +7,7 @@ export const useUiStore = defineStore("ui", () => {
   const accessOpen = ref(false),
     infoOpen = ref(false);
   const imagesOpen = ref(false);
+  const devicesOpen = ref(false);
   const labDialogMode = ref<"new" | "rename" | null>(null);
   const labOpen = ref(false);
   const menuOpen = ref(false);
@@ -46,6 +47,7 @@ export const useUiStore = defineStore("ui", () => {
     accessOpen,
     infoOpen,
     imagesOpen,
+    devicesOpen,
     labDialogMode,
     labOpen,
     menuOpen,

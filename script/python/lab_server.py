@@ -17,10 +17,14 @@ from urllib.parse import urlsplit
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+if __name__ == "__main__" and sys.argv[1:2] == ["device"]:
+    from lab_device_cli import main as device_main
+    sys.exit(device_main(sys.argv[2:]))
+
 try:
     from fastapi import FastAPI, Request, WebSocket
     from starlette.concurrency import run_in_threadpool
-    from starlette.responses import JSONResponse, Response, StreamingResponse
+    from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
     import uvicorn
 except ImportError:
     sys.exit("缺少后端依赖。请运行 python3 -m venv .venv，然后用 "
@@ -30,6 +34,7 @@ except ImportError:
 from lab_core import CATALOG, LabError, LabManager
 from lab_terminal import TerminalService
 from lab_images import ImageService, MAX_UPLOAD
+from lab_device_service import DevicePackageService
 from lab_capture import CaptureService
 from lab_static import StaticGZipMiddleware, WorkbenchStatic, is_static_path
 from lab_paths import default_data_dir, resource_root
@@ -84,10 +89,11 @@ def join_jobs():
             thread.join()
 
 
-def create_app(manager, token, web_dir=None, terminals=None, images=None, captures=None, capture_port=8090):
+def create_app(manager, token, web_dir=None, terminals=None, images=None, captures=None, capture_port=8090, device_packages=None):
     web_dir = Path(web_dir or ROOT / "web" / "dist").resolve()
     terminals = terminals or TerminalService(manager)
     images = images or ImageService(manager)
+    device_packages = device_packages or DevicePackageService(manager, images=images, max_upload=images.max_upload)
     captures = captures or CaptureService(manager, port=capture_port)
 
     @asynccontextmanager
@@ -97,12 +103,14 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
         await terminals.close_lab()
         await asyncio.to_thread(join_jobs)
         await asyncio.to_thread(images.wait)
+        await asyncio.to_thread(device_packages.wait)
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.add_middleware(StaticGZipMiddleware, minimum_size=1024, compresslevel=6)
     static = WorkbenchStatic(web_dir, HEADERS)
     app.state.terminals = terminals
     app.state.images = images
+    app.state.device_packages = device_packages
     app.state.captures = captures
 
     async def capture_payload(request, full=False):
@@ -160,9 +168,11 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
 
     def dispatch(method, path, payload):
         # All filesystem and Docker operations run outside the ASGI event loop.
+        segments = path.strip("/").split("/")
         if method == "GET" and path == "/api/bootstrap":
             images.snapshot(refresh=True)
-            return respond(200, {"catalog": images.catalog(), "environment": manager.environment(),
+            device_packages.snapshot(refresh=True)
+            return respond(200, {"catalog": images.catalog() + device_packages.catalog(), "environment": manager.environment(),
                                  "labs": manager.list_labs()})
         if method == "GET" and path == "/api/labs":
             return respond(200, manager.list_labs())
@@ -184,7 +194,30 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
                     archive.write(folder / "dist" / "route-ovs-capture.exe", "route-ovs-capture.exe")
             return Response(output.getvalue(), media_type="application/zip", headers={**HEADERS, "Content-Disposition": 'attachment; filename="route-ovs-capture-client.zip"'})
         if method == "GET" and path == "/api/catalog":
-            return respond(200, images.catalog())
+            device_packages.snapshot(refresh=True)
+            return respond(200, images.catalog() + device_packages.catalog())
+        if path == "/api/device-packages" and method == "GET":
+            return respond(200, device_packages.snapshot())
+        if path == "/api/device-packages/refresh" and method == "POST":
+            return respond(200, device_packages.snapshot(refresh=True))
+        if path == "/api/device-packages/uploads" and method == "POST":
+            return respond(201, device_packages.create_upload(payload))
+        if path == "/api/device-packages/inspect" and method == "POST":
+            return respond(200, device_packages.inspect_upload(payload))
+        if path == "/api/device-packages/jobs" and method == "POST":
+            return respond(202, device_packages.start(payload))
+        if segments[:2] == ["api", "device-packages"]:
+            if len(segments) == 4 and segments[2] == "uploads" and method == "DELETE":
+                device_packages.discard_upload(segments[3])
+                return respond(200, {"ok": True})
+            if len(segments) == 4 and segments[2] == "artifacts" and method in ("GET", "HEAD"):
+                artifact, filename = device_packages.artifact(segments[3])
+                return FileResponse(artifact, filename=filename, media_type="application/zip", headers=HEADERS)
+            if len(segments) == 3 and method == "PATCH":
+                return respond(200, device_packages.rename(segments[2], payload))
+            if len(segments) == 3 and method == "DELETE":
+                device_packages.remove(segments[2])
+                return respond(200, {"ok": True})
         if path == "/api/images":
             if method == "GET":
                 return respond(200, images.snapshot())
@@ -194,7 +227,6 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
             return respond(202, images.start(payload))
         if path == "/api/images/uploads" and method == "POST":
             return respond(201, images.create_upload(payload))
-        segments = path.strip("/").split("/")
         if len(segments) == 3 and segments[:2] == ["api", "images"]:
             if method == "PUT":
                 return respond(200, images.update(segments[2], payload))
@@ -256,7 +288,7 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
                 return respond(200, manager.configs(lab_id, segments[4] if len(segments) == 5 else None))
         return respond(404, {"error": "未知 API"})
 
-    @app.api_route("/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "DELETE"])
+    @app.api_route("/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
     async def http(request: Request, path: str):
         path = "/" + path
         payload = {}
@@ -270,29 +302,31 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
                 if not same_origin(request):
                     return respond(403, {"error": "不接受跨站请求"})
                 segments = path.strip("/").split("/")
-                if request.method == "PUT" and len(segments) == 4 and segments[:3] == ["api", "images", "uploads"]:
+                if (request.method == "PUT" and len(segments) == 4
+                        and segments[0] == "api" and segments[1] in ("images", "device-packages") and segments[2] == "uploads"):
                     if request.headers.get("content-type", "").split(";")[0] != "application/octet-stream":
                         raise LabError("文件上传需要 application/octet-stream")
                     upload_id = segments[3]
-                    info = await run_in_threadpool(images.begin_upload, upload_id)
+                    upload_service = images if segments[1] == "images" else device_packages
+                    info = await run_in_threadpool(upload_service.begin_upload, upload_id)
                     stream, complete, size = None, False, 0
                     try:
-                        stream = await run_in_threadpool((images.upload_path(upload_id) / "data").open, "xb")
+                        stream = await run_in_threadpool((upload_service.upload_path(upload_id) / "data").open, "xb")
                         async for chunk in request.stream():
                             size += len(chunk)
-                            if size > info["size"] or size > images.max_upload:
+                            if size > info["size"] or size > upload_service.max_upload:
                                 raise LabError("上传数据超过声明的文件大小")
                             await run_in_threadpool(stream.write, chunk)
                         await run_in_threadpool(stream.close)
-                        result = await run_in_threadpool(images.finish_upload, upload_id, size)
+                        result = await run_in_threadpool(upload_service.finish_upload, upload_id, size)
                         complete = True
                         return respond(200, result)
                     finally:
                         if stream and not stream.closed:
                             await run_in_threadpool(stream.close)
                         if not complete:
-                            await run_in_threadpool(images.discard_upload, upload_id, True)
-                if request.method in ("POST", "PUT"):
+                            await run_in_threadpool(upload_service.discard_upload, upload_id, True)
+                if request.method in ("POST", "PUT", "PATCH"):
                     if request.headers.get("content-type", "").split(";")[0] != "application/json":
                         raise LabError("请求需要 application/json")
                     body = bytearray()

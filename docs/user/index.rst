@@ -30,9 +30,9 @@
 
       :doc:`我要操作已有实验 <workbench>`
 
-      按功能查阅镜像、画布、终端、保存和抓包，无需重做安装步骤。
+      按功能查阅设备包制作与加载、画布、终端、保存和抓包，无需重做安装步骤。
 
-      :doc:`画布 <workbench-editor>` · :doc:`保存配置 <workbench-data>` · :doc:`抓包 <workbench-capture>`
+      :doc:`制作与加载 .rov <workbench-devices>` · :doc:`画布 <workbench-editor>` · :doc:`保存配置 <workbench-data>`
 
    .. container:: doc-card
 
@@ -56,7 +56,7 @@
 
 .. container:: doc-path
 
-   **实验流程**　连接工作台 → 准备镜像 → 新建或导入拓扑 → 保存并部署 → ping 验证 → 保存设备配置 → 清理设备。
+   **实验流程**　连接工作台 → 导入设备包或准备兼容镜像 → 新建或导入拓扑 → 保存并部署 → ping 验证 → 保存设备配置 → 清理设备。
 
 “清理设备”保留实验及已保存配置；“删除实验”会移除实验数据，详见 :doc:`workbench-data`。
 
@@ -82,6 +82,7 @@
    :maxdepth: 1
 
    workbench
+   workbench-devices
    workbench-images
    workbench-editor
    workbench-terminal

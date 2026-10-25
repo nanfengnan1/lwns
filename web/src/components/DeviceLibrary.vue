@@ -113,7 +113,12 @@ function drag(event: DragEvent, kind: string) {
               :data-kind="item.kind"
               :data-template="item.id || item.kind"
               :data-image="item.image"
-              :title="item.title + '\n' + item.image + '\n点击添加，或拖入画布'"
+              :title="
+                item.title +
+                '\n' +
+                (item.image_reference || item.image) +
+                '\n点击添加，或拖入画布'
+              "
               :draggable="!lab.locked"
               :disabled="lab.locked"
               @dragstart="drag($event, item.id || item.kind)"
@@ -122,7 +127,7 @@ function drag(event: DragEvent, kind: string) {
               <span class="device-icon"><DeviceIcon :kind="item.kind" /></span>
               <span class="device-card-label"
                 ><b>{{ item.title }}</b
-                ><small>{{ item.image }}</small></span
+                ><small>{{ item.image_reference || item.image }}</small></span
               >
               <span v-if="item.present === false" class="device-unavailable"
                 >未加载</span
@@ -132,7 +137,7 @@ function drag(event: DragEvent, kind: string) {
           <div v-if="!devices.length" class="library-empty">
             <DeviceIcon :kind="current.id" />
             <b>此分类暂无设备</b>
-            <p>通过顶部「工具 → 镜像管理」添加。</p>
+            <p>通过顶部「工具 → 设备管理」添加。</p>
           </div>
           <button
             v-if="devices.length > visibleCount"

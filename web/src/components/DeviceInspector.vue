@@ -45,7 +45,12 @@ function apply() {
           </div>
           <div>
             <b>{{ editor.node.name }}</b
-            ><small>{{ titles[editor.node.kind] }} · DOCKER</small>
+            ><small
+              >{{
+                lab.getTemplate(editor.node)?.title || titles[editor.node.kind]
+              }}
+              · DOCKER</small
+            >
           </div>
         </div>
         <div v-if="lab.runtime?.deployment" class="readonly-note">
@@ -78,10 +83,13 @@ function apply() {
               list="images"
               required
               :disabled="lab.locked"
+              :readonly="lab.isManagedDevice(editor.node)"
             /><small>{{
-              editor.node.kind === "router"
-                ? "使用兼容 /usr/lib/frr/docker-start 的 FRR 镜像"
-                : "使用带 sleep 命令的 Linux 镜像"
+              lab.isManagedDevice(editor.node)
+                ? `由设备包管理 · ${lab.getTemplate(editor.node)?.image_reference || ""} · ${lab.getTemplate(editor.node)?.descriptor_version || ""}`
+                : editor.node.kind === "router"
+                  ? "使用兼容 /usr/lib/frr/docker-start 的 FRR 镜像"
+                  : "使用带 sleep 命令的 Linux 镜像"
             }}</small></label
           >
           <label class="field"
@@ -141,7 +149,11 @@ function apply() {
                 :disabled="lab.locked"
             /></label>
             <p v-else class="inspector-help">
-              已连接端口自动加入容器内 br0，启用 STP。
+              {{
+                lab.isManagedDevice(editor.node)
+                  ? "交换行为由设备描述中的启动和接线动作配置。"
+                  : "已连接端口自动加入容器内 br0，启用 STP。"
+              }}
             </p>
           </div>
           <details class="property-section">
@@ -153,9 +165,13 @@ function apply() {
                 v-model="editor.commandText"
                 placeholder='["sleep", "infinity"]'
                 :disabled="lab.locked"
+                :readonly="lab.isManagedDevice(editor.node)"
               ></textarea>
+              <small v-if="lab.isManagedDevice(editor.node)"
+                >启动流程由设备包声明，实例沿用对应版本。</small
+              >
             </label>
-            <label v-if="lab.supportsConfig(editor.node)" class="field"
+            <label v-if="lab.supportsStartupConfig(editor.node)" class="field"
               ><span>FRR 启动配置（可选）</span
               ><textarea
                 id="node-config"
@@ -206,7 +222,8 @@ function apply() {
             >docker exec -it {{ lab.runtime!.nodes[editor.node.id].name }}
             {{
               lab.getTemplate(lab.getRuntimeNode(editor.node.id)!)?.console ||
-              (lab.getRuntimeNode(editor.node.id)!.kind === "router"
+              (!lab.isManagedDevice(editor.node) &&
+              lab.getRuntimeNode(editor.node.id)!.kind === "router"
                 ? "vtysh"
                 : "sh")
             }}</code

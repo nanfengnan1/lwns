@@ -141,8 +141,15 @@ const actions = computed<Record<MenuKey, MenuAction[]>>(() => ({
   ],
   tools: [
     {
+      id: "menu-devices",
+      title: "设备管理…",
+      run: () => {
+        ui.devicesOpen = true;
+      },
+    },
+    {
       id: "menu-images",
-      title: "镜像管理…",
+      title: "镜像管理（兼容）…",
       run: () => {
         ui.imagesOpen = true;
       },

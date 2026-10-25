@@ -30,6 +30,12 @@ export const phases: Record<Phase, string> = {
   degraded: "需要检查",
 };
 export const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+export function deviceInstanceId(): string {
+  // A display name may be reused; a new device must never inherit its config directory.
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (value) =>
+    value.toString(16).padStart(2, "0"),
+  ).join("");
+}
 const idPattern = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))

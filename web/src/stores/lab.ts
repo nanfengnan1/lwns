@@ -9,6 +9,7 @@ import {
   projectName,
   parseAnnotation,
   uniqueId,
+  deviceInstanceId,
 } from "../domain/topology";
 import type {
   Annotation,
@@ -174,6 +175,15 @@ export const useLabStore = defineStore("lab", () => {
   function supportsConfig(node: Device) {
     return (
       getTemplate(node)?.capabilities?.save_config ??
+      (node.template === "frr" || (!node.template && node.kind === "router"))
+    );
+  }
+  function isManagedDevice(node: Device) {
+    return !!getTemplate(node)?.managed || !!node.template?.startsWith("rov-");
+  }
+  function supportsStartupConfig(node: Device) {
+    return (
+      getTemplate(node)?.capabilities?.startup_config ??
       (node.template === "frr" || (!node.template && node.kind === "router"))
     );
   }
@@ -386,18 +396,15 @@ export const useLabStore = defineStore("lab", () => {
     );
     if (!template) throw Error("未知设备类型");
     const kind = template.kind;
-    const prefix = { router: "r", switch: "sw", host: "pc", firewall: "fw" }[
-      kind
-    ];
-    let i = 1;
-    while (getNode(prefix + i) || getRuntimeNode(prefix + i)) i++;
+    let id = deviceInstanceId();
+    while (getNode(id) || getRuntimeNode(id)) id = deviceInstanceId();
     let number = 1;
     while (
       topology.value.nodes.some((n) => n.name === template.prefix + number)
     )
       number++;
     const node: Device = {
-      id: prefix + i,
+      id,
       name: template.prefix + number,
       kind,
       ...(template.id ? { template: template.template_id || template.id } : {}),
@@ -418,6 +425,15 @@ export const useLabStore = defineStore("lab", () => {
   }
   function updateNode(value: Device) {
     assertEditable();
+    const original = getNode(value.id);
+    if (
+      original &&
+      isManagedDevice(original) &&
+      (original.template !== value.template ||
+        original.image !== value.image ||
+        JSON.stringify(original.command) !== JSON.stringify(value.command))
+    )
+      throw Error("设备包的镜像和启动流程由设备定义管理，请导入新版本后使用");
     const next = clone(topology.value),
       index = next.nodes.findIndex((node) => node.id === value.id);
     if (index < 0) throw Error("设备不存在");
@@ -727,6 +743,8 @@ export const useLabStore = defineStore("lab", () => {
     canCapture,
     getTemplate,
     supportsConfig,
+    isManagedDevice,
+    supportsStartupConfig,
     canSaveConfig,
     loadConfig,
     saveConfigs,

@@ -82,7 +82,12 @@ export interface DeviceTemplate {
   id?: string;
   template_id?: string;
   source?: string;
-  version?: number;
+  version?: number | string;
+  managed?: boolean;
+  profile?: "generic" | "frr";
+  descriptor_id?: string;
+  descriptor_version?: string;
+  image_reference?: string;
   adapter?: string;
   console?: string;
   capabilities?: { save_config: boolean; startup_config: boolean };
@@ -109,6 +114,8 @@ export interface DeviceConfigStatus {
   path?: string;
   content?: string;
   shared?: boolean;
+  files?: { path: string; size?: number }[];
+  paths?: string[];
 }
 export interface ConfigSaveResult {
   results: {

@@ -7,6 +7,10 @@ if [[ -f "$config" ]]; then
     source "$config"
     set +a
 fi
+if [[ "${1:-}" == "device" ]]; then
+    export ROUTE_OVS_DATA_DIR="${ROUTE_OVS_DATA_DIR:-/var/lib/route-ovs}"
+    exec "$app_dir/route-ovs" "$@"
+fi
 args=(--host "${ROUTE_OVS_HOST:-127.0.0.1}" --port "${ROUTE_OVS_PORT:-8090}"
       --data-dir "${ROUTE_OVS_DATA_DIR:-/var/lib/route-ovs}")
 if [[ -n "${ROUTE_OVS_TRUSTED_PROXY:-}" ]]; then

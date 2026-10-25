@@ -13,10 +13,7 @@ import shutil
 import tempfile
 import time
 import uuid
-
-
-class LabError(Exception):
-    pass
+from lab_errors import LabError
 
 
 CATALOG = [
@@ -109,6 +106,9 @@ class DeviceAdapter:
         pass
 
     def linked(self, manager, record, node):
+        pass
+
+    def link_added(self, manager, record, node):
         pass
 
     def config_status(self, manager, record, node):
@@ -257,7 +257,7 @@ done
                 "modified_at": path.stat().st_mtime if persisted else None,
                 "path": str(directory), "content": text_file(path) if persisted else ""}
 
-    def save_config(self, manager, record, node):
+    def save_config(self, manager, record, node, action=None, verify=None):
         item = manager.live(record, node["id"])
         root, directory = self.paths(manager, record, node)
         mounted = any(mount.get("Type") == "bind" and mount.get("Destination") == "/etc/frr"
@@ -272,9 +272,13 @@ done
             raise LabError("FRR 配置超过当前拓扑的 32 KiB 字符上限")
         if mounted:
             self.backup(root, directory)
-        output = manager.dock("exec", "-u", "0", item["Id"], "vtysh", "-w")
+        action = action or {}
+        output = manager.dock("exec", "-u", action.get("user", "0"), item["Id"], "vtysh", "-w",
+                              timeout=action.get("timeout_seconds", 30))
         if re.search(r"(?im)^%|failed|can't|cannot|error", output):
             raise LabError("FRR 保存失败: " + output[-1000:])
+        if any(value not in output for value in action.get("contains", [])):
+            raise LabError("FRR 保存输出缺少描述文件要求的内容")
         manager.live(record, node["id"])
         if not mounted:
             self.prepare(manager, record, node)
@@ -287,6 +291,8 @@ done
         config = text_file(directory / "frr.conf").strip()
         if not config:
             raise LabError("FRR 未生成有效配置文件")
+        if verify:
+            verify()
         metadata = self.metadata(root)
         metadata.update(seed_hash=seed_hash({"config": config}), saved_at=time.strftime("%Y-%m-%d %H:%M:%S"))
         self.write_metadata(root, metadata)
@@ -297,5 +303,9 @@ done
 ADAPTERS = {"frr": FrrAdapter(), "linux": DeviceAdapter(), "linux-bridge": BridgeAdapter()}
 
 
-def adapter_for(node):
-    return ADAPTERS[template_for(node)["adapter"]]
+def adapter_for(node, template=None):
+    template = template or template_for(node)
+    if template.get("adapter") == "descriptor":
+        from lab_device_runtime import DescriptorAdapter
+        return DescriptorAdapter(template)
+    return ADAPTERS[template["adapter"]]

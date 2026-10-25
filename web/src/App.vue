@@ -24,10 +24,14 @@ const lab = useLabStore(),
 const ImageManager = defineAsyncComponent(
   () => import("./components/ImageManager.vue"),
 );
+const DevicePackageManager = defineAsyncComponent(
+  () => import("./components/DevicePackageManager.vue"),
+);
 const CaptureManager = defineAsyncComponent(
   () => import("./components/CaptureManager.vue"),
 );
 const imagesLoaded = useRetainedPanel(() => ui.imagesOpen);
+const devicesLoaded = useRetainedPanel(() => ui.devicesOpen);
 const capturesLoaded = useRetainedPanel(() => ui.captureOpen);
 let poll: ReturnType<typeof setInterval> | undefined;
 const layout = useLayoutStore();
@@ -41,6 +45,7 @@ function keydown(event: KeyboardEvent) {
     ui.accessOpen ||
     ui.infoOpen ||
     ui.imagesOpen ||
+    ui.devicesOpen ||
     ui.captureOpen ||
     ui.labDialogMode ||
     ui.labOpen ||
@@ -170,5 +175,6 @@ onBeforeUnmount(() => {
   <ProjectNameDialog />
   <LabOpenDialog />
   <ImageManager v-if="imagesLoaded" />
+  <DevicePackageManager v-if="devicesLoaded" />
   <CaptureManager v-if="capturesLoaded" />
 </template>

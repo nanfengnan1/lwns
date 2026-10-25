@@ -100,7 +100,7 @@ it("keeps draft additions separate from existing runtime and never reuses a dele
   const { lab } = setup();
   lab.remove("node", "pc1");
   const added = lab.addNode("host", { x: 20, y: 20 });
-  expect(added.id).toBe("pc3");
+  expect(added.id).toMatch(/^[a-f0-9]{32}$/);
   expect(lab.getRuntimeNode("pc1")?.name).toBe("PC1");
   expect(lab.getRuntimeNode(added.id)).toBeUndefined();
   expect(lab.canOpenTerminal(added.id)).toBe(false);

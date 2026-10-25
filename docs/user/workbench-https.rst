@@ -60,6 +60,14 @@ Ubuntu/Debian 首次安装可执行（使用官方 stable 软件源）::
 
 该 Python 命令以前台方式运行，需要保持终端运行；接下来的 Caddy 配置在另一个终端执行。
 
+.. important::
+
+   手工启动时必须保留 ``--trusted-proxy 127.0.0.1``。如果只执行 ``--port 8090``，
+   却从 HTTPS 入口访问，可能出现“页面正常、新建/保存/部署被拒绝”的情况。
+   即使同时运行 ``npm run dev``，本页的 HTTPS 入口仍经过 Caddy，使用 ``web/dist``；
+   Vite 热更新入口是 ``http://宿主机IP:5173``。完整复现、修复命令与 Token 说明见
+   :ref:`workbench-origin-error`。
+
 **目录包发布部署**：后端运行环境和页面已经包含在包内。首次安装时可以在解压目录执行::
 
    sudo bash install.sh --listen 127.0.0.1 --port 8090 --trusted-proxy 127.0.0.1
@@ -339,7 +347,8 @@ claim/client-report 则通过 HTTPS 验证证书后访问。前端页面协议�
 ----------------------------------------
 
 * 页面提示“不接受跨站请求”或终端立即断开：检查后端的 ``--trusted-proxy``、Caddy 的上游地址，
-  保留原始 Host/Origin，不要关闭同源校验。
+  尤其是停止 systemd 后改为手工启动的情况。保留原始 Host/Origin，不要关闭同源校验；
+  按 :ref:`workbench-origin-error` 核对地址栏、运行命令和本次 Token。
 * HTTPS 证书错误：核对访问地址是否在证书中、客户端是否信任正在使用的 CA，以及系统时间。
 * 只有 h2：检查 UDP 443、浏览器 QUIC 策略、自定义 CA 限制；这不代表 HTTPS 或应用失败。
 * 502：检查后端是否运行、Caddy 上游端口和日志。
