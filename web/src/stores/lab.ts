@@ -22,6 +22,7 @@ import type {
   LabRecord,
   LabSummary,
   Point,
+  ProjectSaveResult,
   Runtime,
   Topology,
 } from "../types/lab";
@@ -55,8 +56,13 @@ export const useLabStore = defineStore("lab", () => {
   const saved = ref(false),
     dirty = ref(false),
     busy = ref(false);
+  const saveWarning = ref("");
   const operation = ref(""),
     documentVersion = ref(0);
+  const serverHost = computed(
+    () =>
+      (typeof window !== "undefined" && window.location?.host) || "当前服务器",
+  );
   const phase = computed(() => runtime.value?.phase || "idle");
   const layoutLocked = computed(
     () =>
@@ -112,6 +118,9 @@ export const useLabStore = defineStore("lab", () => {
       !!runtime.value?.deployment &&
       environment.value.ready &&
       !layoutLocked.value,
+  );
+  const canClose = computed(
+    () => !layoutLocked.value && (saved.value || dirty.value),
   );
   let refreshing = false;
   let runtimeRevision = 0;
@@ -252,6 +261,7 @@ export const useLabStore = defineStore("lab", () => {
     topology.value = parseTopology(value);
     savedTopology.value = parseTopology(record?.topology || topology.value);
     updateTarget = null;
+    saveWarning.value = "";
     configs.value = {};
     runtimeRevision++;
     runtime.value = record?.runtime ?? null;
@@ -275,15 +285,59 @@ export const useLabStore = defineStore("lab", () => {
     }
   }
   async function load(id: string) {
-    if (operation.value) return;
+    if (layoutLocked.value) throw Error("请等待当前操作完成后再打开项目");
+    const version = documentVersion.value;
     operation.value = "load";
     try {
-      const record = await api<LabRecord>(`/api/labs/${id}`);
+      const record = await api<LabRecord>(`/api/labs/${id}/open`, "POST", {});
+      if (version !== documentVersion.value)
+        throw Error("当前项目已变化，请重新打开项目");
       adopt(record.topology, record);
     } finally {
       operation.value = "";
     }
   }
+  async function createProject(value: string) {
+    if (layoutLocked.value) throw Error("请等待当前操作完成后再新建项目");
+    const name = projectName(value),
+      version = documentVersion.value;
+    operation.value = "create";
+    try {
+      const record = await api<LabRecord>("/api/labs", "POST", { name });
+      const summary: LabSummary = {
+        id: record.topology.id,
+        name: record.topology.name,
+        nodes: record.topology.nodes.length,
+        phase: record.runtime.phase,
+      };
+      labs.value = [
+        summary,
+        ...labs.value.filter((item) => item.id !== summary.id),
+      ];
+      if (version !== documentVersion.value)
+        throw Error("项目已在服务器创建，当前画布已变化，请从打开项目中选择");
+      adopt(record.topology, record);
+    } finally {
+      operation.value = "";
+    }
+  }
+  async function closeProject() {
+    if (layoutLocked.value) throw Error("请等待当前操作完成后再关闭项目");
+    const version = documentVersion.value;
+    operation.value = "close";
+    try {
+      if (saved.value)
+        await api(`/api/labs/${topology.value.id}/close`, "POST", {});
+      if (version !== documentVersion.value)
+        throw Error("当前项目已变化，请重新关闭项目");
+      adopt(emptyTopology());
+      dirty.value = false;
+    } finally {
+      operation.value = "";
+    }
+  }
+  // Internal draft helper, also used by JSON/import state tests. The New Project
+  // dialog uses createProject so a successful UI create always exists remotely.
   function newLab(name = "未命名实验") {
     if (operation.value) return;
     adopt({
@@ -490,6 +544,57 @@ export const useLabStore = defineStore("lab", () => {
       operation.value = "";
     }
   }
+  async function saveProject() {
+    assertEditable();
+    if (pendingUpdate.value)
+      throw Error("拓扑包含未应用的设备或连线修改，请先点击“应用拓扑”");
+    const payload = parseTopology(topology.value),
+      version = documentVersion.value;
+    operation.value = "save";
+    runtimeRevision++;
+    try {
+      const result = await api<ProjectSaveResult>(
+        `/api/labs/${payload.id}/save`,
+        "POST",
+        { topology: payload },
+      );
+      if (version !== documentVersion.value)
+        throw Error(
+          "服务器已完成保存，当前画布已变化，请重新打开原项目检查结果",
+        );
+      // A project save updates the document in place: terminal tabs, selection,
+      // and their document identity must survive saving device configuration.
+      const normalized = parseTopology(result.record.topology);
+      savedTopology.value = clone(normalized);
+      topology.value = normalized;
+      runtime.value = result.record.runtime;
+      busy.value = !!result.record.busy;
+      saved.value = true;
+      dirty.value = false;
+      for (const item of result.results)
+        if (item.ok && item.status) configs.value[item.node] = item.status;
+      saveWarning.value = result.results.some(
+        (item) => !item.ok && !item.skipped,
+      )
+        ? "部分设备配置未保存"
+        : result.results.some((item) => item.skipped)
+          ? "部分设备仅保存拓扑"
+          : "";
+      const summary: LabSummary = {
+        id: normalized.id,
+        name: normalized.name,
+        nodes: normalized.nodes.length,
+        phase: result.record.runtime.phase,
+      };
+      labs.value = [
+        summary,
+        ...labs.value.filter((item) => item.id !== summary.id),
+      ];
+      return result;
+    } finally {
+      operation.value = "";
+    }
+  }
   async function startJob(action: "deploy" | "destroy" | "update") {
     const allowed =
       action === "deploy"
@@ -595,9 +700,11 @@ export const useLabStore = defineStore("lab", () => {
     labs,
     environment,
     saved,
+    saveWarning,
     dirty,
     busy,
     operation,
+    serverHost,
     documentVersion,
     terminalRevision,
     pendingUpdate,
@@ -611,6 +718,7 @@ export const useLabStore = defineStore("lab", () => {
     canDeploy,
     canRename,
     canDestroy,
+    canClose,
     assertEditable,
     assertLayoutEditable,
     getNode,
@@ -627,6 +735,8 @@ export const useLabStore = defineStore("lab", () => {
     adopt,
     bootstrap,
     load,
+    createProject,
+    closeProject,
     newLab,
     rename,
     addNode,
@@ -640,6 +750,7 @@ export const useLabStore = defineStore("lab", () => {
     connect,
     remove,
     save,
+    saveProject,
     startJob,
     refresh,
     refreshEnvironment,

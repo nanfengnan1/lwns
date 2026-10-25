@@ -4,6 +4,7 @@ import { useLabStore } from "../stores/lab";
 import { useEditorStore } from "../stores/editor";
 import { useUiStore } from "../stores/ui";
 import { projectName } from "../domain/topology";
+import { ApiError } from "../api/client";
 const lab = useLabStore(),
   editor = useEditorStore(),
   ui = useUiStore();
@@ -44,8 +45,8 @@ async function submit() {
     if (mode === "new" && !editor.discardOK()) return;
     submitting.value = true;
     if (mode === "new") {
-      lab.newLab(value);
-      ui.notify("项目已创建，添加设备后可保存拓扑");
+      await lab.createProject(value);
+      ui.notify(`项目已创建并保存到 ${lab.serverHost}`);
     } else {
       await lab.rename(value);
       ui.notify(
@@ -55,6 +56,8 @@ async function submit() {
     ui.labDialogMode = null;
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : String(reason);
+    if (reason instanceof ApiError && reason.status === 401)
+      ui.accessOpen = true;
   } finally {
     submitting.value = false;
   }
@@ -100,7 +103,7 @@ async function submit() {
       <p id="project-name-help">
         支持中文，最多 80 个字符。{{
           ui.labDialogMode === "new"
-            ? "创建后点击“保存”写入后端。"
+            ? `项目将在 ${lab.serverHost} 上创建。`
             : "改名保留原项目 ID、设备配置和部署状态。"
         }}
       </p>

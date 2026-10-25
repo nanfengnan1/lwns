@@ -19,6 +19,14 @@ Python 后端使用 FastAPI / Uvicorn，负责实验持久化、Docker 生命周
 打开窗口和菜单必须隔离画布快捷键，保留方向键、Esc、Tab 和焦点行为。
 菜单项只显示操作名称、勾选状态与分隔线，不显示按钮下方或菜单底部的解释文字。
 
+项目创建使用 ``POST /api/labs {name}``，服务器生成 ID 并原子保存空项目；
+``POST /api/labs/{id}/open`` 加载服务器记录，``POST /api/labs/{id}/close`` 回收终端和抓包，
+保留文件和运行设备。前端仅在请求成功后切换画布，失败和过期响应不能覆盖当前草稿。
+``POST /api/labs/{id}/save {topology}`` 在服务器统一保存拓扑及运行中受支持的设备配置，
+返回 ``record``、逐设备 ``results`` 和 ``topology_saved``；不支持项为 skipped，部分失败
+不回滚已成功的保存，界面必须说明结果。旧 PUT 和单设备 configs 接口保留兼容。
+这不是可移植项目包；前端请求全部使用相对 /api 路径。
+
 Store 初始为干净空白画布；``bootstrap`` 只更新环境、目录与实验列表，不自动打开首项。
 重新认证不替换当前草稿。后端不再返回 ``example``；``examples/basic-lab.json``
 保留作显式文件导入与测试夹具，不属于默认实验，也不能清理用户数据来达到“空白启动”。
@@ -108,8 +116,8 @@ Vite 默认只监听本机；如需局域网开发访问，可显式传入 ``-- 
 
 修改后重启 Vite。该设置仅供开发服务器代理使用，生产环境前端与后端使用同一源。
 令牌由访问页面时输入，不写入环境文件或前端构建产物。
-代理同时支持 HTTP 与 WebSocket，只改写当前开发页面的同源 Origin，
-后端仍会拒绝其他站点的 Origin。Windows 使用独立的 ``.venv\Scripts\python.exe``。
+代理同时支持 HTTP 与 WebSocket，使用 ``changeOrigin: false`` 保留原始 Host/Origin，
+后端规范化协议、主机和默认端口后校验同源，仍拒绝其他站点的 Origin。Windows 使用独立的 ``.venv\Scripts\python.exe``。
 
 跨平台依赖与原生模块错误
 ----------------------------------------
@@ -214,7 +222,8 @@ ResizeObserver 读取容器 clientWidth/clientHeight，扣除滚动条后再计�
 不因存在 deployment 而禁止草稿变化。前端保留已应用拓扑与当前草稿，区分视觉保存和网络应用；
 新设备在成功应用前不能打开终端，终端/抓包/配置操作须核对真实运行对象。
 
-部署后的纯视觉保存通过 ``PUT /api/labs/{id}`` 提交完整拓扑。
+部署后的“保存项目”通过 ``POST /api/labs/{id}/save`` 提交 topology 并保存受支持运行配置；
+兼容旧客户端的纯拓扑保存仍可通过 ``PUT /api/labs/{id}`` 提交完整拓扑。
 后端比较运行字段，只有节点身份及运行属性、端口和链路关系一致时才允许写入，
 从而支持位置、尺寸、连线显示、注释增删/内容/样式及项目名变化，保留 runtime。
 网络字段不同则拒绝普通保存，要求显式应用。兼容旧客户端的 ``POST /api/labs/{id}/layout``

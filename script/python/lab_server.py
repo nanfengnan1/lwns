@@ -13,6 +13,7 @@ from pathlib import Path
 import secrets
 import sys
 import threading
+from urllib.parse import urlsplit
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -50,10 +51,31 @@ def respond(code, content, mime=None):
     return Response(content, status_code=code, media_type=mime or "text/plain", headers=HEADERS)
 
 
+def origin_key(value):
+    """Compare URL origins, including implicit default ports, not raw strings."""
+    if not value or any(character.isspace() for character in value) or "\\" in value:
+        return None
+    try:
+        parsed = urlsplit(value)
+        if (parsed.scheme not in ("http", "https") or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or parsed.path or parsed.query or parsed.fragment):
+            return None
+        port = parsed.port if parsed.port is not None else (443 if parsed.scheme == "https" else 80)
+        return parsed.scheme, parsed.hostname.lower(), port
+    except ValueError:
+        return None
+
+
 def same_origin(connection, required=False):
     origin = connection.headers.get("origin")
+    if origin is None:
+        return not required
+    # Only Uvicorn's explicitly trusted proxy middleware may change the scheme.
+    # Never trust arbitrary X-Forwarded-* headers here.
     scheme = "https" if connection.url.scheme in ("https", "wss") else "http"
-    return (not origin and not required) or origin == scheme + "://" + connection.headers.get("host", "")
+    expected = origin_key(scheme + "://" + connection.headers.get("host", ""))
+    return expected is not None and origin_key(origin) == expected
 
 
 def join_jobs():
@@ -144,6 +166,10 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
                                  "labs": manager.list_labs()})
         if method == "GET" and path == "/api/labs":
             return respond(200, manager.list_labs())
+        if method == "POST" and path == "/api/labs":
+            if set(payload) != {"name"}:
+                raise LabError("新建项目只接受项目名称 name")
+            return respond(201, manager.create_project(payload["name"]))
         if method == "GET" and path == "/api/environment":
             return respond(200, manager.environment())
         if method == "GET" and path == "/api/capture/capabilities":
@@ -196,6 +222,20 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
                     return respond(200, {"ok": True})
             if len(segments) == 4 and method == "POST":
                 action = segments[3]
+                if action in ("open", "close"):
+                    if payload:
+                        raise LabError("打开和关闭项目需要空 JSON 对象")
+                    if action == "open":
+                        return respond(200, manager.status(lab_id))
+                    manager.close_project(lab_id)
+                    return respond(200, {"ok": True, "id": lab_id})
+                if action == "save":
+                    if set(payload) != {"topology"}:
+                        raise LabError("保存项目只接受 topology")
+                    topology = payload["topology"]
+                    if not isinstance(topology, dict) or topology.get("id") != lab_id:
+                        raise LabError("URL 与拓扑 ID 不一致")
+                    return respond(200, manager.save_project(topology))
                 if action == "layout":
                     return respond(200, manager.save_layout(lab_id, payload))
                 if action == "rename":
@@ -274,6 +314,10 @@ def create_app(manager, token, web_dir=None, terminals=None, images=None, captur
                 return respond(200, {"ok": True})
             result = await run_in_threadpool(dispatch, request.method, path, payload)
             if result.status_code == 202 and segments[-1] in ("destroy", "update"):
+                await captures.close_lab(segments[2])
+                await terminals.close_lab(segments[2])
+            if (result.status_code == 200 and request.method == "POST"
+                    and len(segments) == 4 and segments[:2] == ["api", "labs"] and segments[3] == "close"):
                 await captures.close_lab(segments[2])
                 await terminals.close_lab(segments[2])
             return result

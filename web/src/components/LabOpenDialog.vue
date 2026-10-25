@@ -69,14 +69,14 @@ function close() {
 }
 
 async function openSelected(id = selected.value) {
-  if (opening.value || loading.value || lab.operation || !id) return;
+  if (opening.value || loading.value || lab.layoutLocked || !id) return;
   if (!lab.labs.some((item) => item.id === id) || !editor.discardOK()) return;
   opening.value = true;
   error.value = "";
   try {
     await lab.load(id);
     ui.labOpen = false;
-    ui.notify(`已打开实验“${lab.topology.name}”`);
+    ui.notify(`已打开 ${lab.serverHost} 上的项目“${lab.topology.name}”`);
   } catch (reason) {
     failed(reason);
   } finally {
@@ -122,14 +122,14 @@ function closed() {
   >
     <div class="dialog-top">
       <div>
-        <h2 id="open-lab-title">打开实验</h2>
+        <h2 id="open-lab-title">打开项目</h2>
         <p class="open-lab-description">
-          选择当前宿主机上已保存的实验，继续编辑或查看运行状态。
+          选择 {{ lab.serverHost }} 上的项目，继续编辑或查看运行状态。
         </p>
       </div>
       <button
         type="button"
-        aria-label="关闭打开实验窗口"
+        aria-label="关闭打开项目窗口"
         :disabled="opening"
         @click="close"
       >
@@ -143,8 +143,8 @@ function closed() {
           ref="searchInput"
           v-model="search"
           type="search"
-          placeholder="搜索实验名称或 ID"
-          aria-label="搜索已保存实验"
+          placeholder="搜索项目名称或 ID"
+          aria-label="搜索服务器上的项目"
           :disabled="opening"
         />
         <button
@@ -157,9 +157,13 @@ function closed() {
         </button>
       </div>
       <p v-if="error" class="error-text" role="alert">{{ error }}</p>
-      <div class="open-lab-list" :aria-busy="loading" aria-label="已保存实验">
+      <div
+        class="open-lab-list"
+        :aria-busy="loading"
+        aria-label="服务器上的项目"
+      >
         <p v-if="loading" class="open-lab-empty" role="status">
-          正在读取实验列表…
+          正在读取服务器项目列表…
         </p>
         <template v-else>
           <button
@@ -186,22 +190,22 @@ function closed() {
           <p v-if="!matches.length" class="open-lab-empty">
             {{
               search.trim()
-                ? "没有找到匹配的实验，试试其他关键词。"
-                : "还没有保存的实验。关闭此窗口后新建实验，或从“实验”菜单导入拓扑 JSON。"
+                ? "没有找到匹配的项目，试试其他关键词。"
+                : "此服务器上还没有项目。关闭窗口后新建项目，或导入拓扑 JSON 后保存。"
             }}
           </p>
         </template>
       </div>
       <div class="open-lab-footer">
-        <span>{{ lab.labs.length }} 个已保存实验</span>
+        <span>{{ lab.labs.length }} 个服务器项目</span>
         <button type="button" :disabled="opening" @click="close">取消</button>
         <button
           id="confirm-open-lab"
           class="primary"
           type="submit"
-          :disabled="!current || loading || opening || !!lab.operation"
+          :disabled="!current || loading || opening || lab.layoutLocked"
         >
-          {{ opening ? "正在打开…" : "打开实验" }}
+          {{ opening ? "正在打开…" : "打开项目" }}
         </button>
       </div>
     </form>

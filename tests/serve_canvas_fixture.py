@@ -25,6 +25,7 @@ class CanvasManager(LabManager):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--port", type=int, default=8106)
+parser.add_argument("--host", default="127.0.0.1", help="Bind address for this isolated FakeHost fixture")
 args = parser.parse_args()
 with tempfile.TemporaryDirectory(prefix="route-ovs-canvas-") as directory:
     host = CanvasHost()
@@ -35,6 +36,6 @@ with tempfile.TemporaryDirectory(prefix="route-ovs-canvas-") as directory:
     record = manager.save(topology)
     manager.deploy(record)
     host.delay_links = True
-    print(f"Canvas fixture PID {os.getpid()}: http://127.0.0.1:{args.port}/#token=canvas-scroll-check", flush=True)
-    uvicorn.run(create_app(manager, "canvas-scroll-check", images=images), host="127.0.0.1", port=args.port,
+    print(f"Canvas fixture PID {os.getpid()}: http://{args.host}:{args.port}/#token=canvas-scroll-check", flush=True)
+    uvicorn.run(create_app(manager, "canvas-scroll-check", images=images), host=args.host, port=args.port,
                 ws="websockets-sansio", log_level="warning", timeout_graceful_shutdown=5)

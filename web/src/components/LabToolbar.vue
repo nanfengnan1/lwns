@@ -65,24 +65,27 @@ async function destroy() {
             <span class="lab-name-text">{{ lab.topology.name }}</span
             ><small aria-hidden="true">✎</small>
           </button>
-          <span id="save-state" :class="{ dirty: editor.unsaved }">{{
-            lab.operation === "save"
-              ? "保存中…"
-              : lab.operation === "update" || lab.phase === "updating"
-                ? "正在应用…"
-                : lab.runtime?.deployment && lab.phase === "error"
-                  ? "操作失败，需清理"
-                  : lab.pendingUpdate ||
-                      (lab.runtime?.deployment &&
-                        editor.draftDirty &&
-                        editor.draft)
-                    ? "拓扑待应用"
-                    : editor.unsaved
-                      ? "有未保存修改"
-                      : lab.saved
-                        ? "已保存"
-                        : "未保存"
-          }}</span>
+          <span
+            id="save-state"
+            :class="{ dirty: editor.unsaved || lab.saveWarning }"
+            :title="lab.saveWarning"
+            >{{
+              lab.operation === "save"
+                ? "保存中…"
+                : lab.operation === "update" || lab.phase === "updating"
+                  ? "正在应用…"
+                  : lab.runtime?.deployment && lab.phase === "error"
+                    ? "操作失败，需清理"
+                    : lab.pendingUpdate ||
+                        (lab.runtime?.deployment &&
+                          editor.draftDirty &&
+                          editor.draft)
+                      ? "拓扑待应用"
+                      : editor.unsaved
+                        ? "有未保存修改"
+                        : lab.saveWarning || (lab.saved ? "已保存" : "未保存")
+            }}</span
+          >
         </div>
         <div class="canvas-toolbar" role="group" aria-label="拓扑排版工具">
           <button
@@ -145,7 +148,7 @@ async function destroy() {
             :title="
               lab.pendingUpdate
                 ? '设备或连线已修改，请点击应用拓扑'
-                : '保存项目布局与注释'
+                : `保存项目到 ${lab.serverHost}，同时保存运行中受支持设备的配置`
             "
             @click="ui.run(save)"
           >
@@ -157,7 +160,7 @@ async function destroy() {
             >
               <path d="M4 3h10l3 3v11H3V3Zm2 0v5h7V3M6 17v-5h8v5" />
             </svg>
-            {{ lab.runtime?.deployment ? "保存布局" : "保存实验" }}
+            保存项目
           </button>
           <SaveConfigButton
             v-if="

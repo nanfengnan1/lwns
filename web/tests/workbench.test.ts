@@ -110,7 +110,7 @@ describe("explicit experiment opening", () => {
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "/api/bootstrap",
-      `/api/labs/${record.topology.id}`,
+      `/api/labs/${record.topology.id}/open`,
     ]);
     expect(lab.topology).toEqual(record.topology);
     expect(lab.saved).toBe(true);

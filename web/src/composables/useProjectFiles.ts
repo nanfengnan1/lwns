@@ -9,12 +9,29 @@ export function useProjectFiles() {
     editor = useEditorStore(),
     ui = useUiStore();
 
+  async function closeProject() {
+    if (lab.layoutLocked) throw Error("请等待当前操作完成后再关闭项目");
+    if (!editor.discardOK()) return;
+    await lab.closeProject();
+    ui.captureOpen = false;
+    ui.notify("项目已关闭，服务器上的项目和运行设备已保留");
+  }
+
   async function save() {
     editor.commitDraft();
-    await lab.save();
-    ui.notify(
-      lab.runtime?.deployment ? "实验布局已保存" : "实验已保存到当前宿主机",
-    );
+    const result = await lab.saveProject();
+    const failures = result.results.filter((item) => !item.ok && !item.skipped),
+      skipped = result.results.filter((item) => item.skipped),
+      succeeded = result.results.filter((item) => item.ok);
+    const messages = [`项目拓扑已保存到 ${lab.serverHost}`];
+    if (succeeded.length) messages.push(`${succeeded.length} 台设备配置已保存`);
+    if (skipped.length)
+      messages.push(`${skipped.length} 台设备不支持运行配置保存，仅保存拓扑`);
+    if (failures.length)
+      messages.push(
+        `配置保存失败：${failures.map((item) => `${lab.getNode(item.node)?.name || item.node}：${item.error || "请重试"}`).join("；")}`,
+      );
+    ui.notify(messages.join("；"), !!failures.length);
   }
 
   async function applyTopology() {
@@ -75,5 +92,5 @@ export function useProjectFiles() {
     ui.notify("拓扑 JSON 已导出；设备共享目录与镜像不包含在文件中");
   }
 
-  return { save, applyTopology, importFile, exportFile };
+  return { save, closeProject, applyTopology, importFile, exportFile };
 }

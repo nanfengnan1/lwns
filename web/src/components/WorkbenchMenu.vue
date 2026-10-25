@@ -21,6 +21,7 @@ interface MenuAction {
   disabled?: boolean;
   checked?: boolean;
   separator?: boolean;
+  hint?: string;
   run: () => unknown;
 }
 const lab = useLabStore(),
@@ -41,25 +42,32 @@ const actions = computed<Record<MenuKey, MenuAction[]>>(() => ({
   experiment: [
     {
       id: "new-lab",
-      title: "新建实验…",
-      disabled: !!lab.operation,
+      title: "新建项目…",
+      disabled: lab.layoutLocked,
       run: () => {
         ui.labDialogMode = "new";
       },
     },
     {
       id: "open-lab",
-      title: "打开实验…",
-      disabled: !!lab.operation,
+      title: "打开项目…",
+      disabled: lab.layoutLocked,
       run: () => {
         ui.labOpen = true;
       },
     },
     {
       id: "menu-save",
-      title: lab.runtime?.deployment ? "保存实验布局" : "保存实验",
+      title: "保存项目",
       disabled: lab.layoutLocked || lab.pendingUpdate,
       run: files.save,
+    },
+    {
+      id: "close-lab",
+      title: "关闭项目",
+      hint: "关闭当前画布与连接，保留服务器上的项目和运行设备",
+      disabled: !lab.canClose,
+      run: files.closeProject,
     },
     ...(lab.runtime?.deployment
       ? [
@@ -75,7 +83,7 @@ const actions = computed<Record<MenuKey, MenuAction[]>>(() => ({
       : []),
     {
       id: "menu-rename",
-      title: "重命名实验…",
+      title: "重命名项目…",
       disabled: !lab.canRename,
       run: () => {
         ui.labDialogMode = "rename";
@@ -308,6 +316,7 @@ onBeforeUnmount(() => {
             :aria-checked="item.checked"
             tabindex="-1"
             :disabled="item.disabled"
+            :title="item.hint"
             @click="activate(item)"
           >
             <span
@@ -327,7 +336,7 @@ onBeforeUnmount(() => {
             role="menuitem"
             tabindex="-1"
             @click="close(true)"
-            >删除当前实验…</DeleteLabButton
+            >删除当前项目…</DeleteLabButton
           >
         </template>
       </div>

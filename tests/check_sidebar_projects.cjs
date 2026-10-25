@@ -71,8 +71,13 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await wait('!document.querySelector("#project-name-dialog").open');
     assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),0);
     assert.ok(await evaluate('document.querySelector("#lab-name").textContent.includes("OSPF 中文项目")'));
+    const created = await api('/api/labs');
+    assert.equal(created.length,1,'new project is immediately stored on the connected server');
+    savedId=created[0].id;
+    assert.equal((await api('/api/labs/'+savedId)).topology.nodes.length,0);
+    assert.equal(await evaluate('document.querySelector("#save-state").textContent'),'已保存');
     await click('[data-category=router]'); await click('.device-card.router'); await click('#save'); await wait('document.querySelector("#save-state").textContent==="已保存"');
-    savedId=(await api('/api/labs'))[0].id;
+    assert.equal((await api('/api/labs'))[0].id,savedId,'save keeps the server-assigned project ID');
     assert.equal((await api('/api/labs/'+savedId)).topology.name,'OSPF 中文项目');
 
     // Sidebar operations do not mark a saved topology dirty.

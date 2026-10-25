@@ -64,7 +64,7 @@ async function connect() {
       />
       <span class="dialog-eyebrow">ROUTE OVS</span>
       <h2>连接实验主机</h2>
-      <p>粘贴后端启动时显示的访问令牌。</p>
+      <p>连接 {{ lab.serverHost }}，粘贴服务器启动时显示的访问令牌。</p>
       <input
         id="access-token"
         v-model="tokenInput"
@@ -87,6 +87,10 @@ async function connect() {
       </button>
     </div>
     <div id="environment-detail">
+      <p>
+        当前服务器：<strong>{{ lab.serverHost }}</strong>
+      </p>
+      <p>项目的创建、打开、保存和部署均在此服务器进行。</p>
       <p>
         {{
           lab.environment.ready

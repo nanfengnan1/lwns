@@ -119,6 +119,36 @@ class WebDeliveryTests(unittest.TestCase):
             with self.assertRaises(argparse.ArgumentTypeError):
                 proxy_address(value)
 
+    def test_same_origin_normalizes_default_ports_and_hostname_case(self):
+        headers = {"Authorization": "Bearer secret"}
+        with TestClient(self.app) as client:
+            for host, origin in (("Lab.Example:80", "http://lab.example"),
+                                 ("lab.example", "http://LAB.EXAMPLE:80"),
+                                 ("10.8.126.103:5173", "http://10.8.126.103:5173"),
+                                 ("[::1]:80", "http://[::1]")):
+                with self.subTest(host=host, origin=origin):
+                    response = client.post("/api/labs", headers={**headers, "Host": host, "Origin": origin}, json={"name": "Same origin"})
+                    self.assertEqual(response.status_code, 201, response.text)
+        proxy = ProxyHeadersMiddleware(self.app, trusted_hosts=["127.0.0.1"])
+        with TestClient(proxy, client=("127.0.0.1", 12345)) as client:
+            response = client.post("/api/labs", headers={**headers, "Host": "Lab.Example:443",
+                                   "Origin": "https://lab.example", "X-Forwarded-Proto": "https"}, json={"name": "HTTPS"})
+            self.assertEqual(response.status_code, 201, response.text)
+
+    def test_origin_normalization_does_not_allow_other_ports_schemes_or_malformed_origins(self):
+        headers = {"Authorization": "Bearer secret", "Host": "lab.example:80"}
+        with TestClient(self.app) as client:
+            for origin in ("http://lab.example:8090", "https://lab.example", "http://foreign.example",
+                           "http://lab.example/path", "http://lab.example?query", "http://lab.example#fragment",
+                           "http://user@lab.example", "null", "", "http://lab.example,http://foreign.example",
+                           "http://lab.example:invalid", "http://lab.example:0"):
+                with self.subTest(origin=origin):
+                    response = client.post("/api/labs", headers={**headers, "Origin": origin}, json={"name": "Reject"})
+                    self.assertEqual(response.status_code, 403, response.text)
+            response = client.post("/api/labs", headers={**headers, "Origin": "https://lab.example",
+                                   "X-Forwarded-Proto": "https", "X-Forwarded-Host": "lab.example"}, json={"name": "Reject spoof"})
+            self.assertEqual(response.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()

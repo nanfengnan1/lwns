@@ -116,8 +116,12 @@ it("saves pending device properties to the host through the shared menu and tool
   const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
     if (url === "/api/labs") return response([]);
     return response({
-      topology: JSON.parse(init.body as string),
-      runtime: { phase: "idle", nodes: {}, logs: [] },
+      record: {
+        topology: JSON.parse(init.body as string).topology,
+        runtime: { phase: "idle", nodes: {}, logs: [] },
+      },
+      topology_saved: true,
+      results: [],
     });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -125,11 +129,12 @@ it("saves pending device properties to the host through the shared menu and tool
   expect(lab.getNode("r1")?.name).toBe("R1-edited");
   expect(lab.saved).toBe(true);
   expect(editor.unsaved).toBe(false);
-  expect(fetchMock.mock.calls[0]![1].method).toBe("PUT");
-  expect(useUiStore().notification?.message).toContain("当前宿主机");
+  expect(fetchMock.mock.calls[0]![0]).toBe(`/api/labs/${lab.topology.id}/save`);
+  expect(fetchMock.mock.calls[0]![1].method).toBe("POST");
+  expect(useUiStore().notification?.message).toContain("当前服务器");
 });
 
-it("saves only layout for a deployed experiment and preserves its runtime identity", async () => {
+it("saves a deployed project and preserves its runtime identity", async () => {
   const lab = useLabStore(),
     topology = parseTopology(example);
   lab.adopt(topology, {
@@ -143,19 +148,21 @@ it("saves only layout for a deployed experiment and preserves its runtime identi
   });
   lab.moveNode("r1", { x: 700, y: 400 });
   const version = lab.documentVersion,
-    fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        response({ topology: lab.topology, runtime: lab.runtime }),
-      );
+    fetchMock = vi.fn().mockResolvedValue(
+      response({
+        record: { topology: lab.topology, runtime: lab.runtime },
+        topology_saved: true,
+        results: [],
+      }),
+    );
   vi.stubGlobal("fetch", fetchMock);
   await useProjectFiles().save();
-  expect(fetchMock.mock.calls[0][0]).toBe(`/api/labs/${topology.id}`);
-  expect(fetchMock.mock.calls[0][1].method).toBe("PUT");
+  expect(fetchMock.mock.calls[0][0]).toBe(`/api/labs/${topology.id}/save`);
+  expect(fetchMock.mock.calls[0][1].method).toBe("POST");
   expect(lab.runtime?.deployment).toBe("existing-run");
   expect(lab.documentVersion).toBe(version);
   expect(lab.dirty).toBe(false);
-  expect(useUiStore().notification?.message).toContain("布局");
+  expect(useUiStore().notification?.message).toContain("项目拓扑已保存");
 });
 
 it("exports topology data without pretending to include runtime, images or shared files", async () => {

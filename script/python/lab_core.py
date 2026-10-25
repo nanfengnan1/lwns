@@ -265,6 +265,51 @@ class LabManager:
             self.write(record)
             return record
 
+    def create_project(self, name):
+        """Create an empty persistent project on this backend's host."""
+        name = string(name, "项目名称", 80)
+        with self.lock:
+            while True:
+                lab_id = "lab-" + uuid.uuid4().hex[:28]
+                if not self.path(lab_id).exists():
+                    break
+            return self.save({"version": 1, "id": lab_id, "name": name, "nodes": [], "links": []})
+
+    def close_project(self, lab_id):
+        """Validate workspace closure; the HTTP layer closes interactive sessions."""
+        with self.lock:
+            record = self.read(lab_id)
+            if self.busy == lab_id or record["runtime"].get("phase") in ("deploying", "destroying", "updating"):
+                raise LabError("请等待当前操作完成后再关闭项目")
+            # Closing a workspace never deletes a project or stops its devices.
+
+    def save_project(self, topology):
+        """Persist topology and supported running configs, reporting partial saves."""
+        topology = validate_topology(topology)
+        with self.lock:
+            if self.busy is not None:
+                raise LabError("部署或清理任务进行中，请稍后保存项目")
+            record = self.save(topology)
+            results = []
+            if record["runtime"].get("deployment"):
+                supported = [node for node in record["topology"]["nodes"]
+                             if template_for(node)["capabilities"]["save_config"]]
+                if supported:
+                    try:
+                        results.extend(self.save_configs(topology["id"])["results"])
+                    except (LabError, OSError, ValueError) as exc:
+                        # Topology has already been saved. Return that fact even
+                        # when host availability prevents running-config capture.
+                        results.extend({"node": node["id"], "ok": False, "error": str(exc)}
+                                       for node in supported)
+                results.extend({"node": node["id"], "ok": False, "skipped": True,
+                                "error": "该设备模板暂不支持保存运行配置；拓扑配置已保存"}
+                               for node in record["topology"]["nodes"]
+                               if not template_for(node)["capabilities"]["save_config"])
+            saved = self.read(topology["id"])
+            saved["busy"] = False
+            return {"record": saved, "results": results, "topology_saved": True}
+
     def rename(self, lab_id, name):
         name = string(name, "项目名称", 80)
         with self.lock:

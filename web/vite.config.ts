@@ -12,26 +12,11 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/api": {
           target,
-          changeOrigin: true,
+          // Preserve the browser-facing Host and Origin for both HTTP and WS.
+          // The backend validates the dev page's origin without translating
+          // browser requests into the private upstream's origin.
+          changeOrigin: false,
           ws: true,
-          configure(proxy) {
-            proxy.on("proxyReq", (outgoing, incoming) => {
-              // Translate only same-origin requests from the dev page. Keep
-              // foreign origins intact so the Python backend still rejects them.
-              if (
-                incoming.headers.origin === `http://${incoming.headers.host}`
-              ) {
-                outgoing.setHeader("Origin", new URL(target).origin);
-              }
-            });
-            proxy.on("proxyReqWs", (outgoing, incoming) => {
-              if (
-                incoming.headers.origin === `http://${incoming.headers.host}`
-              ) {
-                outgoing.setHeader("Origin", new URL(target).origin);
-              }
-            });
-          },
         },
       },
     },

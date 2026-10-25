@@ -99,7 +99,7 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL_WIT
     // Simulate an empty response in this tab only; never delete other test labs.
     await evaluate(`window.menuRealFetch=window.fetch; window.fetch=(url,init)=>String(url)==='/api/labs' ? Promise.resolve(new Response('[]',{status:200})) : window.menuRealFetch(url,init)`);
     await action('experiment', '#open-lab');
-    await wait('document.querySelector("#open-lab-dialog").open && document.querySelector(".open-lab-empty")?.textContent.includes("还没有保存")');
+    await wait('document.querySelector("#open-lab-dialog").open && document.querySelector(".open-lab-empty")?.textContent.includes("还没有项目")');
     assert.equal(await evaluate('document.querySelector("#confirm-open-lab").disabled'), true);
     await snapshot('open-empty.png');
     await key('Escape', 'Escape', 27);

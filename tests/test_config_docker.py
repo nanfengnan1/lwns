@@ -50,22 +50,59 @@ class ConfigDockerTests(unittest.TestCase):
         cid = record["runtime"]["nodes"]["r1"]["id"]
         manager.dock("exec", cid, "vtysh", "-c", "configure terminal", "-c", "interface lo", "-c", "ip address 198.51.100.77/32",
                      "-c", "exit", "-c", "router ospf", "-c", "ospf router-id 203.0.113.77", "-c", "end")
+        headers = {"Authorization": "Bearer config-integration", "Origin": "http://testserver"}
         with TestClient(create_app(manager, "config-integration")) as client:
-            response = client.post(f"/api/labs/{lab_id}/configs", json={"node": "r1"}, headers={"Authorization": "Bearer config-integration"})
+            response = client.post(f"/api/labs/{lab_id}/configs", json={"node": "r1"}, headers=headers)
             self.assertEqual(response.status_code, 200, response.text)
             result = response.json()["results"][0]
             self.assertTrue(result["ok"], result)
             self.assertTrue(result["status"]["shared"])
             self.assertIn("198.51.100.77/32", result["config"])
             folder = Path(result["status"]["path"])
+            # Project save must capture subsequent live changes, not merely
+            # return the configuration previously saved by the legacy endpoint.
+            manager.dock("exec", cid, "vtysh", "-c", "configure terminal", "-c", "interface lo",
+                         "-c", "description PROJECT_SAVED", "-c", "end")
+            topology = manager.read(lab_id)["topology"]
+            topology["nodes"][0]["x"] += 20
+            saved = client.post(f"/api/labs/{lab_id}/save", json={"topology": topology}, headers=headers)
+            self.assertEqual(saved.status_code, 200, saved.text)
+            project = saved.json()
+            self.assertTrue(project["topology_saved"])
+            outcomes = {item["node"]: item for item in project["results"]}
+            self.assertEqual(set(outcomes), {"r1", "pc1"})
+            self.assertTrue(outcomes["r1"]["ok"], outcomes["r1"])
+            self.assertTrue(outcomes["r1"]["status"]["shared"])
+            self.assertIn("PROJECT_SAVED", outcomes["r1"]["config"])
+            self.assertFalse(outcomes["pc1"]["ok"])
+            self.assertTrue(outcomes["pc1"]["skipped"])
+            self.assertEqual(project["record"]["runtime"]["deployment"], record["runtime"]["deployment"])
+            self.assertEqual(project["record"]["runtime"]["nodes"], record["runtime"]["nodes"])
+            self.assertEqual(project["record"]["topology"]["nodes"][0]["x"], topology["nodes"][0]["x"])
+            self.assertIn("PROJECT_SAVED", project["record"]["topology"]["nodes"][0]["config"])
+            before_close = manager.path(lab_id).read_bytes()
+            closed = client.post(f"/api/labs/{lab_id}/close", json={}, headers=headers)
+            self.assertEqual(closed.status_code, 200, closed.text)
+            self.assertTrue(closed.json()["ok"])
+            self.assertEqual(manager.path(lab_id).read_bytes(), before_close)
+            opened = client.post(f"/api/labs/{lab_id}/open", json={}, headers=headers)
+            self.assertEqual(opened.status_code, 200, opened.text)
+            reopened = opened.json()
+            self.assertEqual(reopened["topology"], project["record"]["topology"])
+            self.assertEqual(reopened["runtime"]["deployment"], record["runtime"]["deployment"])
+            self.assertEqual(reopened["runtime"]["nodes"], record["runtime"]["nodes"])
+            self.assertEqual(reopened["runtime"]["phase"], "running")
         manager.destroy(manager.read(lab_id))
         self.assertIn("203.0.113.77", (folder / "frr.conf").read_text())
+        self.assertIn("PROJECT_SAVED", (folder / "frr.conf").read_text())
         fixture.manager = manager = LabManager(fixture.temp.name)
         fixture.start()
         restored = manager.read(lab_id)
         next_cid = restored["runtime"]["nodes"]["r1"]["id"]
         self.assertNotEqual(cid, next_cid)
         self.assertIn("203.0.113.77", manager.dock("exec", next_cid, "vtysh", "-c", "show running-config"))
+        self.assertIn("PROJECT_SAVED", manager.dock("exec", next_cid, "vtysh", "-c", "show running-config"))
+        self.assertEqual(restored["topology"]["nodes"][0]["x"], topology["nodes"][0]["x"])
         self.assertIn("198.51.100.77", manager.ns(restored, "r1", "ip", "-4", "addr", "show", "lo"))
         self.assertEqual(manager.status(lab_id)["runtime"]["phase"], "running")
         host = restored["runtime"]["nodes"]["pc1"]["id"]

@@ -130,7 +130,11 @@ onBeforeUnmount(() => {
     >
     <WorkbenchMenu />
     <div class="top-actions">
-      <span class="mode-pill">DOCKER / VETH</span
+      <span
+        id="server-host"
+        class="mode-pill"
+        :title="`当前服务器：${lab.serverHost}`"
+        >{{ lab.serverHost }}</span
       ><button id="environment" class="quiet" @click="ui.infoOpen = true">
         <i
           class="status-dot"

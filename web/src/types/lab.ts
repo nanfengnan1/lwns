@@ -120,6 +120,11 @@ export interface ConfigSaveResult {
   }[];
   runtime: Runtime;
 }
+export interface ProjectSaveResult {
+  record: LabRecord;
+  topology_saved: true;
+  results: (ConfigSaveResult["results"][number] & { skipped?: boolean })[];
+}
 export type Selection = {
   type: "node" | "link" | "annotation";
   id: string;

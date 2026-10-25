@@ -46,6 +46,12 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     const r=await fetch(url.origin+'/api/labs/first-lab',{headers:{Authorization:'Bearer '+token}});
     assert.ok(r.ok);return r.json();
   };
+  const savedState='["已保存","部分设备仅保存拓扑"].includes(document.querySelector("#save-state").textContent)';
+  const sameDeployment=(after,before)=>{
+    const {logs:afterLogs,...afterState}=after,{logs:beforeLogs,...beforeState}=before;
+    assert.deepEqual(afterState,beforeState,'project save preserves deployment, phase and device identity');
+    assert.deepEqual(afterLogs.slice(0,beforeLogs.length),beforeLogs,'existing deployment logs are retained');
+  };
   try {
     await send('Page.enable');await send('Runtime.enable');
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
@@ -54,7 +60,7 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await wait('document.querySelector("#phase")?.classList.contains("running")');
     await click('#fit');
     const original=await record();
-    assert.equal(await evaluate('document.querySelector("#save").textContent.trim()'),'保存布局');
+    assert.equal(await evaluate('document.querySelector("#save").textContent.trim()'),'保存项目');
     assert.ok(await evaluate('(()=>{const e=document.querySelector("#canvas-scroll");return e.scrollWidth>e.clientWidth&&e.scrollHeight>e.clientHeight&&getComputedStyle(e).overflowX==="scroll"&&getComputedStyle(e).overflowY==="scroll"})()'));
     const center=await point('#canvas');
     const before=await view();
@@ -97,11 +103,12 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await evaluate('document.querySelector("#annotation-text").value="运行中可编辑注释";document.querySelector("#annotation-text").dispatchEvent(new Event("input",{bubbles:true}))');
     await click('#annotation-form button[type=submit]');
     await click('#auto-align');await click('#optimize-links');
-    await click('#save');await wait('document.querySelector("#save-state").textContent==="已保存"');
+    await click('#save');await wait('document.querySelector("#save-state").textContent==="部分设备仅保存拓扑"');
     const saved=await record();
-    assert.deepEqual(saved.runtime,original.runtime,'layout must preserve deployment and runtime');
+    sameDeployment(saved.runtime,original.runtime);
+    assert.ok(saved.runtime.logs.some(line=>line.message.includes('已保存设备配置: R1')),'project save captures supported FRR configuration');
     assert.deepEqual(saved.topology.links,original.topology.links);
-    for(const node of saved.topology.nodes){const old=original.topology.nodes.find(n=>n.id===node.id);assert.deepEqual(node,{...old,x:node.x,y:node.y});}
+    for(const node of saved.topology.nodes){const old=original.topology.nodes.find(n=>n.id===node.id);assert.deepEqual(node,{...old,x:node.x,y:node.y,config:node.id==='r1'?'!':old.config});}
     assert.notDeepEqual(saved.topology.nodes.map(n=>[n.x,n.y]),original.topology.nodes.map(n=>[n.x,n.y]));
     assert.notDeepEqual(saved.topology.annotations[0],original.topology.annotations[0]);
     assert.equal(saved.topology.annotations[0].text,"运行中可编辑注释");
@@ -127,7 +134,7 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     await click('#apply-topology');
     await wait('document.querySelector("#phase").classList.contains("updating")');
     assert.ok(await evaluate('document.querySelector("#connect-tool").disabled&&document.querySelector("#add-annotation").disabled'),'editing locks while applying');
-    await wait('document.querySelector("#save-state").textContent==="已保存"&&document.querySelector("#phase").classList.contains("running")');
+    await wait(savedState+'&&document.querySelector("#phase").classList.contains("running")');
     const applied=await record();
     assert.equal(applied.topology.nodes.length,6);assert.equal(applied.topology.links.length,5);
     assert.equal(applied.runtime.deployment,original.runtime.deployment);
@@ -139,7 +146,7 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     // Address-only edits keep the existing container identity.
     await evaluate('document.querySelector("[data-address=eth0]").value="10.10.1.31/24";document.querySelector("[data-address=eth0]").dispatchEvent(new Event("input",{bubbles:true}))');
     await click('#node-form button[type=submit]');await click('#apply-topology');
-    await wait('document.querySelector("#save-state").textContent==="已保存"&&document.querySelector("#phase").classList.contains("running")');
+    await wait(savedState+'&&document.querySelector("#phase").classList.contains("running")');
     const readdressed=await record();
     assert.equal(readdressed.runtime.nodes.pc3.id,applied.runtime.nodes.pc3.id);
     assert.equal(readdressed.topology.nodes.find(n=>n.id==='pc3').ports[0].address,'10.10.1.31/24');
@@ -149,16 +156,16 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     for(const type of ['mousePressed','mouseReleased'])await send('Input.dispatchMouseEvent',{type,...notePoint,button:'left',clickCount:1});
     await wait('document.querySelectorAll(".topology-annotation").length===2');
     const newNote=await evaluate('document.querySelector(".topology-annotation.selected").dataset.annotation');
-    await click('#save');await wait('document.querySelector("#save-state").textContent==="已保存"');
-    const noted=await record();assert.equal(noted.topology.annotations.length,2);assert.deepEqual(noted.runtime,readdressed.runtime);
-    await click('#delete-annotation');await click('#save');await wait('document.querySelector("#save-state").textContent==="已保存"');
-    const withoutNote=await record();assert.equal(withoutNote.topology.annotations.some(n=>n.id===newNote),false);assert.deepEqual(withoutNote.runtime,noted.runtime);
+    await click('#save');await wait(savedState);
+    const noted=await record();assert.equal(noted.topology.annotations.length,2);sameDeployment(noted.runtime,readdressed.runtime);
+    await click('#delete-annotation');await click('#save');await wait(savedState);
+    const withoutNote=await record();assert.equal(withoutNote.topology.annotations.some(n=>n.id===newNote),false);sameDeployment(withoutNote.runtime,noted.runtime);
     // Deleting the device removes its cable in the draft; application removes owned resources.
     await click('.topology-node[data-node=pc3] .node-name');await click('#delete-selection');
     await wait('document.querySelectorAll(".topology-node").length===5&&document.querySelectorAll(".edge").length===4');
     assert.ok((await record()).runtime.nodes.pc3,'delete remains a draft before application');
     await click('#apply-topology');
-    await wait('document.querySelector("#save-state").textContent==="已保存"&&document.querySelector("#phase").classList.contains("running")');
+    await wait(savedState+'&&document.querySelector("#phase").classList.contains("running")');
     const removed=await record();assert.equal(removed.runtime.nodes.pc3,undefined);assert.equal(removed.topology.nodes.length,5);assert.equal(removed.topology.links.length,4);
     for(const [id,node] of Object.entries(original.runtime.nodes))assert.equal(removed.runtime.nodes[id].id,node.id);
     await send('Page.reload');await openSavedLab(evaluate,wait,click);await wait('document.querySelector("#phase").classList.contains("running")');
@@ -169,11 +176,11 @@ if (!debugURL || !appURL || !output) throw Error('Expected DEBUG_URL APP_URL OUT
     }
     assert.equal(await evaluate('document.querySelectorAll(".topology-node").length'),0);
     assert.equal(await evaluate('document.querySelector("#apply-topology").disabled'),false,'an empty topology can be applied');
-    await click('#apply-topology');await wait('document.querySelector("#save-state").textContent==="已保存"&&document.querySelector("#phase").classList.contains("running")');
+    await click('#apply-topology');await wait(savedState+'&&document.querySelector("#phase").classList.contains("running")');
     const empty=await record();assert.equal(empty.topology.nodes.length,0);assert.deepEqual(empty.runtime.nodes,{});assert.equal(empty.runtime.deployment,original.runtime.deployment);
     await click('[data-category=host]');await click('.device-card.host');
     await wait('document.querySelectorAll(".topology-node").length===1');
-    await click('#apply-topology');await wait('document.querySelector("#save-state").textContent==="已保存"&&document.querySelector("#phase").classList.contains("running")');
+    await click('#apply-topology');await wait(savedState+'&&document.querySelector("#phase").classList.contains("running")');
     const restarted=await record();assert.equal(restarted.topology.nodes.length,1);assert.equal(Object.keys(restarted.runtime.nodes).length,1);assert.equal(restarted.runtime.deployment,original.runtime.deployment);
     const shot=await send('Page.captureScreenshot');fs.writeFileSync(path.join(output,'canvas-scroll-running.png'),Buffer.from(shot.data,'base64'));
     assert.deepEqual(errors,[]);

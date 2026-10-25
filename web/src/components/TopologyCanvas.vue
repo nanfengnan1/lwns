@@ -571,17 +571,17 @@ onBeforeUnmount(() => {
         <button
           id="empty-new-lab"
           class="primary"
-          :disabled="!!lab.operation"
+          :disabled="lab.layoutLocked"
           @click="ui.labDialogMode = 'new'"
         >
-          新建实验
+          新建项目
         </button>
         <button
           id="empty-open-lab"
-          :disabled="!!lab.operation"
+          :disabled="lab.layoutLocked"
           @click="ui.labOpen = true"
         >
-          打开实验
+          打开项目
         </button>
       </div>
     </div>
