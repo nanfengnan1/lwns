@@ -1,8 +1,14 @@
-.rov 设备包：制作、导入与保存配置
+.lwns 设备包：制作、导入与保存配置
 ========================================
 
-``.rov`` 将设备描述与镜像来源关联起来。导入时确认设备名称，后台准备对应镜像，
+``.lwns`` 将设备描述与镜像来源关联起来。导入时确认设备名称，后台准备对应镜像，
 设备就会出现在左侧设备库；启动、共享配置目录和保存命令从包内读取。
+
+新制作的设备包统一使用 ``.lwns`` 后缀。旧 ``.rov`` 设备包仍可导入，已安装设备无需迁移；
+包内 ZIP 结构、``schema_version: 1`` 与清单标识 ``route-ovs-device`` 保持兼容。
+此前使用的 Docker 镜像 ``.tar`` / ``.tar.xz`` 属于镜像归档，不能只改后缀变成设备包。
+
+SDN Agent、Controller、Web 的三包制作与组网见 :doc:`sdn-devices`。
 
 .. container:: doc-meta
 
@@ -19,8 +25,8 @@
 先选择你的操作
 ----------------------------------------
 
-* **已经拿到 .rov 文件**：直接按 :ref:`rov-import-device` 加载，再添加到画布并部署。
-* **已有 alpine/frr:latest，想制作可分享的包**：按 :ref:`rov-frr-offline` 创建描述、导出镜像并生成 ``frr.rov``，无需重新编译镜像。
+* **已经拿到 .lwns 文件**：直接按 :ref:`rov-import-device` 加载，再添加到画布并部署。
+* **已有 alpine/frr:latest，想制作可分享的包**：按 :ref:`rov-frr-offline` 创建描述、导出镜像并生成 ``frr.lwns``，无需重新编译镜像。
 * **希望通过浏览器制作**：先准备 ``device.json``，再按 :ref:`rov-web-pack` 选择镜像来源并下载设备包。
 * **只有 Dockerfile 或只需引用仓库**：使用 :ref:`rov-cli-pack` 中相应命令。
 
@@ -31,13 +37,13 @@
 
 .. _rov-import-device:
 
-已有 .rov 文件：导入设备
+已有 .lwns 文件：导入设备
 ----------------------------------------
 
-1. 将 ``.rov`` 文件准备到 **打开浏览器的客户端电脑**。
+1. 将 ``.lwns`` 文件准备到 **打开浏览器的客户端电脑**。
    例如浏览器在 Windows 上，选择文件时读取的是 Windows 文件，不是远程 Linux 的目录。
    包只在服务器时，可以下载/复制到客户端，或使用本页后面的 :ref:`rov-cli-import`。
-2. 打开 **工具 → 设备管理 → 导入设备包**，选择 ``.rov`` 文件，等待上传和检查完成。
+2. 打开 **工具 → 设备管理 → 导入设备包**，选择 ``.lwns`` 文件，等待上传和检查完成。
 3. 检查显示的分类、版本和镜像来源。设备名称默认取自包内，可以改为便于辨认的名称。
 4. 点击 **导入设备**，等待任务日志显示成功。需要的镜像会在当前连接的服务器上加载、拉取或构建。
 5. 切换到 **已安装设备**，确认新条目及版本已出现，且没有“镜像缺失”提示。
@@ -73,7 +79,7 @@
 
 .. _rov-frr-offline:
 
-FRR 示例：从已有镜像制作 frr.rov
+FRR 示例：从已有镜像制作 frr.lwns
 ----------------------------------------
 
 本例使用项目当前兼容的 ``alpine/frr:latest``，生成包含镜像的离线包。
@@ -165,7 +171,7 @@ FRR 示例：从已有镜像制作 frr.rov
   python3 script/python/lab_server.py device pack \
     --descriptor ~/lwns-devices/frr/device.json \
     --image-tar ~/lwns-devices/frr/frr.tar \
-    --output ~/lwns-devices/frr/frr.rov
+    --output ~/lwns-devices/frr/frr.lwns
 
 使用 ``docker save`` 导出的未压缩 ``.tar``，不要使用 ``docker export``。
 工具会校验归档中的镜像名称，自动将镜像存为包内 ``image.tar`` 并生成校验清单。
@@ -177,7 +183,7 @@ FRR 示例：从已有镜像制作 frr.rov
 检查制作结果::
 
   python3 script/python/lab_server.py device inspect \
-    ~/lwns-devices/frr/frr.rov
+    ~/lwns-devices/frr/frr.lwns
 
 命令成功退出，并输出设备定义和资源清单。结果中应能看到 ``alpine/frr:latest``、
 ``archive`` 来源和 ``image.tar`` 资源。最终目录为：
@@ -187,9 +193,9 @@ FRR 示例：从已有镜像制作 frr.rov
    ~/lwns-devices/frr/
    ├── device.json
    ├── frr.tar
-   └── frr.rov       # 分享或上传这一个文件即可
+   └── frr.lwns       # 分享或上传这一个文件即可
 
-按 :ref:`rov-import-device` 加载 ``frr.rov``，再添加到画布并部署。
+按 :ref:`rov-import-device` 加载 ``frr.lwns``，再添加到画布并部署。
 设备包不包含已有实验中 R1/R2 的个人配置，这些配置按项目独立保存。
 
 .. _rov-web-pack:
@@ -200,7 +206,7 @@ FRR 示例：从已有镜像制作 frr.rov
 1. 将 ``device.json`` 准备到浏览器所在电脑；可以使用上面的 FRR 描述，或设备开发者提供的文件。
 2. 打开 **工具 → 设备管理 → 制作设备包**，选择描述文件，确认自动填充的名称、版本和分类。
 3. 选择下面的一种镜像来源，填写引用或选择对应文件。
-4. 点击 **制作 .rov 设备包**，等待任务成功，再点击下载，保存到客户端。
+4. 点击 **制作 .lwns 设备包**，等待任务成功，再点击下载，保存到客户端。
 5. 要在工作台使用，切换 **导入设备包**，加载刚下载的文件；制作与导入是两个独立操作。
 
 .. list-table::
@@ -248,7 +254,7 @@ FRR 示例：从已有镜像制作 frr.rov
   python3 script/python/lab_server.py device pack \
     --descriptor examples/device-packages/frr/device.json \
     --dockerfile examples/device-packages/frr/Dockerfile \
-    --output frr-1.0.0.rov
+    --output frr-1.0.0.lwns
 
 示例 Dockerfile 基于 ``alpine/frr:latest``，导入并构建前需准备该基础镜像。
 它展示两文件设备定义，不替代 :doc:`../developer/build-images` 中的 FRR 源码构建流程。
@@ -258,13 +264,13 @@ FRR 示例：从已有镜像制作 frr.rov
   python3 script/python/lab_server.py device pack \
     --descriptor examples/device-packages/frr/device.json \
     --image alpine/frr:latest \
-    --output frr-reference.rov
+    --output frr-reference.lwns
 
 离线包按 :ref:`rov-frr-offline` 制作。仓库里的 Dockerfile 示例使用 ``lwns/frr:1.0.0``，
 本页离线描述使用 ``alpine/frr:latest``，不要把不同镜像标签的描述与归档混用。
 检查上面生成的构建配方包或引用包，例如::
 
-  python3 script/python/lab_server.py device inspect frr-1.0.0.rov
+  python3 script/python/lab_server.py device inspect frr-1.0.0.lwns
 
 输出包括设备定义、来源和资源校验信息；不会执行包内动作。
 输出文件已存在时默认拒绝覆盖，需要时显式使用 ``--force``。
@@ -272,7 +278,7 @@ FRR 示例：从已有镜像制作 frr.rov
 不能通过覆盖输出文件强制替换已安装版本。
 
 已安装 Linux 目录包时，将上面的 ``python3 script/python/lab_server.py``
-替换为 ``lwns``，例如 ``lwns device inspect ~/lwns-devices/frr/frr.rov``。
+替换为 ``lwns``，例如 ``lwns device inspect ~/lwns-devices/frr/frr.lwns``。
 Web 与 CLI 使用相同模块，生成的设备包可以互相导入。
 
 .. _rov-cli-import:
@@ -282,7 +288,7 @@ CLI 导入到指定服务器
 
 在要运行设备的 Linux 宿主机上执行；命令不会自动连接浏览器所连接的另一台机器::
 
-  sudo .venv/bin/python script/python/lab_server.py device import ~/lwns-devices/frr/frr.rov \
+  sudo .venv/bin/python script/python/lab_server.py device import ~/lwns-devices/frr/frr.lwns \
     --name "FRR 路由器" \
     --data-dir .lwns-labs
 
@@ -291,7 +297,7 @@ CLI 导入到指定服务器
 从旧版升级时可能仍沿用旧数据目录，以后端启动日志为准，详见 :ref:`lwns-upgrade`。
 目录包可执行，默认数据目录来自安装配置::
 
-  sudo lwns device import ~/lwns-devices/frr/frr.rov --name "FRR 路由器"
+  sudo lwns device import ~/lwns-devices/frr/frr.lwns --name "FRR 路由器"
 
 指定与工作台一致的数据目录。CLI 导入与后端共用数据目录锁：后端正在使用该目录时，
 通过 Web 导入即可；如需使用 CLI 导入，应先停止使用该目录的后端，完成后再启动。
@@ -347,9 +353,9 @@ FRR 的具体操作见 :ref:`workbench-data-frr`。
    <data-dir>/
      device-library/
        registry.json
-       <设备定义ID>/<版本>/device.rov
+       <设备定义ID>/<版本>/device.lwns
      device-packages/
-       artifacts/<制作任务ID>.rov
+       artifacts/<制作任务ID>.lwns
        jobs/<任务ID>.json
        uploads/<上传ID>/
      devices/<项目ID>/<实例ID>/
@@ -360,4 +366,4 @@ FRR 的具体操作见 :ref:`workbench-data-frr`。
 设备库中的包、制作产物与任务历史目前不自动轮转；删除设备定义不同时清除历史制作产物。
 临时上传有数量、大小和过期限制；成功后自动回收，导入失败时保留供重试，
 制作失败可重新选择资源提交。重启会清理中断的暂存上传。
-配置数据随项目备份；完整项目迁移仍按 :doc:`workbench-data` 操作，不能只复制 ``.rov``。
+配置数据随项目备份；完整项目迁移仍按 :doc:`workbench-data` 操作，不能只复制 ``.lwns``。

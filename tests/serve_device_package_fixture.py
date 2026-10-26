@@ -1,4 +1,4 @@
-"""Disposable .rov browser fixture. All Docker calls use PackageHost fakes."""
+"""Disposable .lwns browser fixture. All Docker calls use PackageHost fakes."""
 import argparse
 import os
 import tempfile

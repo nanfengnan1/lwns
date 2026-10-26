@@ -61,6 +61,15 @@ class DescriptorTests(unittest.TestCase):
     def test_category_does_not_select_frr(self):
         self.assertEqual(validate_descriptor(descriptor())["profile"], "generic")
 
+    def test_runtime_capabilities_are_explicit_and_restricted(self):
+        raw = descriptor(runtime={"cap_add": ["SYS_ADMIN"]})
+        self.assertEqual(validate_descriptor(raw)["runtime"], {"cap_add": ["SYS_ADMIN"]})
+        for runtime in ({"privileged": True}, {"network": "host"}, {"cap_add": ["ALL"]},
+                        {"cap_add": ["SYS_PTRACE"]}, {"cap_add": "SYS_ADMIN"},
+                        {"cap_add": ["SYS_ADMIN", "SYS_ADMIN"]}, {"cap_add": [{}]}):
+            with self.subTest(runtime=runtime), self.assertRaises(LabError):
+                validate_descriptor(descriptor(runtime=runtime))
+
     def test_required_save_ready_and_output(self):
         raw = descriptor()
         raw["actions"] = {}
@@ -136,7 +145,7 @@ class PackageTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.output = self.root / "router.rov"
+        self.output = self.root / "router.lwns"
 
     def tearDown(self):
         self.temp.cleanup()
@@ -191,7 +200,7 @@ class PackageTests(unittest.TestCase):
         dockerfile = self.root / "Dockerfile"
         dockerfile.write_text("FROM alpine:3.22\nCMD [\"sh\"]\n", encoding="utf-8")
         first = self.package(dockerfile=dockerfile)
-        second = pack_device(descriptor(), self.root / "second.rov", dockerfile=dockerfile)
+        second = pack_device(descriptor(), self.root / "second.lwns", dockerfile=dockerfile)
         self.assertEqual(first["package_sha256"], second["package_sha256"])
         self.assertEqual(set(first["resources"]), {"device.json", "Dockerfile"})
 
@@ -207,7 +216,7 @@ class PackageTests(unittest.TestCase):
         with self.assertRaisesRegex(LabError, "拒绝覆盖"):
             self.package(descriptor(name="changed"))
         self.assertEqual(self.output.read_bytes(), original)
-        with self.assertRaisesRegex(LabError, ".rov"):
+        with self.assertRaisesRegex(LabError, ".lwns"):
             pack_device(descriptor(), self.root / "wrong.zip")
 
     def test_bad_checksum_and_unexpected_resources(self):
@@ -264,7 +273,7 @@ class LibraryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.package = self.root / "device.rov"
+        self.package = self.root / "device.lwns"
         self.report = pack_device(descriptor(), self.package)
         self.library = DeviceLibrary(self.root / "data")
         self.image_id = "sha256:" + "a" * 64
@@ -297,6 +306,20 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(renamed["package_sha256"], first["package_sha256"])
         self.assertEqual(self.library.descriptor(first["id"])["name"], descriptor()["name"])
         self.assertEqual(self.library.resolve(first["id"])["title"], "新名字")
+
+    def test_legacy_extension_and_installed_archive_remain_usable(self):
+        legacy = self.package.with_suffix(".rov")
+        self.package.rename(legacy)
+        entry = self.library.register(legacy, image_id=self.image_id)
+        installed = self.library.package_path(entry["id"])
+        self.assertEqual(installed.name, "device.lwns")
+        old_installed = installed.with_suffix(".rov")
+        installed.rename(old_installed)
+        restarted = DeviceLibrary(self.root / "data")
+        self.assertEqual(restarted.package_path(entry["id"]), old_installed)
+        self.assertEqual(restarted.register(legacy, image_id=self.image_id), entry)
+        restarted.remove(entry["id"])
+        self.assertFalse(old_installed.exists())
 
     def test_same_version_conflict_and_new_version_keeps_previous(self):
         first = self.register()
@@ -351,7 +374,7 @@ class CliTests(unittest.TestCase):
             for example_name in ("frr", "config-demo"):
                 example = project / "examples/device-packages" / example_name
                 self.assertEqual({item.name for item in example.iterdir()}, {"device.json", "Dockerfile"})
-                output = Path(directory) / (example_name + ".rov")
+                output = Path(directory) / (example_name + ".lwns")
                 result = subprocess.run([
                     sys.executable, "-S", str(project / "script/python/lab_server.py"), "device", "pack",
                     "--descriptor", str(example / "device.json"), "--dockerfile", str(example / "Dockerfile"),
@@ -367,7 +390,7 @@ class CliTests(unittest.TestCase):
             root = Path(directory)
             source = root / "device.json"
             source.write_bytes(canonical_json(descriptor()))
-            output = root / "device.rov"
+            output = root / "device.lwns"
             with patch("subprocess.run", side_effect=AssertionError("unexpected command")), contextlib.redirect_stdout(io.StringIO()) as stream:
                 self.assertEqual(main(["pack", "--descriptor", str(source), "--output", str(output)]), 0)
             made = json.loads(stream.getvalue())
@@ -377,7 +400,7 @@ class CliTests(unittest.TestCase):
 
     def test_failure_returns_nonzero_and_does_not_create_package(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "bad.rov"
+            path = Path(directory) / "bad.lwns"
             path.write_text("invalid")
             with contextlib.redirect_stderr(io.StringIO()) as stream:
                 self.assertEqual(main(["inspect", str(path)]), 1)

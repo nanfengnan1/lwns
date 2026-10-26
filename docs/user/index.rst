@@ -32,7 +32,7 @@
 
       按功能查阅设备包制作与加载、画布、终端、保存和抓包，无需重做安装步骤。
 
-      :doc:`制作与加载 .rov <workbench-devices>` · :doc:`画布 <workbench-editor>` · :doc:`保存配置 <workbench-data>`
+      :doc:`制作与加载 .lwns <workbench-devices>` · :doc:`画布 <workbench-editor>` · :doc:`保存配置 <workbench-data>`
 
    .. container:: doc-card
 
@@ -83,6 +83,7 @@
 
    workbench
    workbench-devices
+   sdn-devices
    workbench-images
    workbench-editor
    workbench-terminal

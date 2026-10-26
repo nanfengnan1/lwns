@@ -267,7 +267,7 @@ export const useDevicePackagesStore = defineStore("devicePackages", () => {
     }
     return {
       blob: await response.blob(),
-      filename: item.result?.filename || "device.rov",
+      filename: item.result?.filename || "device.lwns",
     };
   }
   function cancelUpload() {

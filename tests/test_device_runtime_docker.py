@@ -40,7 +40,7 @@ class DeviceRuntimeDockerTests(unittest.TestCase):
             image = json.loads(self.manager.dock("image", "inspect", definition["image"]))[0]["Id"]
         except (LabError, ValueError, IndexError, KeyError) as exc:
             self.skipTest("required local image unavailable: " + str(exc))
-        path = self.directory / "device.rov"
+        path = self.directory / "device.lwns"
         pack_device(definition, path)
         entry = self.manager.device_library.register(path, image_id=image)
         return entry["id"], image
@@ -56,7 +56,7 @@ class DeviceRuntimeDockerTests(unittest.TestCase):
             links.append({"id": "l1", "a": {"node": "r1", "port": "eth0"}, "b": {"node": "r2", "port": "eth0"}})
         for item in nodes:
             item["image"] = image
-        self.manager.save({"version": 1, "id": self.lab_id, "name": "Isolated .rov runtime test", "nodes": nodes, "links": links})
+        self.manager.save({"version": 1, "id": self.lab_id, "name": "Isolated .lwns runtime test", "nodes": nodes, "links": links})
         self.manager.deploy(self.manager.read(self.lab_id))
         return self.manager.read(self.lab_id)
 

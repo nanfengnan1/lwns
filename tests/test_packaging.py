@@ -28,9 +28,9 @@ class PackagingRuntimeTests(unittest.TestCase):
             config = root / "test.env"
             config.write_text("LWNS_HOST=127.0.0.2\nLWNS_PORT=19090\nLWNS_DATA_DIR=/tmp/test-device-data\n")
             env = {**os.environ, "LWNS_CONFIG_FILE": str(config)}
-            command = ["bash", str(wrapper), "device", "pack", "--output", "my device.rov"]
+            command = ["bash", str(wrapper), "device", "pack", "--output", "my device.lwns"]
             result = json.loads(subprocess.run(command, env=env, text=True, capture_output=True, check=True).stdout)
-            self.assertEqual(result["argv"], ["device", "pack", "--output", "my device.rov"])
+            self.assertEqual(result["argv"], ["device", "pack", "--output", "my device.lwns"])
             self.assertEqual(result["data"], "/tmp/test-device-data")
             server = json.loads(subprocess.run(["bash", str(wrapper), "--preview"], env=env,
                                                text=True, capture_output=True, check=True).stdout)

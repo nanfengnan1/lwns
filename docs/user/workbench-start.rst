@@ -450,5 +450,5 @@ Vite 同样兼容 ``ROUTE_OVS_API_TARGET``，推荐更新为 ``LWNS_API_TARGET``
 * 更新到新版 ``config/Caddyfile`` 时，将启动 Caddy 的 ``ROUTE_OVS_SITE``、
   ``ROUTE_OVS_UPSTREAM`` 更新为 ``LWNS_SITE``、``LWNS_UPSTREAM``。旧 Caddy 配置本身可继续使用；
   域名或 IP 不变时，无需因软件更名重新签发证书。
-* ``.rov`` 扩展名、设备描述 schema、拓扑版本和容器归属协议不变，旧设备包可以继续导入。
+* 新设备包后缀改为 ``.lwns``，导入兼容旧 ``.rov``。设备描述 schema、包内 v1 标识、拓扑版本和容器归属协议保持兼容；已安装包和旧制作任务无需改名。
   包内原始设备 ID 和镜像标签不会因品牌更名而自动替换。

@@ -1,4 +1,4 @@
-"""Portable .rov packages and the versioned local device library.
+"""Portable .lwns packages and the versioned local device library.
 
 Packing and inspecting never start containers or run descriptor actions. Image
 preparation is deliberately delegated to the service shared by Web and CLI.
@@ -24,7 +24,7 @@ from lab_device_schema import DESCRIPTOR_LIMIT, json_object, template_id, text, 
 MAX_PACKAGE = 16 * 1024 ** 3
 MAX_DOCKERFILE = 512 * 1024
 CHUNK = 1024 * 1024
-# The .rov v1 wire identifier is stable across the product rename to lwns.
+# The .lwns v1 wire identifier is stable across the product rename to lwns.
 FORMAT = "route-ovs-device"
 
 
@@ -127,8 +127,8 @@ def pack_device(descriptor, output, image_tar=None, dockerfile=None, overwrite=F
     if source["type"] != "repository" and resource is None:
         raise LabError("制作设备包缺少来源文件: " + source["path"])
     output = Path(output)
-    if output.suffix.lower() != ".rov":
-        raise LabError("设备包文件名需要 .rov 扩展名")
+    if output.suffix.lower() != ".lwns":
+        raise LabError("设备包文件名需要 .lwns 扩展名")
     if output.is_symlink() or (output.exists() and not overwrite):
         raise LabError("输出文件已存在或不是普通文件，拒绝覆盖")
     if resource and output.resolve() == resource.resolve():
@@ -154,7 +154,7 @@ def pack_device(descriptor, output, image_tar=None, dockerfile=None, overwrite=F
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
-        with tempfile.NamedTemporaryFile(prefix=".rov-", suffix=".rov", dir=output.parent, delete=False) as stream:
+        with tempfile.NamedTemporaryFile(prefix=".lwns-", suffix=".lwns", dir=output.parent, delete=False) as stream:
             temporary = Path(stream.name)
         with zipfile.ZipFile(temporary, "w", allowZip64=True) as archive:
             archive.writestr(_zip_info("device.json"), data)
@@ -329,7 +329,7 @@ class DeviceLibrary:
     def _entry(self, identity):
         entry = next((entry for entry in self._read() if entry["id"] == identity), None)
         if entry is None:
-            raise LabError("设备定义不存在，请先导入对应版本的 .rov")
+            raise LabError("设备定义不存在，请先导入对应版本的 .lwns")
         return entry
 
     def _directory(self, descriptor):
@@ -345,7 +345,11 @@ class DeviceLibrary:
     def package_path(self, identity):
         with self.lock:
             entry = self._entry(identity)
-            return ordinary_file(self._directory(entry["definition"]) / "device.rov", "已注册设备包")
+            directory = self._directory(entry["definition"])
+            path = directory / "device.lwns"
+            if not path.exists() and not path.is_symlink():
+                path = directory / "device.rov"
+            return ordinary_file(path, "已注册设备包")
 
     def descriptor(self, identity):
         with self.lock:
@@ -395,7 +399,7 @@ class DeviceLibrary:
                 return copy.deepcopy(previous)
             directory = self._directory(definition)
             directory.mkdir(parents=True, exist_ok=True)
-            destination = directory / "device.rov"
+            destination = directory / "device.lwns"
             if destination.is_symlink():
                 raise LabError("设备包路径不能是符号链接")
             temporary = None
@@ -440,15 +444,17 @@ class DeviceLibrary:
             entry = next((item for item in entries if item["id"] == identity), None)
             if entry is None:
                 raise LabError("设备定义不存在")
-            path = self._directory(entry["definition"]) / "device.rov"
-            if path.is_symlink():
+            directory = self._directory(entry["definition"])
+            paths = [directory / "device.lwns", directory / "device.rov"]
+            if any(path.is_symlink() for path in paths):
                 raise LabError("设备包路径不能是符号链接")
             atomic_json(self.path, {"version": 1, "devices": [item for item in entries if item["id"] != identity]})
             # Do not remove instance configuration or Docker images. An orphaned
             # immutable archive is harmless if filesystem cleanup fails.
-            if path.is_file():
-                try:
-                    path.unlink()
-                except OSError:
-                    pass
+            for path in paths:
+                if path.is_file():
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
             return {"removed": identity}

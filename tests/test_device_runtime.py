@@ -112,7 +112,7 @@ class DeviceRuntimeTests(unittest.TestCase):
 
     def install(self, definition=None):
         definition = definition or descriptor()
-        path = self.directory / (definition["id"] + ".rov")
+        path = self.directory / (definition["id"] + ".lwns")
         pack_device(definition, path)
         return self.manager.device_library.register(path, image_id=IMAGE_ID)["id"]
 

@@ -40,7 +40,7 @@ def library_lock(directory):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="lwns device", description="制作、检查和导入 .rov 设备包")
+    parser = argparse.ArgumentParser(prog="lwns device", description="制作、检查和导入 .lwns 设备包")
     commands = parser.add_subparsers(dest="command", required=True)
     pack = commands.add_parser("pack", help="制作设备包，不部署设备")
     pack.add_argument("--descriptor", required=True, type=Path)

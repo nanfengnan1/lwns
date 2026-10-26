@@ -201,6 +201,8 @@ fi
         os.chmod(runtime / "bootstrap.sh", 0o644)
         if "," in str(runtime):
             raise LabError("Docker 启动目录路径不能含逗号")
+        for capability in self.definition.get("runtime", {}).get("cap_add", []):
+            args += ["--cap-add", capability]
         return args + ["--init", "--entrypoint", "/bin/sh", "--tmpfs",
                        "/run/route-ovs-state:rw,noexec,nosuid,size=65536,mode=1777", "--mount",
                        "type=bind,src=" + str(runtime) + ",dst=/run/route-ovs,readonly=true"]

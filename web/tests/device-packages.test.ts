@@ -1,7 +1,10 @@
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { setToken } from "../src/api/client";
-import { readDeviceDescriptor } from "../src/domain/devicePackages";
+import {
+  readDeviceDescriptor,
+  validatePackageFile,
+} from "../src/domain/devicePackages";
 import { useDevicePackagesStore } from "../src/stores/devicePackages";
 import { useLabStore } from "../src/stores/lab";
 import type {
@@ -118,7 +121,7 @@ it("rejects wrong package and archive types before creating uploads", async () =
   vi.stubGlobal("fetch", fetchMock);
   await expect(
     packages.inspectFile(new File(["x"], "image.tar")),
-  ).rejects.toThrow(".rov");
+  ).rejects.toThrow(".lwns");
   await expect(
     packages.pack(
       descriptor,
@@ -129,6 +132,16 @@ it("rejects wrong package and archive types before creating uploads", async () =
   ).rejects.toThrow("未压缩");
   expect(fetchMock).not.toHaveBeenCalled();
   expect(packages.busy).toBe(false);
+});
+
+it("accepts new and legacy device extensions while keeping image archives separate", () => {
+  for (const name of ["device.lwns", "DEVICE.LWNS", "old.rov"])
+    expect(() =>
+      validatePackageFile(new File(["zip"], name), "package", 1024),
+    ).not.toThrow();
+  expect(() =>
+    validatePackageFile(new File(["zip"], "device.lwns"), "archive", 1024),
+  ).toThrow(".tar");
 });
 
 it("associates inspected bytes and import using the returned upload ID", async () => {
@@ -152,11 +165,11 @@ it("associates inspected bytes and import using the returned upload ID", async (
       ),
   );
   vi.stubGlobal("fetch", fetchMock);
-  await packages.inspectFile(new File(["zip"], "device.rov"));
+  await packages.inspectFile(new File(["zip"], "device.lwns"));
   expect(requests[0]?.url).toBe(`${base}/uploads/uploaded-a`);
   expect(requests[0]?.headers.Authorization).toBe("Bearer device-token");
   expect(JSON.parse(fetchMock.mock.calls[0]![1]?.body || "")).toEqual({
-    name: "device.rov",
+    name: "device.lwns",
     size: 3,
     kind: "package",
   });
@@ -191,7 +204,7 @@ it("keeps a previously inspected package when a replacement is invalid and clean
   );
   vi.stubGlobal("fetch", fetchMock);
   await expect(
-    packages.inspectFile(new File(["bad"], "bad.rov")),
+    packages.inspectFile(new File(["bad"], "bad.lwns")),
   ).rejects.toThrow("归档损坏");
   expect(packages.inspectedUpload).toBe("old-upload");
   expect(packages.inspection?.template_id).toBe("old");
@@ -383,13 +396,13 @@ it("downloads only from same-origin artifact path using bearer authorization", a
     ...queued,
     result: {
       download_url: "https://untrusted.invalid/file",
-      filename: "router.rov",
+      filename: "router.lwns",
     },
   });
   expect(fetchMock).toHaveBeenCalledWith(`${base}/artifacts/job1`, {
     headers: { Authorization: "Bearer device-token" },
   });
-  expect(result.filename).toBe("router.rov");
+  expect(result.filename).toBe("router.lwns");
   expect(await result.blob.text()).toBe("zip");
 });
 

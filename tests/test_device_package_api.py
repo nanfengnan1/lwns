@@ -58,7 +58,7 @@ class DevicePackageApiTests(unittest.TestCase):
         self.temp.cleanup()
 
     def package(self, value=None):
-        path = Path(self.temp.name) / ("input-" + str(len(list(Path(self.temp.name).glob("*.rov")))) + ".rov")
+        path = Path(self.temp.name) / ("input-" + str(len(list(Path(self.temp.name).glob("*.lwns")))) + ".lwns")
         pack_device(value or descriptor(), path)
         return path
 
@@ -89,8 +89,8 @@ class DevicePackageApiTests(unittest.TestCase):
             self.assertEqual(client.get(url).status_code, 401)
             download = client.get(url, headers=self.headers)
             self.assertEqual(download.status_code, 200)
-            self.assertIn(".rov", download.headers["content-disposition"])
-            path = Path(self.temp.name) / "web-made.rov"
+            self.assertIn(".lwns", download.headers["content-disposition"])
+            path = Path(self.temp.name) / "web-made.lwns"
             path.write_bytes(download.content)
             self.assertEqual(inspect_package(path)["descriptor"]["name"], "设备包名称")
             upload_id = self.upload(client, path)
@@ -112,11 +112,11 @@ class DevicePackageApiTests(unittest.TestCase):
     def test_origin_auth_size_and_inspection_never_execute_device_commands(self):
         with TestClient(self.app) as client:
             url = "/api/device-packages/uploads"
-            payload = {"name": "x.rov", "kind": "package", "size": 10}
+            payload = {"name": "x.lwns", "kind": "package", "size": 10}
             self.assertEqual(client.post(url, json=payload).status_code, 401)
             foreign = {**self.headers, "Origin": "https://foreign.example"}
             self.assertEqual(client.post(url, headers=foreign, json=payload).status_code, 403)
-            for bad in ({**payload, "name": "x.tar"}, {**payload, "size": 2 * 1024 * 1024}, {**payload, "name": "../x.rov"}):
+            for bad in ({**payload, "name": "x.tar"}, {**payload, "size": 2 * 1024 * 1024}, {**payload, "name": "../x.lwns"}):
                 self.assertEqual(client.post(url, headers=self.headers, json=bad).status_code, 400)
             upload_id = self.upload(client, self.package())
             before = copy.deepcopy(self.host.calls)
@@ -189,7 +189,7 @@ class DevicePackageApiTests(unittest.TestCase):
         path, filename = restarted.artifact(job["id"])
         self.assertTrue(path.is_file())
         self.assertEqual(inspect_package(path)["descriptor"]["source"]["type"], "dockerfile")
-        self.assertTrue(filename.endswith(".rov"))
+        self.assertTrue(filename.endswith(".lwns"))
 
     def test_cli_import_helper_releases_uploads_on_success_and_failure(self):
         path = self.package()
@@ -205,6 +205,23 @@ class DevicePackageApiTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 self.packages.import_file(path)
         self.assertEqual(list(self.packages.uploads.iterdir()), [])
+
+    def test_legacy_upload_and_old_completed_artifact_survive_upgrade(self):
+        path = self.package()
+        legacy = path.with_suffix(".rov")
+        path.replace(legacy)
+        with TestClient(self.app) as client:
+            upload_id = self.upload(client, legacy)
+            job = self.start(client, {"mode": "import", "upload_id": upload_id})
+            self.assertEqual(job["state"], "success", job)
+            job = self.start(client, {"mode": "pack", "descriptor": descriptor(),
+                                      "source": {"type": "repository", "reference": "test/router:one"}})
+            self.assertEqual(job["state"], "success", job)
+        path, filename = self.packages.artifact(job["id"])
+        old_path = path.with_suffix(".rov")
+        path.rename(old_path)
+        restored = DevicePackageService(self.manager, self.images, command=self.host.command)
+        self.assertEqual(restored.artifact(job["id"])[0], old_path)
 
     def test_web_import_success_and_failed_maker_release_upload_slots(self):
         path = self.package()

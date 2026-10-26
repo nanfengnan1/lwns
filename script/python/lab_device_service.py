@@ -65,9 +65,9 @@ class DevicePackageService(ImageService):
         if (not isinstance(name, str) or not name or len(name) > 255
                 or any(ord(c) < 32 for c in name) or "/" in name or "\\" in name):
             raise LabError("上传文件名无效")
-        suffix = {"package": ".rov", "archive": ".tar"}.get(kind)
+        suffix = {"package": (".lwns", ".rov"), "archive": (".tar",)}.get(kind)
         if not suffix or not name.lower().endswith(suffix):
-            raise LabError("设备包需要 .rov，镜像归档仅支持未压缩 .tar")
+            raise LabError("设备包需要 .lwns（兼容旧 .rov），镜像归档仅支持未压缩 .tar")
         with self.lock:
             self.prune_uploads()
             if sum(1 for _ in self.uploads.iterdir()) >= 8:
@@ -274,8 +274,8 @@ class DevicePackageService(ImageService):
                 elif spec["source"] == "dockerfile":
                     dockerfile = work / "Dockerfile"
                     dockerfile.write_text(spec["dockerfile"], encoding="utf-8")
-                filename = descriptor["id"] + "-" + descriptor["version"] + ".rov"
-                output = self.artifacts / (job_id + ".rov")
+                filename = descriptor["id"] + "-" + descriptor["version"] + ".lwns"
+                output = self.artifacts / (job_id + ".lwns")
                 self.log(job_id, "校验描述和资源，生成设备包…\n")
                 pack_device(descriptor, output, image_tar=image_tar, dockerfile=dockerfile)
                 result = {"download_url": "/api/device-packages/artifacts/" + job_id,
@@ -314,7 +314,9 @@ class DevicePackageService(ImageService):
             if not isinstance(job_id, str) or not ID.fullmatch(job_id):
                 raise LabError("设备包任务标识无效")
             job = self.jobs.get(job_id)
-            path = self.artifacts / (job_id + ".rov")
+            path = self.artifacts / (job_id + ".lwns")
+            if not path.exists() and not path.is_symlink():
+                path = self.artifacts / (job_id + ".rov")
             if (not job or job["mode"] != "pack" or job["state"] != "success"
                     or path.is_symlink() or not path.is_file()):
                 raise LabError("设备包不存在或尚未制作完成")

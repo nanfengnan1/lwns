@@ -34,8 +34,9 @@ if (!debugURL || !appURL || !output || flag !== '--fake-host') throw Error('Expe
     await input('#device-package-name','可分享主机');await shot('device-package-maker.png');await click('#pack-device-package');
     await wait('!!document.querySelector("#download-device-package")');
     const made=await api('/api/device-packages');assert.equal(made.devices.length,0,'making does not register a device');const packJob=made.jobs.find(job=>job.mode==='pack'&&job.state==='success');assert.ok(packJob?.result.path,'server artifact path is reported');
+    assert.match(packJob.result.filename,/\.lwns$/,'new downloads use .lwns');
     await click('#download-device-package');const packagePath=path.join(output,packJob.result.filename);
-    for(let i=0;i<100&&!fs.existsSync(packagePath);i++)await new Promise(resolve=>setTimeout(resolve,100));assert.ok(fs.existsSync(packagePath),'downloaded file exists');checks.push('Web maker downloads a .rov without registering it');
+    for(let i=0;i<100&&!fs.existsSync(packagePath);i++)await new Promise(resolve=>setTimeout(resolve,100));assert.ok(fs.existsSync(packagePath),'downloaded file exists');checks.push('Web maker downloads a .lwns without registering it');
     await click('#device-tab-import');const document=await send('DOM.getDocument');const upload=await send('DOM.querySelector',{nodeId:document.root.nodeId,selector:'#device-package-file'});await send('DOM.setFileInputFiles',{nodeId:upload.nodeId,files:[packagePath]});
     await wait('!!document.querySelector("#device-package-import-name")&&!document.querySelector("#import-device-package").disabled');assert.equal(await evaluate('document.querySelector("#device-package-import-name").value'),'可分享主机');await input('#device-package-import-name','我的测试 PC');await shot('device-package-import.png');await click('#import-device-package');
     await wait('document.querySelector(".device-job-status")?.textContent==="已完成"&&!document.querySelector("#device-package-import-name")');

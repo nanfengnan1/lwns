@@ -94,7 +94,7 @@ def action(value, label, ready=False):
 def validate_descriptor(raw):
     """Return a canonical copy; reject unsupported fields rather than ignore them."""
     object_keys(raw, {"schema_version", "id", "version", "name", "category", "image", "source", "profile",
-                      "console", "persistent_dirs", "startup", "actions", "description", "platform"}, "设备描述")
+                      "console", "persistent_dirs", "startup", "actions", "description", "platform", "runtime"}, "设备描述")
     if type(raw.get("schema_version")) is not int or raw["schema_version"] != 1:
         raise LabError("设备描述需要 schema_version: 1")
     identity = text(raw.get("id"), "设备定义 ID", 64)
@@ -136,6 +136,13 @@ def validate_descriptor(raw):
             result[optional] = text(raw[optional], optional, maximum)
     if "platform" in result and not re.fullmatch(r"linux/[a-z0-9_]+(?:/[a-z0-9_]+)?", result["platform"]):
         raise LabError("设备镜像平台需要 linux/架构 格式")
+    if "runtime" in raw:
+        runtime = object_keys(raw["runtime"], {"cap_add"}, "设备运行参数")
+        capabilities = runtime.get("cap_add", [])
+        if (not isinstance(capabilities, list) or len(capabilities) > 1
+                or any(item != "SYS_ADMIN" for item in capabilities)):
+            raise LabError("runtime.cap_add 仅允许显式声明 SYS_ADMIN，供内置 FRR 等服务使用")
+        result["runtime"] = {"cap_add": list(capabilities)}
     directories = raw.get("persistent_dirs")
     if not isinstance(directories, list) or not 1 <= len(directories) <= 16:
         raise LabError("设备需声明 1–16 个持久化目录")

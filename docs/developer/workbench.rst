@@ -252,7 +252,7 @@ ResizeObserver 读取容器 clientWidth/clientHeight，扣除滚动条后再计�
 保存、改名、配置写入、更新、部署与清理遵循同一互斥约束。
 HTTP 接口沿用 Bearer/Origin 校验，接口响应与忙状态不能共享可变任务对象。
 
-设备兼容 ``lab_devices.py`` 的内置模板，同时支持导入 ``device.json`` 描述的 ``.rov`` 设备包。
+设备兼容 ``lab_devices.py`` 的内置模板，同时支持导入 ``device.json`` 描述的 ``.lwns`` 设备包。
 普通设备通过声明启动、保存与持久化规则接入，复杂命令可由 Dockerfile 生成镜像内脚本；
 不要求每个新镜像都编写 Python 适配器。
 前端校验用于及时反馈，Python 后端仍是 IP、网关和部署约束的最终校验方。
@@ -312,7 +312,7 @@ FRR 持久化目录和备份布局见 :doc:`../user/workbench`。
 当前 FRR 文本沿用每设备 32768 字符限制。备份目前不自动轮转，应按需归档。
 完整迁移需复制数据目录；Compose/YAML 项目迁移属于后续阶段。
 
-.rov 设备包与通用配置生命周期
+.lwns 设备包与通用配置生命周期
 ----------------------------------------
 
 ``lab_device_schema.py`` 使用标准库校验并规范化 ``device.json``，拒绝未知字段、

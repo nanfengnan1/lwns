@@ -1,4 +1,4 @@
-"""Opt-in .rov image preparation using an existing base and isolated tags only.
+"""Opt-in .lwns image preparation using an existing base and isolated tags only.
 
 LWNS_DEVICE_PACKAGE_DOCKER_TESTS=1 .venv/bin/python -m unittest discover -s tests -p test_device_package_docker.py -v
 No containers or networks are created; the existing base tag is never changed.
@@ -21,7 +21,7 @@ from test_device_packages import descriptor
 
 
 @unittest.skipUnless(os.environ.get("LWNS_DEVICE_PACKAGE_DOCKER_TESTS") == "1",
-                     "opt-in real .rov image export/load/build test")
+                     "opt-in real .lwns image export/load/build test")
 class DevicePackageDockerTests(unittest.TestCase):
     def test_local_export_offline_import_recipe_build_and_cli_import(self):
         with tempfile.TemporaryDirectory(prefix="lwns-package-docker-", dir=os.environ.get("LWNS_TEST_DIR")) as directory:

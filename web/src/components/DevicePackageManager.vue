@@ -190,7 +190,7 @@ async function pack() {
     source,
     archive.value,
   );
-  ui.notify("设备包制作已开始，完成后可下载 .rov 文件");
+  ui.notify("设备包制作已开始，完成后可下载 .lwns 文件");
 }
 function rename(item: DevicePackageEntry) {
   editing.value = item.id;
@@ -239,7 +239,7 @@ function legacy() {
       <div>
         <span class="dialog-eyebrow">DEVICE LIBRARY</span>
         <h2>设备管理</h2>
-        <p>在 {{ lab.serverHost }} 制作、导入和管理 .rov 设备包。</p>
+        <p>在 {{ lab.serverHost }} 制作、导入和管理 .lwns 设备包。</p>
       </div>
       <div class="heading-actions">
         <button
@@ -316,7 +316,7 @@ function legacy() {
             {{
               query
                 ? "尝试其他名称或版本。"
-                : "导入 .rov 设备包，或将设备描述与镜像制作成可分享的包。"
+                : "导入 .lwns 设备包，或将设备描述与镜像制作成可分享的包。"
             }}
           </p>
           <button v-if="!query" class="primary" @click="tab = 'import'">
@@ -386,7 +386,7 @@ function legacy() {
             设备包包含启动、保存和恢复配置的规则。导入后，在左侧设备库中选择它并拖入画布。
           </p>
           <div class="import-flow">
-            <span>选择 .rov</span><i>↓</i><span>确认设备名称</span><i>↓</i
+            <span>选择 .lwns</span><i>↓</i><span>确认设备名称</span><i>↓</i
             ><span>准备镜像并加入设备库</span>
           </div>
         </div>
@@ -397,12 +397,12 @@ function legacy() {
         >
           <fieldset :disabled="disabled">
             <label class="package-file-field"
-              ><strong>选择 .rov 设备包</strong
+              ><strong>选择 .lwns 设备包</strong
               ><span>支持 Web 或 CLI 制作的设备包</span
               ><input
                 id="device-package-file"
                 type="file"
-                accept=".rov"
+                accept=".lwns,.rov"
                 @change="selectPackage"
             /></label>
             <template v-if="packages.inspection"
@@ -579,7 +579,7 @@ function legacy() {
               type="submit"
               :disabled="!descriptor"
             >
-              制作 .rov 设备包
+              制作 .lwns 设备包
             </button>
           </fieldset>
         </form>
@@ -622,7 +622,7 @@ function legacy() {
           class="primary"
           @click="run(() => download(packages.job!))"
         >
-          下载 .rov
+          下载 .lwns
         </button>
       </div>
       <p v-if="packages.job?.result?.path" class="artifact-path">

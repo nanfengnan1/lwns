@@ -5,8 +5,8 @@
 通过网页终端配置设备，并用本机 Wireshark 远程抓包。Windows 和 Linux 客户端都可通过浏览器使用。
 
 - **图形化组网**：设备分类库、拖放画布、自动对齐、注释和缩放；容器之间以 veth 对连接。
-- **真实设备运行环境**：支持 FRR、Linux bridge、VPCS/Linux 容器，以及通过 `.rov` 描述的 Docker 设备。
-- **设备包与配置恢复**：Web 或 CLI 将 `device.json` 与镜像来源打包为 `.rov`，按描述启动服务、挂载独立配置目录，并执行设备自己的保存命令。
+- **真实设备运行环境**：支持 FRR、Linux bridge、VPCS/Linux 容器，以及通过 `.lwns` 描述的 Docker 设备。
+- **设备包与配置恢复**：Web 或 CLI 将 `device.json` 与镜像来源打包为 `.lwns`，按描述启动服务、挂载独立配置目录，并执行设备自己的保存命令。
 - **远程项目管理**：在当前服务器上新建、打开、保存和关闭项目；部署后可编辑拓扑，再显式应用变更。
 - **调试与部署**：Web 交互终端、部署日志、SSH/Wireshark 抓包；支持源码运行、Linux 目录安装包及可选的 HTTP/2、HTTP/3 入口。
 
@@ -14,7 +14,7 @@
 配置恢复范围由设备描述及保存动作决定，手工 Shell 命令产生的运行状态不会自动全部持久化。
 原有 OVS/FRR 命令行工具仍可独立使用。
 
-从[设备包教程](docs/user/workbench-devices.rst)制作或加载 FRR `frr.rov`，
+从[设备包教程](docs/user/workbench-devices.rst)制作或加载 FRR `frr.lwns`，
 再按[第一次实验](docs/user/quickstart.rst)完成组网。保存范围见[保存与恢复](docs/user/workbench-data.rst)。
 旧版本升级说明见[更名与已有数据](docs/user/workbench-start.rst#lwns-upgrade)。
 
@@ -39,7 +39,7 @@ cd lwns
 | --- | --- |
 | 首次安装 | [获取代码与环境准备](docs/user/deployment.rst) → [部署与启动](docs/user/workbench-start.rst) |
 | 已有地址，开始实验 | [第一次实验：让两台 PC 互通](docs/user/quickstart.rst) |
-| 导入设备并绘图 | [.rov 设备包制作与导入](docs/user/workbench-devices.rst) · [镜像管理（兼容）](docs/user/workbench-images.rst) · [项目与画布](docs/user/workbench-editor.rst) |
+| 导入设备并绘图 | [.lwns 设备包制作与导入](docs/user/workbench-devices.rst) · [镜像管理（兼容）](docs/user/workbench-images.rst) · [项目与画布](docs/user/workbench-editor.rst) |
 | 配置设备、保存和抓包 | [设备终端](docs/user/workbench-terminal.rst) · [配置保存与恢复](docs/user/workbench-data.rst) · [Wireshark 抓包](docs/user/workbench-capture.rst) |
 | 安装目录包或启用 HTTPS | [目录包安装](docs/user/workbench-install.rst) · [HTTPS / HTTP/2 / HTTP/3](docs/user/workbench-https.rst) |
 | 排查错误 | [故障排查](docs/user/troubleshooting.rst) |

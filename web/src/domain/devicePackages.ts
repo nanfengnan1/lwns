@@ -27,11 +27,13 @@ export function validatePackageFile(
   kind: "package" | "archive",
   maximum: number,
 ) {
-  const extension = kind === "package" ? ".rov" : ".tar";
-  if (!file.name.toLowerCase().endsWith(extension))
+  const extensions = kind === "package" ? [".lwns", ".rov"] : [".tar"];
+  if (
+    !extensions.some((extension) => file.name.toLowerCase().endsWith(extension))
+  )
     throw Error(
       kind === "package"
-        ? "请选择 .rov 设备包"
+        ? "请选择 .lwns 设备包（兼容旧 .rov）"
         : "镜像仅支持未压缩的 .tar 文件",
     );
   if (!file.size) throw Error("文件不能为空");

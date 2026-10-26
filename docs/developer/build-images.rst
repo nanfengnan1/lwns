@@ -91,6 +91,6 @@ FRR 镜像与 frr.tar 编译
 
 发布时记录镜像标签、镜像 ID、构建源码版本和归档校验值。
 构建、加载和部署是独立步骤；重新构建镜像后，已有容器仍需按实验流程重建。
-镜像可进一步与 ``device.json`` 制作为 ``.rov`` 设备包，提供 Web 和 CLI 两种制作方式。
+镜像可进一步与 ``device.json`` 制作为 ``.lwns`` 设备包，提供 Web 和 CLI 两种制作方式。
 现有 ``alpine/frr:latest`` 无需重新编译；描述文件、离线打包命令和导入步骤见
 :ref:`rov-frr-offline`，设备版本与更新规则见 :doc:`../user/workbench-devices`。
