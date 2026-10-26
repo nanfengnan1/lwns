@@ -55,7 +55,7 @@ def main():
     archive = parser.parse_args().archive.resolve()
     with tempfile.TemporaryDirectory(prefix="lwns-package-check-") as temporary:
         temp = Path(temporary)
-        with tarfile.open(archive, "r:gz") as tar:
+        with tarfile.open(archive, "r:*") as tar:
             for member in tar.getmembers():
                 for name in (member.name, member.linkname):
                     if name and (PurePosixPath(name).is_absolute() or ".." in PurePosixPath(name).parts):

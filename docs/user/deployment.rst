@@ -56,19 +56,20 @@ Debian/Ubuntu 可运行 ``sudo apt-get update`` 和 ``sudo apt-get install git``
 另一种选择：获取 Linux 目录安装包
 ----------------------------------------
 
-安装包发布入口为 `GitHub Releases <https://github.com/nanfengnan1/lwns/releases>`_。
-有可用版本时，在其 **Assets** 中选择目标架构的 ``lwns-<版本>-linux-<架构>.tar.gz``
-及同名 ``.sha256``，两份文件都要下载。GitHub 自动生成的 **Source code (zip/tar.gz)**
+安装包发布入口为 `v1.0 Release <https://github.com/nanfengnan1/lwns/releases/tag/v1.0>`_。
+在其 **Assets** 中下载 ``lwns-1.0-linux-x86_64.tar.xz``
+及同名 ``.sha256``，并查看 validation.json 中的实际验证范围。GitHub 自动生成的 **Source code (zip/tar.gz)**
 是源码归档，不是包含可执行程序的目录安装包。
 
 .. note::
 
-   **截至 2026-10-24 核对时，该仓库尚未发布 Release 安装包。** 当前可以取得维护者提供的目录包，
-   或先克隆源码，再按 :doc:`workbench-install` 最后的“发布者：构建目录包”自行生成。
+   v1.0 程序包对应原 Git 标签，设备包使用 ``.rov``；当前 main 后续的设备格式和 SDN 示例
+   需要新版程序。程序包内包含匹配该版本的离线手册；Linux x86_64/glibc 2.35 是构建基线，
+   ARM64、Alpine/musl 或更旧 glibc 需要独立构建和验证。
 
 构建产物位于构建机项目根目录的 ``release/``，这个目录不会随 Git 提交或自动上传到 GitHub。
 
-取得 ``.tar.gz`` 和 ``.sha256`` 后，按 :doc:`workbench-install` 校验、解压并安装。
+取得 ``.tar.xz`` 和 ``.sha256`` 后，按 :doc:`workbench-install` 校验、解压并安装。
 使用目录包运行工作台无需另行克隆源码；Docker 设备镜像仍需按本页后文单独准备。
 
 宿主机要求

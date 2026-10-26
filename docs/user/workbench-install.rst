@@ -11,6 +11,7 @@ Linux 目录包：打包与系统安装
 安装包下载入口为 `GitHub Releases <https://github.com/nanfengnan1/lwns/releases>`_。
 实际发布状态、应该下载的附件以及没有安装包时如何获取，先看 :ref:`workbench-get-package`。
 自行打包的用户先按 :ref:`workbench-get-source` 克隆源码，再阅读本页末尾的构建步骤。
+维护者固定源码、制作正式归档、验证和发布 Git tag / Release 的完整流程见 :doc:`/developer/release`。
 设备镜像独立导入或拉取，不包含在工作台程序包中。
 
 使用者先阅读“安装目录包”，按需继续修改配置、升级或卸载；需要制作发布包的维护者阅读本页最后的“发布者：构建目录包”。
@@ -37,11 +38,14 @@ Linux 目录包：打包与系统安装
 ----------------------------------------
 
 先从 :ref:`workbench-get-package` 所述来源取得归档和校验文件，放在 Linux 宿主机同一目录中。
-进入文件所在目录后，先核对，再解压（以下以 0.1.0/x86_64 文件名为例，实际版本以取得的包为准）::
+进入文件所在目录后，先核对，再解压（以下对应 v1.0/x86_64 程序包）::
 
-   sha256sum -c lwns-0.1.0-linux-x86_64.tar.gz.sha256
-   tar -xzf lwns-0.1.0-linux-x86_64.tar.gz
-   cd lwns-0.1.0-linux-x86_64
+   sha256sum -c lwns-1.0-linux-x86_64.tar.xz.sha256
+   tar -xJf lwns-1.0-linux-x86_64.tar.xz
+   cd lwns-1.0-linux-x86_64
+
+原 v1.0 的设备包使用 ``.rov``，不包含之后 main 新增的设备格式与 SDN 示例。
+包内离线手册对应该版本；设备镜像仍需独立加载。
 
 普通 HTTP 方式，允许实验网客户端访问 8090::
 
@@ -188,7 +192,7 @@ Docker、``ip`` 或 ``nsenter`` 未就绪时，网页可以显示环境诊断，
    python3 -m venv .venv-build
    .venv-build/bin/python -m pip install -r packaging/linux/requirements-build.txt
    npm --prefix web ci --include=optional
-   .venv-build/bin/python packaging/linux/build.py --version 0.1.0
+   .venv-build/bin/python packaging/linux/build.py --version 1.0
 
 脚本默认执行前端构建，再通过 PyInstaller ``onedir`` 打包后端。
 已有确认过的完整 ``web/dist`` 时可添加 ``--skip-web-build``。
@@ -199,12 +203,15 @@ Docker、``ip`` 或 ``nsenter`` 未就绪时，网页可以显示环境诊断，
 .. code-block:: text
 
    release/
-     lwns-0.1.0-linux-x86_64.tar.gz
-     lwns-0.1.0-linux-x86_64.tar.gz.sha256
+     lwns-1.0-linux-x86_64.tar.xz
+     lwns-1.0-linux-x86_64.tar.xz.sha256
 
 ``--output /目标目录`` 可以修改输出位置；脚本拒绝覆盖同名发布文件。
 ``--version`` 是发行版本；每次构建另外生成唯一 BUILD_ID，安装后保留各构建目录。
 归档包含 ``build-info.json``，记录架构、构建机 glibc、Python 和依赖版本，便于诊断兼容性。
+默认使用 xz，兼容旧交付格式可加 ``--compression gz``。上述简化命令适合本地打包；
+正式发布使用 :doc:`/developer/release` 的 ``--release`` 流程，固定 source-root/revision/tag，
+加入原始源码、完整 HTML 手册和验证报告，避免将当前 main 打包成旧 tag 的程序。
 
 打包按固定资源清单收集，不包含 ``.lwns-labs``、宿主机令牌、证书私钥、设备镜像或
 ``node_modules``。Caddy 只提供示例配置，二进制和证书由部署者单独准备。
@@ -213,7 +220,7 @@ Windows 抓包 exe 也需单独在 Windows 构建；包内附带的是跨平台�
 发布前，在隔离目录执行目录包验收::
 
    .venv-build/bin/python tests/check_linux_package.py \
-     release/lwns-0.1.0-linux-x86_64.tar.gz
+     release/lwns-1.0-linux-x86_64.tar.xz
 
 该检查不向真实系统目录安装、不调用宿主机 systemctl，不操作设备容器。
 它检查资源、认证接口、WebSocket、安装升级和卸载保留数据；实际部署与抓包还需按既有集成测试验收。

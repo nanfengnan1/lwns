@@ -206,11 +206,11 @@ Python 改动需要重启后端，依赖文件变化时先更新虚拟环境。
 
 适用于直接使用发布者构建的包。获取途径与当前发布状态见 :ref:`workbench-get-package`。
 无需在目标机安装前端构建工具或 Web 后端 Python 依赖。
-下面以 x86_64、版本 0.1.0 为例；归档和校验文件放在同一目录::
+下面对应 x86_64、v1.0 程序包；归档和校验文件放在同一目录::
 
-   sha256sum -c lwns-0.1.0-linux-x86_64.tar.gz.sha256
-   tar -xzf lwns-0.1.0-linux-x86_64.tar.gz
-   cd lwns-0.1.0-linux-x86_64
+   sha256sum -c lwns-1.0-linux-x86_64.tar.xz.sha256
+   tar -xJf lwns-1.0-linux-x86_64.tar.xz
+   cd lwns-1.0-linux-x86_64
    sudo bash install.sh --listen 0.0.0.0 --port 8090
    sudo systemctl start lwns-web
 

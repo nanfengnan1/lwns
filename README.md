@@ -29,7 +29,9 @@ cd lwns
 
 后续源码命令都在这个项目根目录执行。也可在仓库网页选择 **Code → Download ZIP**，解压后进入 `lwns-main`。已有源码直接进入原目录即可。
 
-安装包请查看 [GitHub Releases](https://github.com/nanfengnan1/lwns/releases)，选择目标架构的程序目录包和 SHA256 文件。**截至 2026-10-24 核对时尚无公开 Release 安装包**，当前需由维护者提供，或克隆源码后自行构建。GitHub 的 Source code 归档不是可执行安装包；本地 `release/` 产物不会自动上传。详细获取与环境准备见[用户教程](docs/user/deployment.rst)。
+可直接安装的 **[v1.0 Linux 程序包](https://github.com/nanfengnan1/lwns/releases/tag/v1.0)**：下载 `lwns-1.0-linux-x86_64.tar.xz`、同名 `.sha256` 和验证记录。包内包含可执行后端、Python 运行库、已构建前端、安装脚本与离线手册，无需 Node.js/npm 或后端虚拟环境。目标为 Linux x86_64、glibc 2.35 基线；Docker/ip/nsenter 仍由宿主机提供。GitHub 的 Source code 归档不是可执行安装包，设备镜像另行导入。安装步骤见[目录包教程](docs/user/workbench-install.rst)，维护者流程见[构建与发布](docs/developer/release.rst)。
+
+该程序包来自原 `v1.0` 提交，设备包使用 `.rov`；当前 main 后续增加的设备包格式和 SDN 示例需要新版程序。完整测试范围及限制见 Release 的 validation.json 附件。
 
 ## 用户文档
 

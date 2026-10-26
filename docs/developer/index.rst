@@ -11,5 +11,6 @@
    scripts
    workbench
    testing
+   release
    build-docs
    contributing
