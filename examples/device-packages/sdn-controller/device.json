@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "id": "lwns-sdn-controller",
-  "version": "1.0.0",
+  "version": "1.0",
   "name": "sdn-controller",
   "category": "host",
   "description": "隔离实验设备；首次启动生成独立凭据，需手工配置管理地址及匹配凭据。保存原生配置和数据库；Linux 网络重建自动恢复尚未实现（REL-004）。",
-  "image": "lwns/sdn-controller:1.0.0",
+  "image": "lwns/sdn-controller:1.0",
   "source": {
     "type": "dockerfile",
     "path": "Dockerfile"

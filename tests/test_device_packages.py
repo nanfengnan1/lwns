@@ -119,7 +119,10 @@ class DescriptorTests(unittest.TestCase):
             validate_descriptor(raw)
 
     def test_versions_paths_and_duplicate_json(self):
-        for version in ("../1.0.0", "latest", "1.0", "1/0/0"):
+        for version in ("1.0", "1.0-rc.1", "1.0.0", "1.0.0+build.1"):
+            with self.subTest(version=version):
+                self.assertEqual(validate_descriptor(descriptor(version=version))["version"], version)
+        for version in ("../1.0.0", "latest", "1", "1/0/0", "1.0.", "1..0", "1.0.0.0"):
             with self.subTest(version=version), self.assertRaises(LabError):
                 validate_descriptor(descriptor(version=version))
         with self.assertRaisesRegex(LabError, "重复"):
@@ -331,6 +334,17 @@ class LibraryTests(unittest.TestCase):
         self.assertNotEqual(first["id"], second["id"])
         self.assertEqual(len(self.library.entries()), 2)
         self.assertEqual(self.library.resolve(first["id"])["descriptor_version"], "1.0.0")
+
+    def test_short_version_round_trip_preserves_existing_patch_version(self):
+        existing = self.register()
+        report = pack_device(descriptor(version="1.0"), self.package, overwrite=True)
+        self.assertEqual(report["descriptor"]["version"], "1.0")
+        short = self.register()
+        self.assertNotEqual(short["id"], existing["id"])
+        restarted = DeviceLibrary(self.root / "data")
+        self.assertEqual(restarted.resolve(short["id"])["descriptor_version"], "1.0")
+        self.assertEqual(restarted.package_path(short["id"]).parent.name, "1.0")
+        self.assertEqual(restarted.resolve(existing["id"])["descriptor_version"], "1.0.0")
 
     def test_same_name_different_identity_not_overwritten(self):
         first = self.register()

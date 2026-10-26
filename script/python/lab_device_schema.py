@@ -101,8 +101,8 @@ def validate_descriptor(raw):
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", identity):
         raise LabError("设备定义 ID 只允许小写字母、数字、短横线和下划线")
     version = text(raw.get("version"), "设备版本", 64)
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?(?:\+[A-Za-z0-9][A-Za-z0-9.-]*)?", version):
-        raise LabError("设备版本需要类似 1.0.0 的版本号")
+    if not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?(?:\+[A-Za-z0-9][A-Za-z0-9.-]*)?", version):
+        raise LabError("设备版本需要类似 1.0 或 1.0.0 的版本号")
     category = raw.get("category")
     if category not in KINDS:
         raise LabError("设备分类必须为 router、switch、host 或 firewall")

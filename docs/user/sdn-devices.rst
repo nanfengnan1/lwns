@@ -1,8 +1,8 @@
 SDN Agent、Controller、Web 设备包
 ========================================
 
-三种设备分别交付为 ``sdn-agent-1.0.0.lwns``、``sdn-controller-1.0.0.lwns``、
-``sdn-web-1.0.0.lwns``。每个离线包包含设备描述、校验清单及干净的 Docker 镜像，
+三种设备分别交付为 ``sdn-agent-1.0.lwns``、``sdn-controller-1.0.lwns``、
+``sdn-web-1.0.lwns``。每个离线包包含设备描述、校验清单及干净的 Docker 镜像，
 不包含现有实验的 Token、节点身份或数据库。
 
 它们适用于 Linux amd64 隔离实验。请先更新并重启工作台后端：Agent 描述使用新增的
@@ -69,7 +69,7 @@ Docker 镜像归档不能通过改后缀变成设备包。``.lwns`` 也不是完
 
    cd ~/program/github/lwns
    python3 examples/device-packages/build_sdn.py \
-     --output ~/lwns-devices/sdn/1.0.0
+     --output ~/lwns-devices/sdn/1.0
 
 每种定义位于 ``examples/device-packages/sdn-*/``，分别只有 ``device.json`` 和
 ``Dockerfile``。构建脚本固定本次实际使用的本地基础镜像 ID，再导出适配镜像，
@@ -78,11 +78,11 @@ Docker 镜像归档不能通过改后缀变成设备包。``.lwns`` 也不是完
 输出已存在时默认拒绝覆盖；更换设备实现应发布新版本，不覆盖已经安装的版本。
 复核本次构建产物可以执行::
 
-   cd ~/lwns-devices/sdn/1.0.0
+   cd ~/lwns-devices/sdn/1.0
    sha256sum -c SHA256SUMS
    cd ~/program/github/lwns
    python3 script/python/lab_server.py device inspect \
-     ~/lwns-devices/sdn/1.0.0/sdn-agent-1.0.0.lwns
+     ~/lwns-devices/sdn/1.0/sdn-agent-1.0.lwns
 
 通过 **工具 → 设备管理 → 导入设备包** 分别导入三个文件，见 :ref:`rov-import-device`。
 检查包和构建镜像都不会修改现有实验；导入设备库也不会自动创建拓扑。

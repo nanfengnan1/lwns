@@ -746,9 +746,11 @@ OSPF实验.rovproject              # 建议扩展名，内部为 ZIP；尚未确
 
 描述格式当前为 `schema_version: 1`，由 `lab_device_schema.py` 校验和规范化，拒绝未知字段和重复 JSON 键。完整示例位于 `examples/device-packages/frr/` 与 `examples/device-packages/config-demo/`；未来格式版本迁移仍需单独实现，当前拒绝不支持的版本。
 
+SDN 三个设备的发布版本统一为 `1.0`，对应镜像标签 `lwns/sdn-*:1.0` 和文件 `sdn-*-1.0.lwns`。设备版本校验兼容两段 `1.0` 与三段 `1.0.0`；保留原始版本字符串作为设备身份的一部分，不合并既有版本或迁移已安装实例。
+
 2026-10-26 增加可选 `runtime.cap_add`，仅接受空数组或 `["SYS_ADMIN"]`，用于包含 FRR 的通用多服务设备；不接受任意 Docker 参数、privileged 或宿主网络。旧描述不变，新字段需要更新后端。`examples/device-packages/sdn-agent`、`sdn-controller`、`sdn-web` 各维护 device.json 与 Dockerfile，`build_sdn.py` 从本地原生镜像制作三份离线 `.lwns`；首次启动生成实例凭据，不打包运行 Token/身份/数据库。三种设备使用 generic profile，配置保存与 REL-004 恢复边界见 [SDN 设备用户教程](docs/user/sdn-devices.rst)。
 
-本次验证：设备包相关 Python 测试 61 项（58 通过、3 项独立 Docker 测试默认跳过），前端 136 项测试、类型检查与生产构建通过；浏览器制作/下载 `.lwns`、导入、改名、引用保护及删除等 7 组检查通过，旧 `.rov` 上传、已安装文件和旧任务下载兼容有回归覆盖。另执行 `verify_sdn.py` 的真实 Docker/veth 验证，三个设备启动、Agent 注册、Web→Controller 认证请求、Agent 提交、Redis/FRR/etcd/Web 保存及重建后身份/revision/节点清单保留均通过；确认 Linux bridge 不自动重建，REL-004 状态保持未实现。用户文档严格 Sphinx 构建通过。离线包及 SHA256SUMS 位于制作机器 `~/lwns-devices/sdn/1.0.0/`，不自动导入用户设备库或替换现有服务。
+本次验证：设备包相关 Python 测试 61 项（58 通过、3 项独立 Docker 测试默认跳过），前端 136 项测试、类型检查与生产构建通过；浏览器制作/下载 `.lwns`、导入、改名、引用保护及删除等 7 组检查通过，旧 `.rov` 上传、已安装文件和旧任务下载兼容有回归覆盖。另执行 `verify_sdn.py` 的真实 Docker/veth 验证，三个设备启动、Agent 注册、Web→Controller 认证请求、Agent 提交、Redis/FRR/etcd/Web 保存及重建后身份/revision/节点清单保留均通过；确认 Linux bridge 不自动重建，REL-004 状态保持未实现。用户文档严格 Sphinx 构建通过。离线包及 SHA256SUMS 位于制作机器 `~/lwns-devices/sdn/1.0/`，不自动导入用户设备库或替换现有服务。
 
 | 字段或字段组 | 约定 |
 | --- | --- |
